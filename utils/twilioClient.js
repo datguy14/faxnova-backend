@@ -1,8 +1,8 @@
-const twilio = require('twilio');
+const Phaxio = require('phaxio');
 
-const client = twilio(
-  process.env.TWILIO_ACCOUNT_SID,
-  process.env.TWILIO_AUTH_TOKEN
+const phaxio = new Phaxio(
+  process.env.PHAXIO_API_KEY,
+  process.env.PHAXIO_API_SECRET
 );
 
-module.exports = client;
+module.exports = phaxio;
