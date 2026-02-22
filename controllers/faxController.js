@@ -1,4 +1,4 @@
-const client = require('../utils/twilioClient');
+const phaxio = require('../utils/twilioClient');
 
 exports.sendFax = async (req, res) => {
   try {
@@ -8,13 +8,12 @@ exports.sendFax = async (req, res) => {
       return res.status(400).json({ error: "Missing 'to' or 'fileUrl'" });
     }
 
-    const fax = await client.fax.faxes.create({
-      from: process.env.TWILIO_FAX_NUMBER,
+    const fax = await phaxio.faxes.create({
       to,
-      mediaUrl: fileUrl
+      file_url: fileUrl
     });
 
-    res.json({ success: true, faxSid: fax.sid });
+    res.json({ success: true, faxId: fax.id });
   } catch (error) {
     console.error(error);
     res.status(500).json({ error: "Fax failed", details: error.message });
