@@ -1,5 +1,4 @@
 const axios = require('axios');
-const { getAccessToken, SINCH_PROJECT_ID, SINCH_FAX_NUMBER } = require('../utils/twilioClient');
 
 exports.sendFax = async (req, res) => {
   try {
@@ -9,16 +8,11 @@ exports.sendFax = async (req, res) => {
       return res.status(400).json({ error: "Missing 'to' or 'fileUrl'" });
     }
 
-    // Get OAuth2 access token
-    const accessToken = await getAccessToken();
+    const faxUrl = `https://fax.api.sinch.com/v3/projects/${process.env.SINCH_PROJECT_ID}/faxes`;
 
-    // Correct Sinch Fax API v3 endpoint
-    const faxUrl = `https://fax.api.sinch.com/v3/projects/${SINCH_PROJECT_ID}/faxes`;
-
-    // Build fax payload
     const payload = {
-      from: SINCH_FAX_NUMBER,   // your Sinch fax number
-      to: to,
+      from: process.env.SINCH_FAX_NUMBER,
+      to,
       media: [
         {
           url: fileUrl
@@ -26,15 +20,16 @@ exports.sendFax = async (req, res) => {
       ]
     };
 
-    // Send fax request
     const response = await axios.post(faxUrl, payload, {
       headers: {
-        Authorization: `Bearer ${accessToken}`,
-        'Content-Type': 'application/json'
+        'Content-Type': 'application/json',
+        'X-Timestamp': new Date().toISOString(),
+        'Authorization': `Basic ${Buffer.from(
+          `${process.env.SINCH_KEY_ID}:${process.env.SINCH_KEY_SECRET}`
+        ).toString('base64')}`
       }
     });
 
-    // Success response
     res.json({
       success: true,
       faxId: response.data.id || "unknown",
