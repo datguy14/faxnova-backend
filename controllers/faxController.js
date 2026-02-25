@@ -13,11 +13,7 @@ exports.sendFax = async (req, res) => {
     const payload = {
       from: process.env.SINCH_FAX_NUMBER,
       to,
-      media: [
-        {
-          url: fileUrl
-        }
-      ]
+      contentUrl: fileUrl
     };
 
     const response = await axios.post(faxUrl, payload, {
