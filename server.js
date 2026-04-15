@@ -6,7 +6,9 @@ const app = express();
 // Load fax routes (matches routes/fax.js)
 const faxRoutes = require('./routes/fax');
 
-app.use(express.json());
+app.use(express.json({ limit: '10mb' }));
+app.use(cors());
+app.use(morgan('dev'));
 
 // Route prefix for all fax endpoints
 app.use('/fax', faxRoutes);
