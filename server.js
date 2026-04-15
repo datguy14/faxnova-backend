@@ -15,6 +15,9 @@ app.use('/fax', faxRoutes);
 
 // Start server
 const PORT = process.env.PORT || 5000;
+app.get('/health', (req, res) => {
+  res.json({ status: 'ok' });
+});
 app.listen(PORT, () => {
   console.log(`FaxNova Backend running on port ${PORT}`);
 });
