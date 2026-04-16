@@ -1,9 +1,8 @@
 module.exports = (req, res, next) => {
-  const { to, from, fileUrl } = req.body;
+  const { to, fileUrl } = req.body;
 
   const missing = [];
   if (!to) missing.push('to');
-  if (!from) missing.push('from');
   if (!fileUrl) missing.push('fileUrl');
 
   if (missing.length > 0) {
