@@ -24,7 +24,7 @@ app.use(requestLogger);
 
 // Routes
 app.use('/fax', faxRoutes);
-app.use('/fax', faxRetryRoutes);
+app.use('/fax/retry', faxRetryRoutes);
 app.use('/fax/status', faxStatusRoutes);
 
 // Health check
