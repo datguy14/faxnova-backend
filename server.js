@@ -1,3 +1,5 @@
+const requestLogger = require('./src/middleware/requestLogger');
+app.use(requestLogger);
 require('dotenv').config();
 const express = require('express');
 const cors = require('cors');
