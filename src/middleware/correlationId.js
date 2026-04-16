@@ -1,13 +1,7 @@
-const { randomUUID } = require('crypto');
+const { v4: uuidv4 } = require('uuid');
 
 module.exports = (req, res, next) => {
-  const headerId =
-    req.headers['x-correlation-id'] || req.headers['X-Correlation-Id'];
-
-  const correlationId = headerId || randomUUID();
-
-  req.correlationId = correlationId;
-  res.setHeader('X-Correlation-Id', correlationId);
-
+  req.correlationId = req.headers['x-correlation-id'] || uuidv4();
+  res.setHeader('X-Correlation-ID', req.correlationId);
   next();
 };
