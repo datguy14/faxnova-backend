@@ -1,3 +1,5 @@
+const faxRetryRoutes = require('./src/routes/faxRetryRoutes');
+app.use('/fax', faxRetryRoutes);
 const requestLogger = require('./src/middleware/requestLogger');
 app.use(requestLogger);
 require('dotenv').config();
