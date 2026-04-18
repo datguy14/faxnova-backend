@@ -4,14 +4,12 @@ const cors = require('cors');
 const morgan = require('morgan');
 
 // Middleware
-const requestLogger = require('./src/middleware/requestLogger');
-const correlationId = require('./src/middleware/correlationId');
-const errorHandler = require('./src/middleware/errorHandler');
+const requestLogger = require('./middleware/requestLogger');
+const correlationId = require('./middleware/correlationId');
+const errorHandler = require('./middleware/errorHandler');
 
 // Routes
-const faxRoutes = require('./src/routes/faxRoutes');
-const faxStatusRoutes = require('./src/routes/faxStatusRoutes');
-const faxRetryRoutes = require('./src/routes/faxRetryRoutes');
+const faxRoutes = require('./routes/faxRoutes');
 
 const app = express();
 
@@ -24,8 +22,6 @@ app.use(requestLogger);
 
 // Routes
 app.use('/fax', faxRoutes);
-app.use('/fax/retry', faxRetryRoutes);
-app.use('/fax/status', faxStatusRoutes);
 
 // Health check
 app.get('/health', (req, res) => {
