@@ -1,8 +1,8 @@
 const axios = require('axios');
 
-// =========================
+// ============================
 // SEND FAX
-// =========================
+// ============================
 exports.sendFax = async (req, res) => {
   try {
     const { to, fileUrl } = req.body;
@@ -45,9 +45,9 @@ exports.sendFax = async (req, res) => {
   }
 };
 
-// =========================
+// ============================
 // GET FAX STATUS
-// =========================
+// ============================
 exports.getFaxStatus = async (req, res) => {
   try {
     const { faxId } = req.params;
