@@ -9,14 +9,14 @@ exports.checkFaxStatus = async (req, res, next) => {
     res.json({
       faxId: status.id,
       status: status.status,
-      createdAt: status.createdAt,
-      updatedAt: status.updatedAt,
+      createdAt: status.createTime || null,
+      updatedAt: status.completedTime || null,
       correlationId: req.correlationId
     });
 
   } catch (error) {
     next({
-      status: 500,
+      status: error.response?.status || 500,
       message: 'Failed to retrieve fax status',
       details: error.response?.data || error.message
     });
