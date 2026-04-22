@@ -1,0 +1,93 @@
+openapi: 3.1.0
+info:
+  title: FaxNova API
+  version: 1.0.0
+  description: API contract for FaxNova fax delivery service.
+
+paths:
+  /fax/send:
+    post:
+      summary: Send a fax
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SendFaxRequest'
+      responses:
+        '200':
+          description: Fax queued
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/FaxResponse'
+
+  /fax/status/{id}:
+    get:
+      summary: Get fax status
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Fax status
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/FaxStatus'
+
+  /fax/retry/{id}:
+    post:
+      summary: Retry a failed fax
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Fax retried
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/FaxResponse'
+
+  /fax/webhook:
+    post:
+      summary: Receive fax events from Sinch
+      responses:
+        '200':
+          description: Event received
+
+components:
+  schemas:
+    SendFaxRequest:
+      type: object
+      properties:
+        to:
+          type: string
+        fileUrl:
+          type: string
+      required: [to, fileUrl]
+
+    FaxResponse:
+      type: object
+      properties:
+        id:
+          type: string
+        status:
+          type: string
+
+    FaxStatus:
+      type: object
+      properties:
+        id:
+          type: string
+        status:
+          type: string
+        attempts:
+          type: number
