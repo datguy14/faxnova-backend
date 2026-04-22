@@ -5,7 +5,7 @@ const LOG_FILE = path.join(__dirname, '..', 'logs', 'fax-events.log');
 
 async function getFaxEventHistory(req, res, next) {
   try {
-    const { faxId } = req.params;
+    const { id: faxId } = req.params;
 
     if (!faxId) {
       return res.status(400).json({
@@ -26,8 +26,8 @@ async function getFaxEventHistory(req, res, next) {
       .readFileSync(LOG_FILE, 'utf8')
       .trim()
       .split('\n')
-      .map((line) => JSON.parse(line))
-      .filter((entry) => entry.faxId === faxId);
+      .map(line => JSON.parse(line))
+      .filter(entry => entry.faxId === faxId);
 
     return res.status(200).json({
       success: true,
