@@ -1,126 +1,141 @@
-# FaxNova Backend
+FaxNova — Production‑Ready Fax Delivery API (Acquisition Opportunity)
 
-A lightweight, production‑ready fax delivery API built with **Node.js**, **Express**, and the **Sinch Fax API (v3)**.
+FaxNova is a fully built, deployment‑ready fax delivery backend designed for founders, agencies, and SaaS operators who need reliable fax transmission without managing telecom infrastructure.
 
-FaxNova Backend provides a clean, minimal REST endpoint for sending faxes through Sinch. The architecture is intentionally simple — easy to deploy, easy to maintain, and easy for a new owner to understand at a glance.
-
----
-
-## Features
-
-- Send faxes using the **Sinch Fax API v3**
-- Clean separation of routes, controllers, and utilities
-- Minimal dependencies for fast startup and low overhead
-- Environment‑variable–driven configuration
-- Fully compatible with Render, Railway, or any Node hosting platform
-- MIT‑licensed and acquisition‑friendly
-- Twilio code fully removed for clarity and maintainability
+This asset is engineered for clarity, stability, and immediate transferability — ideal for acquisition, integration, or white‑label use.
 
 ---
 
-## Tech Stack
+💡 Why FaxNova Exists
 
-| Layer      | Technology        |
-|-----------|-------------------|
-| Runtime   | Node.js           |
-| Framework | Express           |
-| HTTP      | Axios             |
-| Fax API   | Sinch Fax API v3  |
-| Config    | dotenv            |
-| Hosting   | Render            |
+Fax is still required in:
+- Healthcare (HIPAA workflows)
+- Legal & compliance
+- Real estate
+- Government filings
+- Financial services
 
----
+Yet most fax APIs are:
+- Expensive  
+- Over‑engineered  
+- Hard to self‑host  
+- Poorly documented  
 
-## Project Structure
-
-```text
-faxnova-backend/
-├── controllers/
-│   └── faxController.js     # Handles fax-sending logic via Sinch
-├── routes/
-│   └── faxRoutes.js         # API routes
-├── utils/
-│   └── (utility modules)    # Helper functions
-├── server.js                # Express server entry point
-├── package.json
-└── README.md
----
-
-## Environment Variables
-
-Create a `.env` file with:
-
-```
-SINCH_KEY_ID=your_key_id
-SINCH_KEY_SECRET=your_key_secret
-SINCH_PROJECT_ID=your_project_id
-```
-
-These values come from your Sinch dashboard.
+FaxNova solves this with a clean, modern, minimal API that “just works.”
 
 ---
 
-## API Endpoint
+🚀 What You’re Getting
 
-### POST /send-fax
+A complete, production‑grade backend
+- Send faxes via /fax/send
+- Real‑time status via /fax/status/{id}
+- Retry flow via /fax/retry/{id}
+- Webhook ingestion from Sinch
+- Full event history via /fax/history/{id}
 
-Send a fax using Sinch.
+Enterprise‑style infrastructure
+- Correlation‑ID tracing
+- Centralized error normalization
+- JSON‑line audit logs
+- Rate limiting + Helmet security
+- CI/CD via GitHub Actions
+- Render‑ready deployment
 
-**Request body:**
-
-```json
-{
-  "to": "+15551234567",
-  "contentUrl": "https://example.com/document.pdf"
-}
-```
-
-**Example response:**
-
-```json
-{
-  "status": "queued",
-  "faxId": "abc123"
-}
-```
+Documentation that reduces onboarding to minutes
+- openapi.yaml — full API contract
+- FAX_LIFECYCLE.md — end‑to‑end flow
+- DEPLOYMENT_CHECKLIST.md — deploy in 10 minutes
+- Clean, modern README
 
 ---
 
-## Local Development
+🧱 Tech Stack
 
-Install dependencies:
+- Node.js + Express  
+- Sinch Fax API  
+- Render (deployment)  
+- GitHub Actions (CI/CD)  
+- OpenAPI 3.1  
 
-```bash
+---
+
+⚙️ Local Setup
+
+`bash
+git clone https://github.com/datguy14/faxnova-backend.git
+cd faxnova-backend
 npm install
-```
-
-Start the server:
-
-```bash
+cp .env.example .env
 npm start
-```
+`
 
-Server runs at:
+Environment variables:
 
-```
-http://localhost:3000
-```
-
----
-
-## Deployment
-
-FaxNova Backend is optimized for:
-
-- Render  
-- Railway  
-- Heroku  
-- Any Node.js hosting platform  
-
-Set your environment variables and deploy.
+`env
+SINCHAPIKEY=
+SINCHAPISECRET=
+SINCHFAXREGION=
+SINCHFAXNUMBER=
+PORT=5000
+`
 
 ---
 
-## License
+📘 API Endpoints
 
-MIT License — free for commercial use, modification, and resale.
+Send Fax
+POST /fax/send
+
+Get Status
+GET /fax/status/{id}
+
+Retry Fax
+POST /fax/retry/{id}
+
+Webhook Receiver
+POST /fax/webhook
+
+Event History
+GET /fax/history/{id}
+
+Full contract: openapi.yaml
+
+---
+
+📦 Deployment
+
+FaxNova is already deployed on Render and can be redeployed instantly.
+
+CI/CD pipeline:
+- Push to main → CI → Deploy webhook → Live
+
+See DEPLOYMENT_CHECKLIST.md for full details.
+
+---
+
+🧠 Who This Is Perfect For
+
+- SaaS founders adding fax capabilities  
+- Agencies building compliance workflows  
+- Micro‑PE buyers seeking a clean, low‑maintenance asset  
+- Developers wanting a turnkey fax API  
+- Platforms needing fax without telecom complexity  
+
+---
+
+💰 Monetization Options
+
+- Usage‑based billing (Stripe metered billing)  
+- Per‑fax pricing  
+- Monthly API access plans  
+- White‑label licensing  
+- Vertical‑specific integrations (healthcare, legal, real estate)  
+
+---
+
+📜 License
+
+MIT — full commercial use allowed.
+`
+`
