@@ -43,12 +43,38 @@ Enterprise‑style infrastructure
 - Render‑ready deployment
 
 Documentation that reduces onboarding to minutes
-- openapi.yaml — full API contract
-- FAX_LIFECYCLE.md — end‑to‑end flow
-- DEPLOYMENT_CHECKLIST.md — deploy in 10 minutes
-- Clean, modern README
+- openapi.yaml — full API contract  
+- FAX_LIFECYCLE.md — end‑to‑end flow  
+- DEPLOYMENT_CHECKLIST.md — deploy in 10 minutes  
+- Clean, modern README  
 
 ---
+
+🧠 Who This Is Perfect For
+
+- SaaS founders adding fax capabilities  
+- Agencies building compliance workflows  
+- Micro‑PE buyers seeking a clean, low‑maintenance asset  
+- Developers wanting a turnkey fax API  
+- Platforms needing fax without telecom complexity  
+
+---
+
+💰 Monetization Options
+
+- Usage‑based billing (Stripe metered billing)  
+- Per‑fax pricing  
+- Monthly API access plans  
+- White‑label licensing  
+- Vertical‑specific integrations (healthcare, legal, real estate)  
+
+---
+
+———
+
+🧩 Developer Documentation
+
+———
 
 🧱 Tech Stack
 
@@ -57,6 +83,7 @@ Documentation that reduces onboarding to minutes
 - Render (deployment)  
 - GitHub Actions (CI/CD)  
 - OpenAPI 3.1  
+- JSON‑line audit logs  
 
 ---
 
@@ -87,6 +114,14 @@ PORT=5000
 Send Fax
 POST /fax/send
 
+Body:
+`json
+{
+  "to": "+15551234567",
+  "fileUrl": "https://example.com/document.pdf"
+}
+`
+
 Get Status
 GET /fax/status/{id}
 
@@ -103,9 +138,28 @@ Full contract: openapi.yaml
 
 ---
 
+🛡️ Security & Hardening
+
+- Helmet security headers  
+- Rate limiting on /fax/send  
+- Correlation‑ID middleware  
+- Centralized error normalization  
+- JSON size limits  
+- CORS enabled  
+
+---
+
+🧪 Tests (Optional)
+
+`bash
+npm test
+`
+
+---
+
 📦 Deployment
 
-FaxNova is already deployed on Render and can be redeployed instantly.
+FaxNova is deployment‑ready on Render, Railway, or any Node‑compatible platform.
 
 CI/CD pipeline:
 - Push to main → CI → Deploy webhook → Live
@@ -114,28 +168,7 @@ See DEPLOYMENT_CHECKLIST.md for full details.
 
 ---
 
-🧠 Who This Is Perfect For
-
-- SaaS founders adding fax capabilities  
-- Agencies building compliance workflows  
-- Micro‑PE buyers seeking a clean, low‑maintenance asset  
-- Developers wanting a turnkey fax API  
-- Platforms needing fax without telecom complexity  
-
----
-
-💰 Monetization Options
-
-- Usage‑based billing (Stripe metered billing)  
-- Per‑fax pricing  
-- Monthly API access plans  
-- White‑label licensing  
-- Vertical‑specific integrations (healthcare, legal, real estate)  
-
----
-
 📜 License
 
 MIT — full commercial use allowed.
-`
 `
