@@ -1,4 +1,4 @@
-FaxNova — Production‑Ready Fax Delivery API (Acquisition Opportunity)
+# FaxNova — Production‑Ready Fax Delivery API (Acquisition Opportunity)
 
 FaxNova is a fully built, deployment‑ready fax delivery backend designed for founders, agencies, and SaaS operators who need reliable fax transmission without managing telecom infrastructure.
 
@@ -6,7 +6,7 @@ This asset is engineered for clarity, stability, and immediate transferability �
 
 ---
 
-💡 Why FaxNova Exists
+## 💡 Why FaxNova Exists
 
 Fax is still required in:
 - Healthcare (HIPAA workflows)
@@ -21,36 +21,37 @@ Yet most fax APIs are:
 - Hard to self‑host  
 - Poorly documented  
 
-FaxNova solves this with a clean, modern, minimal API that “just works.”
+**FaxNova solves this with a clean, modern, minimal API that “just works.”**
 
 ---
 
-🚀 What You’re Getting
+## 🚀 What You’re Getting
 
-A complete, production‑grade backend
-- Send faxes via /fax/send
-- Real‑time status via /fax/status/{id}
-- Retry flow via /fax/retry/{id}
+### **A complete, production‑grade backend**
+- Send faxes via `/fax/send`
+- Real‑time status via `/fax/status/{id}`
+- Retry flow via `/fax/retry/{id}`
 - Webhook ingestion from Sinch
-- Full event history via /fax/history/{id}
+- Full event history via `/fax/history/{id}`
 
-Enterprise‑style infrastructure
-- Correlation‑ID tracing
-- Centralized error normalization
-- JSON‑line audit logs
-- Rate limiting + Helmet security
-- CI/CD via GitHub Actions
-- Render‑ready deployment
+### **Enterprise‑style infrastructure**
+- Correlation‑ID tracing  
+- Centralized error normalization  
+- JSON‑line audit logs  
+- Rate limiting + Helmet security  
+- CORS + JSON size limits  
+- Clean Express architecture  
 
-Documentation that reduces onboarding to minutes
-- openapi.yaml — full API contract  
-- FAX_LIFECYCLE.md — end‑to‑end flow  
-- DEPLOYMENT_CHECKLIST.md — deploy in 10 minutes  
-- Clean, modern README  
+### **Deployment‑ready**
+- Render‑ready deployment  
+- GitHub Actions CI/CD  
+- Deployment checklist included  
+- Environment variables documented  
+- OpenAPI 3.1 contract included  
 
 ---
 
-🧠 Who This Is Perfect For
+## 🧠 Who This Is Perfect For
 
 - SaaS founders adding fax capabilities  
 - Agencies building compliance workflows  
@@ -60,7 +61,7 @@ Documentation that reduces onboarding to minutes
 
 ---
 
-💰 Monetization Options
+## 💰 Monetization Opportunities
 
 - Usage‑based billing (Stripe metered billing)  
 - Per‑fax pricing  
@@ -70,13 +71,11 @@ Documentation that reduces onboarding to minutes
 
 ---
 
-———
+# ———  
+# 🧩 Developer Documentation  
+# ———
 
-🧩 Developer Documentation
-
-———
-
-🧱 Tech Stack
+## 🧱 Tech Stack
 
 - Node.js + Express  
 - Sinch Fax API  
@@ -87,88 +86,11 @@ Documentation that reduces onboarding to minutes
 
 ---
 
-⚙️ Local Setup
+## ⚙️ Local Setup
 
-`bash
+```bash
 git clone https://github.com/datguy14/faxnova-backend.git
 cd faxnova-backend
 npm install
 cp .env.example .env
 npm start
-`
-
-Environment variables:
-
-`env
-SINCHAPIKEY=
-SINCHAPISECRET=
-SINCHFAXREGION=
-SINCHFAXNUMBER=
-PORT=5000
-`
-
----
-
-📘 API Endpoints
-
-Send Fax
-POST /fax/send
-
-Body:
-`json
-{
-  "to": "+15551234567",
-  "fileUrl": "https://example.com/document.pdf"
-}
-`
-
-Get Status
-GET /fax/status/{id}
-
-Retry Fax
-POST /fax/retry/{id}
-
-Webhook Receiver
-POST /fax/webhook
-
-Event History
-GET /fax/history/{id}
-
-Full contract: openapi.yaml
-
----
-
-🛡️ Security & Hardening
-
-- Helmet security headers  
-- Rate limiting on /fax/send  
-- Correlation‑ID middleware  
-- Centralized error normalization  
-- JSON size limits  
-- CORS enabled  
-
----
-
-🧪 Tests (Optional)
-
-`bash
-npm test
-`
-
----
-
-📦 Deployment
-
-FaxNova is deployment‑ready on Render, Railway, or any Node‑compatible platform.
-
-CI/CD pipeline:
-- Push to main → CI → Deploy webhook → Live
-
-See DEPLOYMENT_CHECKLIST.md for full details.
-
----
-
-📜 License
-
-MIT — full commercial use allowed.
-`
