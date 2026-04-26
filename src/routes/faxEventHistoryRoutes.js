@@ -1,9 +1,9 @@
 const express = require('express');
 const router = express.Router();
 
-const faxEventHistoryController = require('../controllers/faxEventHistoryController');
+const { getFaxEventHistory } = require('../controllers/faxEventHistoryController');
 
 // GET /fax/history/:id
-router.get('/history/:id', faxEventHistoryController.getEventHistory);
+router.get('/history/:id', getFaxEventHistory);
 
 module.exports = router;
