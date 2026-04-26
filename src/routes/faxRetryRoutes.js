@@ -1,10 +1,10 @@
 const express = require('express');
 const router = express.Router();
+const auth = require('../middleware/auth');
 const { retryFaxController } = require('../controllers/faxRetryController');
 
 const RESERVED_IDS = ['send', 'status', 'history', 'webhook', 'health'];
 
-// Guard: reject reserved words as faxIds to prevent route shadowing
 function rejectReservedFaxId(req, res, next) {
   const { faxId } = req.params;
   if (RESERVED_IDS.includes(faxId.toLowerCase())) {
@@ -16,7 +16,7 @@ function rejectReservedFaxId(req, res, next) {
   next();
 }
 
-// POST /fax/:faxId/retry
-router.post('/:faxId/retry', rejectReservedFaxId, retryFaxController);
+// POST /fax/:faxId/retry — protected
+router.post('/:faxId/retry', auth, rejectReservedFaxId, retryFaxController);
 
 module.exports = router;
