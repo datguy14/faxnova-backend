@@ -3,7 +3,23 @@ const { logFaxEvent } = require('../utils/auditLogger');
 
 function verifyWebhookSecret(req) {
   const expected = process.env.FAX_WEBHOOK_SECRET;
-  if (!expected) return true; // dev mode fallback
+
+  // In production, always require the secret to be set
+  if (!expected) {
+    if (process.env.NODE_ENV === 'production') {
+      console.error(JSON.stringify({
+        level: 'error',
+        message: 'FAX_WEBHOOK_SECRET is not set in production — rejecting all webhook requests',
+      }));
+      return false;
+    }
+    // In development, allow through but warn loudly
+    console.warn(JSON.stringify({
+      level: 'warn',
+      message: 'FAX_WEBHOOK_SECRET is not set — webhook auth is DISABLED (dev mode only)',
+    }));
+    return true;
+  }
 
   const received = req.headers['x-faxnova-webhook-secret'];
   return received && received === expected;
@@ -14,7 +30,7 @@ async function handleFaxWebhook(req, res, next) {
     if (!verifyWebhookSecret(req)) {
       return res.status(401).json({
         success: false,
-        error: 'Invalid webhook secret',
+        error: 'Invalid or missing webhook secret',
       });
     }
 
