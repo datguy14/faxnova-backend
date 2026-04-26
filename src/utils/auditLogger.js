@@ -1,27 +1,17 @@
 // utils/auditLogger.js
-const fs = require('fs');
-const path = require('path');
-
-const LOG_DIR = path.join(__dirname, '..', 'logs');
-const LOG_FILE = path.join(LOG_DIR, 'fax-events.log');
-
-if (!fs.existsSync(LOG_DIR)) {
-  fs.mkdirSync(LOG_DIR);
-}
+// NOTE: File-based logging is not used — Render's filesystem is ephemeral.
+// Events are emitted as structured JSON to stdout for ingestion by log aggregators
+// (e.g. Render Logs, Datadog, Logtail). Plug in a DB/external service here as needed.
 
 function logFaxEvent(event) {
   const entry = {
     ...event,
     timestamp: new Date().toISOString(),
+    level: 'info',
+    type: 'fax_event',
   };
 
-  const line = JSON.stringify(entry) + '\n';
-
-  fs.appendFile(LOG_FILE, line, (err) => {
-    if (err) {
-      console.error('Failed to write fax event log:', err);
-    }
-  });
+  console.log(JSON.stringify(entry));
 }
 
 module.exports = {
