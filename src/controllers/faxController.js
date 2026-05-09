@@ -32,8 +32,11 @@ exports.sendFax = async (req, res, next) => {
   } catch (error) {
     next({
       status: error.response?.status || 500,
-      message: 'Fax send failed',
-      details: error.response?.data || error.message
+      message: error.response?.data?.message || 'Fax send failed',
+      details: error.response?.data || error.message,
+      payload: req.body,
+      correlationId: req.correlationId,
+      timestamp: new Date().toISOString()
     });
   }
 };
