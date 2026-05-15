@@ -1,3 +1,4 @@
+// src/controllers/faxRetryController.js
 const { retryFax } = require('../services/faxRetryService');
 
 exports.retryFaxController = async (req, res, next) => {
@@ -16,16 +17,17 @@ exports.retryFaxController = async (req, res, next) => {
     const result = await retryFax(faxId, correlationId);
 
     return res.status(200).json({
-      message: 'Fax retry initiated successfully',
-      data: result,
+      success: true,
+      faxId: result.id,
+      status: result.status,
       correlationId
     });
 
   } catch (error) {
     next({
       status: error.status || 500,
-      message: 'Failed to retry fax',
-      details: error.details || error.message,
+      message: error.message,
+      details: error.details || null,
       correlationId: error.correlationId || req.correlationId
     });
   }
