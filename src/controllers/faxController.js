@@ -3,6 +3,14 @@ const { sendFax } = require('../services/sendFaxService');
 
 exports.sendFax = async (req, res, next) => {
   try {
+    if (!req.body.to || !req.body.fileUrl) {
+      return next({
+        status: 400,
+        message: "Missing required fields: 'to' and 'fileUrl'",
+        correlationId: req.correlationId
+      });
+    }
+
     const payload = {
       from: process.env.SINCH_FAX_NUMBER,
       to: Array.isArray(req.body.to) ? req.body.to : [req.body.to],
@@ -23,9 +31,8 @@ exports.sendFax = async (req, res, next) => {
   } catch (error) {
     next({
       status: error.status || 500,
-      message: error.message || 'Fax send failed',
+      message: error.message,
       details: error.details || null,
-      payload: req.body,
       correlationId: req.correlationId,
       timestamp: new Date().toISOString()
     });
