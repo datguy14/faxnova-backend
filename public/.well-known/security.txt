@@ -1,0 +1,8 @@
+Contact: mailto:security@faxnova.app
+Preferred-Languages: en
+Policy: https://faxnova.app/security
+Hiring: https://faxnova.app/careers
+Encryption: https://faxnova.app/.well-known/pgp-key.txt
+Acknowledgments: https://faxnova.app/security/hall-of-fame
+Canonical: https://faxnova.app/.well-known/security.txt
+Expires: 2027-05-01T00:00:00Z
