@@ -8,6 +8,7 @@ const cors = require('cors');
 const morgan = require('morgan');
 const helmet = require('helmet');
 const rateLimit = require('express-rate-limit');
+const path = require('path');
 
 // Middleware
 const requestLogger = require('./src/middleware/requestLogger');
@@ -23,31 +24,46 @@ const faxEventHistoryRoutes = require('./src/routes/faxEventHistoryRoutes');
 
 const app = express();
 
-// 🔐 Security middleware (ADD THESE AT THE TOP OF MIDDLEWARE)
+// -----------------------------------------------------
+// 🗂️ Serve static files (including .well-known directory)
+// -----------------------------------------------------
+app.use(express.static(path.join(__dirname, 'public')));
+
+// -----------------------------------------------------
+// 🛡️ Security middleware
+// -----------------------------------------------------
 app.use(helmet());
 
-// 🚦 Rate limiting (ADD THIS BEFORE JSON/CORS)
+// -----------------------------------------------------
+// 🚦 Rate limiting (before JSON/CORS)
+// -----------------------------------------------------
 const sendLimiter = rateLimit({
   windowMs: 60 * 1000,
   max: 30,
 });
 app.use('/fax/send', sendLimiter);
 
-// Global middleware
+// -----------------------------------------------------
+// 🌍 Global middleware
+// -----------------------------------------------------
 app.use(express.json({ limit: '10mb' }));
 app.use(cors());
 app.use(morgan(process.env.NODE_ENV === 'production' ? 'combined' : 'dev'));
 app.use(correlationId);
 app.use(requestLogger);
 
-// Routes
+// -----------------------------------------------------
+// 📡 Routes
+// -----------------------------------------------------
 app.use('/fax', faxRoutes);
 app.use('/fax', faxRetryRoutes);
 app.use('/fax', faxWebhookRoutes);
 app.use('/fax/status', faxStatusRoutes);
 app.use('/fax', faxEventHistoryRoutes);
 
-// Health check
+// -----------------------------------------------------
+// ❤️ Health check
+// -----------------------------------------------------
 app.get('/health', (req, res) => {
   res.json({
     status: 'ok',
@@ -56,10 +72,14 @@ app.get('/health', (req, res) => {
   });
 });
 
-// Error handler
+// -----------------------------------------------------
+// ❗ Error handler (must be last)
+// -----------------------------------------------------
 app.use(errorHandler);
 
-// Start server
+// -----------------------------------------------------
+// 🚀 Start server
+// -----------------------------------------------------
 const PORT = process.env.PORT || 5000;
 
 if (process.env.NODE_ENV !== 'test') {
