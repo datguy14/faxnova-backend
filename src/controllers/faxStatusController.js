@@ -1,3 +1,4 @@
+// src/controllers/faxStatusController.js
 const { getFaxStatus } = require('../services/faxStatusService');
 
 exports.checkFaxStatus = async (req, res, next) => {
@@ -7,6 +8,7 @@ exports.checkFaxStatus = async (req, res, next) => {
     const status = await getFaxStatus(faxId);
 
     res.json({
+      success: true,
       faxId: status.id,
       status: status.status,
       createdAt: status.createTime || null,
@@ -16,9 +18,10 @@ exports.checkFaxStatus = async (req, res, next) => {
 
   } catch (error) {
     next({
-      status: error.response?.status || 500,
-      message: 'Failed to retrieve fax status',
-      details: error.response?.data || error.message
+      status: error.status || 500,
+      message: error.message,
+      details: error.details || null,
+      correlationId: req.correlationId
     });
   }
 };
