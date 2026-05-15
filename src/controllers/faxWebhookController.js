@@ -1,81 +1,49 @@
-const { v4: uuidv4 } = require('uuid');
-const { logFaxEvent } = require('../utils/auditLogger');
-
-function verifyWebhookSecret(req) {
-  const expected = process.env.FAX_WEBHOOK_SECRET;
-
-  // In production, always require the secret to be set
-  if (!expected) {
-    if (process.env.NODE_ENV === 'production') {
-      console.error(JSON.stringify({
-        level: 'error',
-        message: 'FAX_WEBHOOK_SECRET is not set in production — rejecting all webhook requests',
-      }));
-      return false;
-    }
-    // In development, allow through but warn loudly
-    console.warn(JSON.stringify({
-      level: 'warn',
-      message: 'FAX_WEBHOOK_SECRET is not set — webhook auth is DISABLED (dev mode only)',
-    }));
-    return true;
-  }
-
-  const received = req.headers['x-faxnova-webhook-secret'];
-  return received && received === expected;
-}
-
-async function handleFaxWebhook(req, res, next) {
+// src/controllers/faxWebhookController.js
+exports.handleFaxWebhook = async (req, res, next) => {
   try {
-    if (!verifyWebhookSecret(req)) {
-      return res.status(401).json({
-        success: false,
-        error: 'Invalid or missing webhook secret',
+    const correlationId = req.correlationId;
+
+    const { id, status, direction, metadata } = req.body || {};
+
+    if (!id || !status) {
+      return next({
+        status: 400,
+        message: "Invalid webhook payload: 'id' and 'status' are required",
+        details: req.body,
+        correlationId
       });
     }
 
-    const correlationId =
-      req.headers['x-correlation-id'] ||
-      req.correlationId ||
-      uuidv4();
-
-    const {
-      faxId,
+    const event = {
+      faxId: id,
       status,
-      providerEvent,
-      errorCode,
-      errorMessage,
-      metadata,
-    } = req.body || {};
+      direction: direction || 'unknown',
+      metadata: metadata || {},
+      receivedAt: new Date().toISOString(),
+      correlationId
+    };
 
-    if (!faxId || !status) {
-      return res.status(400).json({
-        success: false,
-        error: 'faxId and status are required',
-        correlationId,
-      });
-    }
+    // OPTIONAL: Idempotency (Redis/Postgres recommended)
+    // if (await hasProcessedWebhook(id)) {
+    //   return res.status(200).json({ success: true, correlationId });
+    // }
 
-    logFaxEvent({
-      faxId,
-      status,
-      providerEvent: providerEvent || null,
-      errorCode: errorCode || null,
-      errorMessage: errorMessage || null,
-      metadata: metadata || null,
-      correlationId,
-      source: 'fax_webhook',
-    });
+    // OPTIONAL: Persist event (audit log)
+    // await appendFaxEvent(event);
 
     return res.status(200).json({
       success: true,
-      correlationId,
+      message: "Webhook received",
+      event,
+      correlationId
     });
-  } catch (err) {
-    next(err);
-  }
-}
 
-module.exports = {
-  handleFaxWebhook,
+  } catch (error) {
+    next({
+      status: error.status || 500,
+      message: error.message || "Webhook processing failed",
+      details: error.details || null,
+      correlationId: req.correlationId
+    });
+  }
 };
