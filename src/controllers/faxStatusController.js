@@ -1,8 +1,4 @@
-// src/controllers/faxStatusController.js
-const { checkFaxStatus } = require('../services/faxStatusService');
-const audit = require('../services/auditService');
-
-exports.getFaxStatus = async (req, res, next) => {
+exports.checkFaxStatus = async (req, res, next) => {
   try {
     const { faxId } = req.params;
     const correlationId = req.correlationId;
@@ -15,10 +11,8 @@ exports.getFaxStatus = async (req, res, next) => {
       });
     }
 
-    // Query provider for status
     const result = await checkFaxStatus(faxId, correlationId);
 
-    // 🔥 AUDIT: Status checked
     await audit.logFaxEvent({
       tenantId: req.tenantId || 'system',
       userId: req.user?.id || null,
@@ -39,9 +33,7 @@ exports.getFaxStatus = async (req, res, next) => {
       providerStatus: result,
       correlationId
     });
-
   } catch (error) {
-    // 🔥 AUDIT: Status check failed
     await audit.logFaxEvent({
       faxId: req.params.faxId,
       eventType: 'STATUS_CHECK_FAILED',
