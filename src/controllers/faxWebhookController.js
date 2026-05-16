@@ -1,48 +1,42 @@
 // src/controllers/faxWebhookController.js
+const audit = require('../services/auditService');
+
 exports.handleFaxWebhook = async (req, res, next) => {
   try {
-    const correlationId = req.correlationId;
+    const data = req.body;
 
-    const { id, status, direction, metadata } = req.body || {};
-
-    if (!id || !status) {
+    if (!data || !data.faxId || !data.status) {
       return next({
         status: 400,
-        message: "Invalid webhook payload: 'id' and 'status' are required",
-        details: req.body,
-        correlationId
+        message: "Invalid webhook payload",
+        correlationId: req.correlationId
       });
     }
 
-    const event = {
-      faxId: id,
-      status,
-      direction: direction || 'unknown',
-      metadata: metadata || {},
-      receivedAt: new Date().toISOString(),
-      correlationId
-    };
+    const correlationId = req.correlationId;
 
-    // OPTIONAL: Idempotency (Redis/Postgres recommended)
-    // if (await hasProcessedWebhook(id)) {
-    //   return res.status(200).json({ success: true, correlationId });
-    // }
+    // 🔥 AUDIT: Webhook event received
+    await audit.logFaxEvent({
+      faxId: data.faxId,
+      eventType: `WEBHOOK_${data.status.toUpperCase()}`,
+      recipient: data.to,
+      status: data.status,
+      details: { providerEvent: data },
+      correlationId,
+      ip: req.ip,
+      userAgent: req.headers['user-agent'],
+      success: ['DELIVERED'].includes(data.status)
+    });
 
-    // OPTIONAL: Persist event (audit log)
-    // await appendFaxEvent(event);
-
-    return res.status(200).json({
-      success: true,
-      message: "Webhook received",
-      event,
+    res.status(200).json({
+      received: true,
       correlationId
     });
 
   } catch (error) {
     next({
-      status: error.status || 500,
-      message: error.message || "Webhook processing failed",
-      details: error.details || null,
+      status: 500,
+      message: error.message,
       correlationId: req.correlationId
     });
   }
