@@ -1,5 +1,6 @@
 // src/controllers/faxController.js
 const { sendFax } = require('../services/sendFaxService');
+const audit = require('../services/auditService');
 
 exports.sendFax = async (req, res, next) => {
   try {
@@ -19,7 +20,23 @@ exports.sendFax = async (req, res, next) => {
 
     const correlationId = req.correlationId;
 
+    // Send fax via provider
     const result = await sendFax(payload, correlationId);
+
+    // 🔥 AUDIT: Fax send initiated
+    await audit.logFaxEvent({
+      tenantId: req.tenantId || 'system',
+      userId: req.user?.id || null,
+      faxId: result.id,
+      eventType: 'SEND_INITIATED',
+      recipient: req.body.to,
+      pages: req.body.pages || 'unknown',
+      status: 'QUEUED',
+      correlationId,
+      ip: req.ip,
+      userAgent: req.headers['user-agent'],
+      success: true
+    });
 
     res.status(201).json({
       success: true,
