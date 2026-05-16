@@ -1,30 +1,27 @@
 // src/services/faxStatusService.js
-const { sinchRequest } = require('../sinchAuth');
+const axios = require('axios');
 
-function validateFaxId(faxId) {
-  return /^[a-zA-Z0-9-]{8,}$/.test(faxId);
-}
+exports.checkFaxStatus = async (faxId, correlationId) => {
+  try {
+    const response = await axios.get(
+      `https://fax.api.sinch.com/xms/v1/${process.env.SINCH_PROJECT_ID}/batches/${faxId}`,
+      {
+        headers: {
+          'Content-Type': 'application/json',
+          'X-API-Key': process.env.SINCH_KEY_SECRET,
+          'X-API-User': process.env.SINCH_KEY_ID,
+          'X-Correlation-ID': correlationId
+        }
+      }
+    );
 
-exports.getFaxStatus = async (faxId) => {
-  if (!validateFaxId(faxId)) {
-    const err = new Error("Invalid faxId format");
-    err.status = 400;
-    throw err;
+    return response.data;
+
+  } catch (error) {
+    throw {
+      status: error.response?.status || 500,
+      message: error.response?.data?.message || 'Failed to fetch fax status',
+      details: error.response?.data || null
+    };
   }
-
-  const url = `https://fax.api.sinch.com/v3/projects/${process.env.SINCH_PROJECT_ID}/faxes/${faxId}`;
-
-  const resp = await sinchRequest({
-    method: 'GET',
-    url
-  });
-
-  if (resp.status >= 400) {
-    const err = new Error("Sinch getFaxStatus failed");
-    err.status = resp.status;
-    err.details = resp.data;
-    throw err;
-  }
-
-  return resp.data;
 };
