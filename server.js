@@ -21,49 +21,53 @@ const faxStatusRoutes = require('./src/routes/faxStatusRoutes');
 const faxRetryRoutes = require('./src/routes/faxRetryRoutes');
 const faxWebhookRoutes = require('./src/routes/faxWebhookRoutes');
 const faxEventHistoryRoutes = require('./src/routes/faxEventHistoryRoutes');
+const auditViewerRoutes = require('./src/routes/auditViewerRoutes');
 
 const app = express();
 
-// -----------------------------------------------------
-// 🗂️ Serve static files (including .well-known directory)
-// -----------------------------------------------------
+// -----------------------------------------------
+// 📁 Serve static files (including .well-known)
+// -----------------------------------------------
 app.use(express.static(path.join(__dirname, 'public')));
 
-// -----------------------------------------------------
-// 🛡️ Security middleware
-// -----------------------------------------------------
+// -----------------------------------------------
+// 🛡 Security middleware
+// -----------------------------------------------
 app.use(helmet());
 
-// -----------------------------------------------------
+// -----------------------------------------------
 // 🚦 Rate limiting (before JSON/CORS)
-// -----------------------------------------------------
+// -----------------------------------------------
 const sendLimiter = rateLimit({
   windowMs: 60 * 1000,
   max: 30,
 });
 app.use('/fax/send', sendLimiter);
 
-// -----------------------------------------------------
-// 🌍 Global middleware
-// -----------------------------------------------------
+// -----------------------------------------------
+// 🌐 Global middleware
+// -----------------------------------------------
 app.use(express.json({ limit: '10mb' }));
 app.use(cors());
 app.use(morgan(process.env.NODE_ENV === 'production' ? 'combined' : 'dev'));
-app.use(correlationId);
+app.use(correlationId());
 app.use(requestLogger);
 
-// -----------------------------------------------------
+// -----------------------------------------------
 // 📡 Routes
-// -----------------------------------------------------
+// -----------------------------------------------
 app.use('/fax', faxRoutes);
 app.use('/fax', faxRetryRoutes);
 app.use('/fax', faxWebhookRoutes);
 app.use('/fax/status', faxStatusRoutes);
 app.use('/fax', faxEventHistoryRoutes);
 
-// -----------------------------------------------------
+// 🔐 Secure audit viewer
+app.use('/admin', auditViewerRoutes);
+
+// -----------------------------------------------
 // ❤️ Health check
-// -----------------------------------------------------
+// -----------------------------------------------
 app.get('/health', (req, res) => {
   res.json({
     status: 'ok',
@@ -72,14 +76,14 @@ app.get('/health', (req, res) => {
   });
 });
 
-// -----------------------------------------------------
+// -----------------------------------------------
 // ❗ Error handler (must be last)
-// -----------------------------------------------------
+// -----------------------------------------------
 app.use(errorHandler);
 
-// -----------------------------------------------------
+// -----------------------------------------------
 // 🚀 Start server
-// -----------------------------------------------------
+// -----------------------------------------------
 const PORT = process.env.PORT || 5000;
 
 if (process.env.NODE_ENV !== 'test') {
