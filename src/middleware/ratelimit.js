@@ -2,70 +2,164 @@
 
 const rateLimit = require('express-rate-limit');
 
-// Global free-tier limit
-const globalLimiter = rateLimit({
-  windowMs: 60 * 1000, // 1 minute
-  max: 40,             // 40 req/min
+/* -------------------------------------------------------
+   FREE TIER LIMITS
+------------------------------------------------------- */
+
+const freeGlobal = rateLimit({
+  windowMs: 60 * 1000,
+  max: 40,
   standardHeaders: true,
   legacyHeaders: false,
-  message: {
-    success: false,
-    error: "Rate limit exceeded for free tier. Please upgrade for higher limits."
-  }
+  message: { success: false, error: "Free-tier global limit reached." }
 });
 
-// Strict limiter for sending faxes
-const sendFaxLimiter = rateLimit({
-  windowMs: 60 * 1000, // 1 minute
-  max: 5,              // 5 sends/min
+const freeSendFax = rateLimit({
+  windowMs: 60 * 1000,
+  max: 5,
   standardHeaders: true,
   legacyHeaders: false,
-  message: {
-    success: false,
-    error: "Free-tier send limit reached. Upgrade for higher throughput."
-  }
+  message: { success: false, error: "Free-tier send limit reached." }
 });
 
-// Hourly limiter for sending faxes
-const sendFaxHourlyLimiter = rateLimit({
-  windowMs: 60 * 60 * 1000, // 1 hour
-  max: 20,                  // 20 sends/hour
+const freeSendFaxHourly = rateLimit({
+  windowMs: 60 * 60 * 1000,
+  max: 20,
   standardHeaders: true,
   legacyHeaders: false,
-  message: {
-    success: false,
-    error: "Hourly fax send limit reached for free tier."
-  }
+  message: { success: false, error: "Free-tier hourly fax limit reached." }
 });
 
-// Status checks (cheap)
-const statusLimiter = rateLimit({
+const freeStatus = rateLimit({
   windowMs: 60 * 1000,
   max: 100,
   standardHeaders: true,
   legacyHeaders: false,
-  message: {
-    success: false,
-    error: "Too many status checks. Slow down."
-  }
+  message: { success: false, error: "Too many status checks for free tier." }
 });
 
-// Auth endpoints
-const authLimiter = rateLimit({
+const freeAuth = rateLimit({
   windowMs: 60 * 1000,
   max: 10,
   standardHeaders: true,
   legacyHeaders: false,
-  message: {
-    success: false,
-    error: "Too many auth attempts. Try again later."
-  }
+  message: { success: false, error: "Too many auth attempts." }
 });
 
+
+/* -------------------------------------------------------
+   PRO TIER LIMITS
+------------------------------------------------------- */
+
+const proGlobal = rateLimit({
+  windowMs: 60 * 1000,
+  max: 200,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { success: false, error: "Pro-tier global limit reached." }
+});
+
+const proSendFax = rateLimit({
+  windowMs: 60 * 1000,
+  max: 30,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { success: false, error: "Pro-tier fax send limit reached." }
+});
+
+const proSendFaxHourly = rateLimit({
+  windowMs: 60 * 60 * 1000,
+  max: 200,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { success: false, error: "Pro-tier hourly fax limit reached." }
+});
+
+const proStatus = rateLimit({
+  windowMs: 60 * 1000,
+  max: 300,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { success: false, error: "Too many status checks for Pro tier." }
+});
+
+const proAuth = rateLimit({
+  windowMs: 60 * 1000,
+  max: 30,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { success: false, error: "Too many auth attempts." }
+});
+
+
+/* -------------------------------------------------------
+   BUSINESS / ENTERPRISE TIER LIMITS
+------------------------------------------------------- */
+
+const bizGlobal = rateLimit({
+  windowMs: 60 * 1000,
+  max: 1000,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { success: false, error: "Business-tier global limit reached." }
+});
+
+const bizSendFax = rateLimit({
+  windowMs: 60 * 1000,
+  max: 200,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { success: false, error: "Business-tier fax send limit reached." }
+});
+
+const bizSendFaxHourly = rateLimit({
+  windowMs: 60 * 60 * 1000,
+  max: 2000,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { success: false, error: "Business-tier hourly fax limit reached." }
+});
+
+const bizStatus = rateLimit({
+  windowMs: 60 * 1000,
+  max: 2000,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { success: false, error: "Too many status checks for Business tier." }
+});
+
+const bizAuth = rateLimit({
+  windowMs: 60 * 1000,
+  max: 100,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { success: false, error: "Too many auth attempts." }
+});
+
+
+/* -------------------------------------------------------
+   EXPORT ALL LIMITERS
+------------------------------------------------------- */
+
 module.exports = {
-  globalLimiter,
-  sendFaxLimiter,
-  sendFaxHourlyLimiter,
-  statusLimiter,
-  authLimiter
+  // Free tier
+  freeGlobal,
+  freeSendFax,
+  freeSendFaxHourly,
+  freeStatus,
+  freeAuth,
+
+  // Pro tier
+  proGlobal,
+  proSendFax,
+  proSendFaxHourly,
+  proStatus,
+  proAuth,
+
+  // Business / Enterprise tier
+  bizGlobal,
+  bizSendFax,
+  bizSendFaxHourly,
+  bizStatus,
+  bizAuth
 };
