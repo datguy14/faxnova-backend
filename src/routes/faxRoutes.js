@@ -1,10 +1,18 @@
-const express = require('express');
-const router = express.Router();
-const auth = require('../middleware/auth');
-const validateSendFax = require('../middleware/validateSendFax');
-const { sendFax } = require('../controllers/faxController');
+const {
+  sendFaxLimiter,
+  sendFaxHourlyLimiter,
+  statusLimiter
+} = require('../middleware/rateLimit');
 
-// POST /fax/send — protected
-router.post('/send', auth, validateSendFax, sendFax);
+router.post(
+  '/send',
+  sendFaxLimiter,
+  sendFaxHourlyLimiter,
+  faxController.sendFax
+);
 
-module.exports = router;
+router.get(
+  '/status/:id',
+  statusLimiter,
+  faxController.getFaxStatus
+);
