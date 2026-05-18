@@ -5,12 +5,12 @@ const express = require('express');
 const app = express();
 
 // -----------------------------
-// Middleware
+// Core Middleware
 // -----------------------------
 const correlationId = require('./src/middleware/correlationId');
 const requestLogger = require('./src/middleware/requestLogger');
-const errorHandler = require('./src/middleware/errorHandler');
 const getTierFromApiKey = require('./src/middleware/getTierFromApiKey');
+const errorHandler = require('./src/middleware/errorHandler');
 
 const {
   freeGlobal,
@@ -22,9 +22,10 @@ const {
 // Routes
 // -----------------------------
 const faxRoutes = require('./src/routes/faxRoutes');
+const auditRoutes = require('./src/routes/auditRoutes');
 
 // -----------------------------
-// Core Middleware Order
+// Middleware Order (Critical)
 // -----------------------------
 
 // 1. Correlation ID for tracing
@@ -33,7 +34,7 @@ app.use(correlationId);
 // 2. JSON body parsing
 app.use(express.json());
 
-// 3. Request logging
+// 3. Structured request logging
 app.use(requestLogger);
 
 // 4. API key → tier detection
@@ -60,6 +61,7 @@ app.get('/health', (req, res) => {
 // Main Routes
 // -----------------------------
 app.use('/fax', faxRoutes);
+app.use('/admin/audit', auditRoutes);
 
 // -----------------------------
 // Error Handler (always last)
@@ -72,5 +74,4 @@ app.use(errorHandler);
 const PORT = process.env.PORT || 3000;
 
 app.listen(PORT, () => {
-  console.log(`FaxNova backend running on port ${PORT}`);
-});
+  console.log(`FaxNova backend
