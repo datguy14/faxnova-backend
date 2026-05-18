@@ -1,63 +1,76 @@
+// server.js
+
 require('dotenv').config();
 const express = require('express');
-const cors = require('cors');
-const morgan = require('morgan');
-const rateLimit = require('./src/middleware/rateLimit');
-const validateEnv = require('./src/utils/validateEnv');
-
-const faxRoutes = require('./src/routes/faxRoutes');
-const faxRetryRoutes = require('./src/routes/faxRetryRoutes');
-const faxStatusRoutes = require('./src/routes/faxStatusRoutes');
-const faxWebhookRoutes = require('./src/routes/faxWebhookRoutes');
-const faxEventHistoryRoutes = require('./src/routes/faxEventHistoryRoutes');
-const auditViewerRoutes = require('./src/routes/auditViewerRoutes');
-
-validateEnv();
-
 const app = express();
 
-app.use(cors());
-app.use(express.json({ limit: '10mb' }));
-app.use(morgan('dev'));
-app.use(rateLimit);
+// -----------------------------
+// Middleware
+// -----------------------------
+const correlationId = require('./src/middleware/correlationId');
+const requestLogger = require('./src/middleware/requestLogger');
+const errorHandler = require('./src/middleware/errorHandler');
+const getTierFromApiKey = require('./src/middleware/getTierFromApiKey');
 
-// Health check
+const {
+  freeGlobal,
+  proGlobal,
+  bizGlobal
+} = require('./src/middleware/rateLimit');
+
+// -----------------------------
+// Routes
+// -----------------------------
+const faxRoutes = require('./src/routes/faxRoutes');
+
+// -----------------------------
+// Core Middleware Order
+// -----------------------------
+
+// 1. Correlation ID for tracing
+app.use(correlationId);
+
+// 2. JSON body parsing
+app.use(express.json());
+
+// 3. Request logging
+app.use(requestLogger);
+
+// 4. API key → tier detection
+app.use(getTierFromApiKey);
+
+// 5. Global rate limit based on tier
+app.use((req, res, next) => {
+  const tier = req.apiTier || 'free';
+
+  if (tier === 'pro') return proGlobal(req, res, next);
+  if (tier === 'business') return bizGlobal(req, res, next);
+
+  return freeGlobal(req, res, next);
+});
+
+// -----------------------------
+// Health Check
+// -----------------------------
 app.get('/health', (req, res) => {
-  res.json({
-    status: 'ok',
-    service: 'faxnova-backend',
-    env: process.env.NODE_ENV || 'development'
-  });
+  res.json({ success: true, status: 'OK' });
 });
 
-// Mount all fax-related routes
+// -----------------------------
+// Main Routes
+// -----------------------------
 app.use('/fax', faxRoutes);
-app.use('/fax', faxRetryRoutes);
-app.use('/fax', faxStatusRoutes);
-app.use('/fax', faxWebhookRoutes);        // ✅ Added webhook route
-app.use('/fax', faxEventHistoryRoutes);
 
-// Audit viewer
-app.use('/', auditViewerRoutes);
+// -----------------------------
+// Error Handler (always last)
+// -----------------------------
+app.use(errorHandler);
 
-// Global error handler
-app.use((err, req, res, next) => {
-  console.error('Global Error:', err);
+// -----------------------------
+// Start Server
+// -----------------------------
+const PORT = process.env.PORT || 3000;
 
-  res.status(err.status || 500).json({
-    success: false,
-    message: err.message || 'Internal Server Error',
-    details: err.details || null,
-    correlationId: req.correlationId || null
-  });
+app.listen(PORT, () => {
+  console.log(`FaxNova backend running on port ${PORT}`);
 });
-
-// Start server unless in test mode
-if (process.env.NODE_ENV !== 'test') {
-  const PORT = process.env.PORT || 10000;
-  app.listen(PORT, () => {
-    console.log(`FaxNova Backend running on port ${PORT}`);
-  });
-}
-
-module.exports = app;
