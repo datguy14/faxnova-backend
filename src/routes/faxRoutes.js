@@ -1,3 +1,5 @@
+// src/routes/faxRoutes.js
+
 const express = require('express');
 const router = express.Router();
 
@@ -5,9 +7,11 @@ const {
   freeSendFax,
   freeSendFaxHourly,
   freeStatus,
+
   proSendFax,
   proSendFaxHourly,
   proStatus,
+
   bizSendFax,
   bizSendFaxHourly,
   bizStatus
@@ -15,17 +19,25 @@ const {
 
 const faxController = require('../controllers/faxController');
 
-// Helper to pick the right limiter
+/**
+ * Selects the correct rate limiter based on API key tier.
+ * req.apiTier is set by getTierFromApiKey middleware.
+ */
 function tierLimiter(free, pro, biz) {
   return (req, res, next) => {
     const tier = req.apiTier || 'free';
+
     if (tier === 'pro') return pro(req, res, next);
     if (tier === 'business') return biz(req, res, next);
-    return free(req, res, next);
+
+    return free(req, res, next); // default to free tier
   };
 }
 
-// SEND FAX
+/* -------------------------------------------------------
+   SEND FAX
+------------------------------------------------------- */
+
 router.post(
   '/send',
   tierLimiter(freeSendFax, proSendFax, bizSendFax),
@@ -33,7 +45,10 @@ router.post(
   faxController.sendFax
 );
 
-// STATUS CHECK
+/* -------------------------------------------------------
+   GET FAX STATUS
+------------------------------------------------------- */
+
 router.get(
   '/status/:id',
   tierLimiter(freeStatus, proStatus, bizStatus),
