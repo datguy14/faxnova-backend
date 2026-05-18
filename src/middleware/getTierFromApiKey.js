@@ -1,39 +1,39 @@
 // src/middleware/getTierFromApiKey.js
 
 /**
- * Determines the API tier based on the provided API key.
+ * Maps API keys to service tiers.
  * 
- * Expected tiers:
- * - free
- * - pro
- * - business
- * 
- * You can later replace the hardcoded map with a database lookup.
+ * Replace this with a database lookup later.
  */
-
-const apiKeyTiers = {
-  // Free tier keys
+const API_KEY_MAP = {
+  // Free tier
   "FREE_123": "free",
 
-  // Pro tier keys
+  // Pro tier
   "PRO_123": "pro",
 
-  // Business tier keys
+  // Business / Enterprise tier
   "BIZ_123": "business"
 };
 
 module.exports = function getTierFromApiKey(req, res, next) {
   const apiKey = req.headers["x-api-key"];
 
+  // Missing API key
   if (!apiKey) {
     return res.status(401).json({
       success: false,
-      error: "Missing API key."
+      error: "Missing API key. Provide an 'x-api-key' header."
     });
   }
 
-  const tier = apiKeyTiers[apiKey];
+  // Normalize key (trim whitespace)
+  const normalizedKey = apiKey.trim();
 
+  // Lookup tier
+  const tier = API_KEY_MAP[normalizedKey];
+
+  // Invalid API key
   if (!tier) {
     return res.status(403).json({
       success: false,
