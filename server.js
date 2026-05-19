@@ -1,93 +1,104 @@
 // server.js
-
 require('dotenv').config();
+
 const express = require('express');
+const helmet = require('helmet');
+const cors = require('cors');
+const morgan = require('morgan');
+
+const logger = require('./src/utils/logger');
+
 const app = express();
 
-// -----------------------------
-// Database
-// -----------------------------
-const { connectToDatabase } = require('./src/db');
-connectToDatabase();
-
-// -----------------------------
+// =======================
 // Middleware
-// -----------------------------
-const correlationId = require('./src/middleware/correlationId');
-const requestLogger = require('./src/middleware/requestLogger');
-const getTierFromApiKey = require('./src/middleware/getTierFromApiKey');
-const tenantMiddleware = require('./src/middleware/tenant');
-const errorHandler = require('./src/middleware/errorHandler');
+// =======================
+app.use(helmet());                    // Security headers
+app.use(cors());                      // Enable CORS
+app.use(express.json({ limit: '25mb' }));   // Increased limit for document uploads
+app.use(express.urlencoded({ extended: true }));
 
-const {
-  freeGlobal,
-  proGlobal,
-  bizGlobal
-} = require('./src/middleware/rateLimit');
-
-// -----------------------------
-// Routes
-// -----------------------------
-const faxRoutes = require('./src/routes/faxRoutes');
-const faxRetryRoutes = require('./src/routes/faxRetryRoutes');
-const faxDeleteRoutes = require('./src/routes/faxDeleteRoutes');
-const faxResendRoutes = require('./src/routes/faxResendRoutes');
-const faxDownloadRoutes = require('./src/routes/faxDownloadRoutes');
-const webhookRoutes = require('./src/routes/webhookRoutes');
-const inboundFaxRoutes = require('./src/routes/inboundFaxRoutes');
-const auditRoutes = require('./src/routes/auditRoutes');
-const analyticsRoutes = require('./src/routes/analyticsRoutes');
-const adminAnalyticsRoutes = require('./src/routes/adminAnalyticsRoutes');
-
-// -----------------------------
-// Middleware Order (Critical)
-// -----------------------------
-
-// 1. Correlation ID for tracing
-app.use(correlationId);
-
-// 2. JSON body parsing
-app.use(express.json());
-
-// 3. Structured request logging
-if (process.env.ENABLE_REQUEST_LOGGER === "true") {
-  app.use(requestLogger);
+// Logging
+if (process.env.NODE_ENV !== 'test') {
+  app.use(morgan('combined'));
 }
 
-// 4. API key → tier detection
-app.use(getTierFromApiKey);
+// =======================
+// Routes
+// =======================
 
-// 5. Tenant assignment (after API key)
-app.use(tenantMiddleware);
+// Main Fax API Routes
+app.use('/fax', require('./src/routes/faxRoutes'));
 
-// 6. Global rate limit based on tier
-app.use((req, res, next) => {
-  const tier = req.apiTier || 'free';
+// Swagger UI Documentation
+app.use('/docs', require('./src/routes/docsRoutes'));
 
-  if (tier === 'pro') return proGlobal(req, res, next);
-  if (tier === 'business') return bizGlobal(req, res, next);
-
-  return freeGlobal(req, res, next);
-});
-
-// -----------------------------
 // Health Check
-// -----------------------------
 app.get('/health', (req, res) => {
-  res.json({ success: true, status: 'OK' });
+  res.json({
+    status: 'healthy',
+    version: '1.1.0',
+    multiProvider: true,
+    defaultProvider: process.env.DEFAULT_FAX_PROVIDER || 'sinch',
+    timestamp: new Date().toISOString()
+  });
 });
 
-// -----------------------------
-// Main Routes
-// -----------------------------
-app.use('/fax', faxRoutes);
-app.use('/fax/retry', faxRetryRoutes);
-app.use('/fax/delete', faxDeleteRoutes);
-app.use('/fax/resend', faxResendRoutes);
-app.use('/fax/download', faxDownloadRoutes);
-app.use('/admin/audit', auditRoutes);
-app.use('/analytics', analyticsRoutes);
-app.use('/admin/analytics', adminAnalyticsRoutes);
+// Root endpoint
+app.get('/', (req, res) => {
+  res.json({
+    message: "Welcome to FaxNova Backend",
+    version: "1.1.0",
+    documentation: "/docs",
+    api: "/fax",
+    status: "running"
+  });
+});
 
-// -----------------------------
-// Webhooks (NO API
+// =======================
+// Global Error Handler
+// =======================
+app.use((err, req, res, next) => {
+  logger.error('Unhandled error', {
+    error: err.message,
+    stack: err.stack,
+    path: req.path,
+    method: req.method
+  });
+
+  res.status(500).json({
+    success: false,
+    error: 'Internal server error',
+    correlationId: req.correlationId || 'unknown'
+  });
+});
+
+// =======================
+// 404 Handler
+// =======================
+app.use((req, res) => {
+  res.status(404).json({
+    success: false,
+    error: 'Endpoint not found',
+    path: req.path
+  });
+});
+
+// =======================
+// Start Server
+// =======================
+const PORT = process.env.PORT || 3000;
+
+app.listen(PORT, () => {
+  console.log(`🚀 FaxNova Backend v1.1.0 started successfully`);
+  console.log(`📍 Running on port: ${PORT}`);
+  console.log(`📚 Swagger UI: http://localhost:${PORT}/docs`);
+  console.log(`📡 Health Check: http://localhost:${PORT}/health`);
+  console.log(`🔌 Fax API: http://localhost:${PORT}/fax`);
+  
+  if (process.env.DEFAULT_FAX_PROVIDER) {
+    console.log(`📨 Default Fax Provider: ${process.env.DEFAULT_FAX_PROVIDER}`);
+  }
+});
+
+module.exports = app; // Export for testing
