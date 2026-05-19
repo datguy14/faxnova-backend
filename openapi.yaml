@@ -1,173 +1,66 @@
 openapi: 3.1.0
 info:
   title: FaxNova API
-  version: 1.0.0
-  description: >
-    REST API for FaxNova — a developer-first fax delivery platform powered by Sinch.
-    All protected endpoints require a Bearer API key in the Authorization header.
+  description: |
+    Production-ready Multi-Provider Fax API Backend
+    
+    Supports **Sinch** and **Telnyx** with automatic fallback, unified interface, 
+    and provider-aware status tracking. Perfect for healthcare, legal, finance, 
+    and regulated document delivery.
+  version: "1.1.0"
   contact:
     name: FaxNova Support
-    email: faxnova.platform@gmail.com
+    email: support@faxnova.com
+  license:
+    name: MIT
+    url: https://opensource.org/licenses/MIT
 
 servers:
-  - url: https://your-render-url.onrender.com
-    description: Production
-
-security:
-  - BearerAuth: []
+  - url: http://localhost:3000
+    description: Development Server
+  - url: https://api.faxnova.com
+    description: Production Server
 
 paths:
-
-  /health:
-    get:
-      summary: Health check
-      description: Returns server status. No authentication required.
-      security: []
-      tags: [System]
-      responses:
-        '200':
-          description: Server is healthy
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/HealthResponse'
-              example:
-                status: ok
-                service: faxnova-backend
-                env: production
-
   /fax/send:
     post:
-      summary: Send a fax
-      description: Submit a fax job to the Sinch Fax API. Requires a publicly accessible PDF or TIFF file URL.
-      tags: [Fax]
+      summary: Send a Fax
+      description: Send a fax using the configured provider (Sinch or Telnyx) with optional override.
+      tags:
+        - Fax
+      security:
+        - ApiKeyAuth: []
       requestBody:
         required: true
         content:
           application/json:
             schema:
-              $ref: '#/components/schemas/SendFaxRequest'
-            example:
-              to: "+15551234567"
-              fileUrl: "https://example.com/document.pdf"
+              type: object
+              required:
+                - to
+                - fileUrl
+              properties:
+                to:
+                  type: string
+                  example: "+15551234567"
+                  description: Destination phone number in E.164 format
+                fileUrl:
+                  type: string
+                  format: url
+                  example: "https://example.com/document.pdf"
+                  description: Publicly accessible URL of the PDF/document
+                from:
+                  type: string
+                  example: "+15557654321"
+                  description: Sender fax number (optional - uses provider default)
+                provider:
+                  type: string
+                  enum: [sinch, telnyx]
+                  example: "telnyx"
+                  description: Optional provider override. Defaults to DEFAULT_FAX_PROVIDER
       responses:
         '200':
-          description: Fax submitted successfully
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/SendFaxResponse'
-        '400':
-          description: Missing or invalid request fields
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ErrorResponse'
-        '401':
-          $ref: '#/components/responses/Unauthorized'
-        '403':
-          $ref: '#/components/responses/Forbidden'
-        '500':
-          $ref: '#/components/responses/InternalError'
-
-  /fax/status/{faxId}:
-    get:
-      summary: Get fax status
-      description: Poll the delivery status of a fax job by its ID.
-      tags: [Fax]
-      parameters:
-        - $ref: '#/components/parameters/FaxId'
-      responses:
-        '200':
-          description: Fax status retrieved
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/FaxStatusResponse'
-        '400':
-          $ref: '#/components/responses/BadRequest'
-        '401':
-          $ref: '#/components/responses/Unauthorized'
-        '403':
-          $ref: '#/components/responses/Forbidden'
-        '500':
-          $ref: '#/components/responses/InternalError'
-
-  /fax/{faxId}/retry:
-    post:
-      summary: Retry a failed fax
-      description: Re-submit a previously failed fax job using its original parameters.
-      tags: [Fax]
-      parameters:
-        - $ref: '#/components/parameters/FaxId'
-      responses:
-        '200':
-          description: Fax retry initiated
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/RetryFaxResponse'
-        '400':
-          $ref: '#/components/responses/BadRequest'
-        '401':
-          $ref: '#/components/responses/Unauthorized'
-        '403':
-          $ref: '#/components/responses/Forbidden'
-        '500':
-          $ref: '#/components/responses/InternalError'
-
-  /fax/history/{faxId}:
-    get:
-      summary: Get fax event history
-      description: Returns all logged status events for a given fax ID.
-      tags: [Fax]
-      parameters:
-        - $ref: '#/components/parameters/FaxId'
-      responses:
-        '200':
-          description: Event history returned
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/FaxEventHistoryResponse'
-        '400':
-          $ref: '#/components/responses/BadRequest'
-        '401':
-          $ref: '#/components/responses/Unauthorized'
-        '403':
-          $ref: '#/components/responses/Forbidden'
-        '500':
-          $ref: '#/components/responses/InternalError'
-
-  /fax/webhook:
-    post:
-      summary: Receive fax delivery events from Sinch
-      description: >
-        Webhook endpoint for Sinch to POST fax status updates.
-        Authenticate using the X-FaxNova-Webhook-Secret header.
-        No Bearer token required.
-      tags: [Webhooks]
-      security: []
-      parameters:
-        - in: header
-          name: X-FaxNova-Webhook-Secret
-          required: true
-          schema:
-            type: string
-          description: Shared webhook secret configured via FAX_WEBHOOK_SECRET env var
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              $ref: '#/components/schemas/WebhookPayload'
-            example:
-              faxId: "fax_abc123"
-              status: "delivered"
-              providerEvent: "FAX_DELIVERED"
-      responses:
-        '200':
-          description: Event accepted
+          description: Fax successfully queued
           content:
             application/json:
               schema:
@@ -175,199 +68,121 @@ paths:
                 properties:
                   success:
                     type: boolean
+                    example: true
+                  faxId:
+                    type: string
+                    format: uuid
+                  providerFaxId:
+                    type: string
+                  provider:
+                    type: string
+                    enum: [sinch, telnyx]
+                  status:
+                    type: string
+                    example: "queued"
                   correlationId:
                     type: string
         '400':
-          $ref: '#/components/responses/BadRequest'
-        '401':
-          description: Invalid or missing webhook secret
+          description: Bad Request
+        '429':
+          description: Rate limit exceeded
+        '500':
+          description: Internal server error
+
+  /fax/status/{id}:
+    get:
+      summary: Get Fax Status
+      description: Retrieve the current status of a fax (provider-aware)
+      tags:
+        - Fax
+      security:
+        - ApiKeyAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+          description: Internal FaxNova fax ID
+      responses:
+        '200':
+          description: Fax status retrieved successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                  faxId:
+                    type: string
+                  providerFaxId:
+                    type: string
+                  provider:
+                    type: string
+                  status:
+                    type: string
+                    enum: [queued, sending, delivered, failed]
+                  details:
+                    type: object
+        '404':
+          description: Fax not found
+
+  /fax/providers:
+    get:
+      summary: List Available Providers
+      description: Returns configured providers and routing settings
+      tags:
+        - Configuration
+      security:
+        - ApiKeyAuth: []
+      responses:
+        '200':
+          description: Provider configuration
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                  defaultProvider:
+                    type: string
+                  availableProviders:
+                    type: array
+                    items:
+                      type: string
+                  fallbackEnabled:
+                    type: boolean
+
+  /fax/webhook:
+    post:
+      summary: Webhook Receiver
+      description: Receives normalized webhooks from Sinch or Telnyx
+      tags:
+        - Webhooks
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+      responses:
+        '200':
+          description: Webhook received successfully
 
 components:
-
   securitySchemes:
-    BearerAuth:
-      type: http
-      scheme: bearer
-      description: >
-        API key authentication. Generate a key with `openssl rand -hex 32`
-        and set it as FAXNOVA_API_KEY in your environment.
-        Pass it as: Authorization: Bearer <your_api_key>
+    ApiKeyAuth:
+      type: apiKey
+      in: header
+      name: x-api-key
+      description: Your FaxNova API Key
 
-  parameters:
-    FaxId:
-      in: path
-      name: faxId
-      required: true
-      schema:
-        type: string
-      description: The unique fax job ID returned by POST /fax/send
-
-  responses:
-    BadRequest:
-      description: Invalid or missing parameters
-      content:
-        application/json:
-          schema:
-            $ref: '#/components/schemas/ErrorResponse'
-    Unauthorized:
-      description: Missing or malformed Authorization header
-      content:
-        application/json:
-          schema:
-            $ref: '#/components/schemas/ErrorResponse'
-          example:
-            error: Unauthorized
-            details: "Missing or malformed Authorization header. Expected: Bearer <api_key>"
-    Forbidden:
-      description: Invalid API key
-      content:
-        application/json:
-          schema:
-            $ref: '#/components/schemas/ErrorResponse'
-          example:
-            error: Forbidden
-            details: Invalid API key
-    InternalError:
-      description: Unexpected server error
-      content:
-        application/json:
-          schema:
-            $ref: '#/components/schemas/ErrorResponse'
-
-  schemas:
-
-    HealthResponse:
-      type: object
-      properties:
-        status:
-          type: string
-          example: ok
-        service:
-          type: string
-          example: faxnova-backend
-        env:
-          type: string
-          example: production
-
-    SendFaxRequest:
-      type: object
-      required: [to, fileUrl]
-      properties:
-        to:
-          type: string
-          description: Destination fax number in E.164 format
-          example: "+15551234567"
-        fileUrl:
-          type: string
-          description: Publicly accessible URL to a PDF or TIFF file
-          example: "https://example.com/document.pdf"
-
-    SendFaxResponse:
-      type: object
-      properties:
-        success:
-          type: boolean
-        faxId:
-          type: string
-        status:
-          type: string
-          example: submitted
-        correlationId:
-          type: string
-
-    FaxStatusResponse:
-      type: object
-      properties:
-        faxId:
-          type: string
-        status:
-          type: string
-          enum: [submitted, processing, delivered, failed]
-        createdAt:
-          type: string
-          format: date-time
-        updatedAt:
-          type: string
-          format: date-time
-        correlationId:
-          type: string
-
-    RetryFaxResponse:
-      type: object
-      properties:
-        message:
-          type: string
-          example: Fax retry initiated successfully
-        data:
-          type: object
-        correlationId:
-          type: string
-
-    FaxEventHistoryResponse:
-      type: object
-      properties:
-        success:
-          type: boolean
-        faxId:
-          type: string
-        events:
-          type: array
-          items:
-            $ref: '#/components/schemas/FaxEvent'
-
-    FaxEvent:
-      type: object
-      properties:
-        faxId:
-          type: string
-        status:
-          type: string
-        providerEvent:
-          type: string
-          nullable: true
-        errorCode:
-          type: string
-          nullable: true
-        errorMessage:
-          type: string
-          nullable: true
-        correlationId:
-          type: string
-        source:
-          type: string
-        timestamp:
-          type: string
-          format: date-time
-
-    WebhookPayload:
-      type: object
-      required: [faxId, status]
-      properties:
-        faxId:
-          type: string
-        status:
-          type: string
-        providerEvent:
-          type: string
-          nullable: true
-        errorCode:
-          type: string
-          nullable: true
-        errorMessage:
-          type: string
-          nullable: true
-        metadata:
-          type: object
-          nullable: true
-
-    ErrorResponse:
-      type: object
-      properties:
-        error:
-          type: string
-        details:
-          type: string
-          nullable: true
-        correlationId:
-          type: string
-          nullable: true
+tags:
+  - name: Fax
+    description: Fax sending and status operations
+  - name: Configuration
+    description: System configuration and provider info
+  - name: Webhooks
+    description: Inbound webhook handling
