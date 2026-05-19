@@ -2,47 +2,65 @@
 
 const fs = require('fs');
 const path = require('path');
+const AuditLog = require('../models/AuditLog');
 
-const LOG_DIR = path.join(__dirname, 'logs');
+const LOG_DIR = path.join(__dirname, '../../logs');
 const LOG_FILE = path.join(LOG_DIR, 'audit.log');
 
-// Ensure directory exists
+// Ensure logs directory exists
 if (!fs.existsSync(LOG_DIR)) {
   fs.mkdirSync(LOG_DIR, { recursive: true });
 }
 
-/**
- * Writes a structured audit event to disk.
- */
-function writeAuditEvent(event) {
+exports.logEvent = async function logEvent({
+  tenantId = null,
+  type = 'system',
+  action,
+  correlationId,
+  ip,
+  path: requestPath,
+  method,
+  tier = 'unknown',
+  details = {}
+}) {
   const entry = {
     timestamp: new Date().toISOString(),
-    ...event
+    tenantId,
+    type,
+    action,
+    correlationId,
+    ip,
+    path: requestPath,
+    method,
+    tier,
+    details
   };
 
-  fs.appendFileSync(LOG_FILE, JSON.stringify(entry) + '\n');
-}
+  // -----------------------------
+  // 1. Write to file (existing behavior)
+  // -----------------------------
+  try {
+    fs.appendFileSync(LOG_FILE, JSON.stringify(entry) + '\n');
+  } catch (err) {
+    console.error('File audit log write failed:', err.message);
+  }
 
-/**
- * Public API for logging audit events.
- */
-module.exports = {
-  log: (req, type, action, details = {}) => {
-    writeAuditEvent({
-      correlationId: req.correlationId,
-      tier: req.apiTier || "unknown",
+  // -----------------------------
+  // 2. Write to MongoDB (new behavior)
+  // -----------------------------
+  try {
+    await AuditLog.create({
+      tenantId,
       type,
       action,
-      ip: req.ip,
-      path: req.originalUrl,
-      method: req.method,
+      correlationId,
+      ip,
+      path: requestPath,
+      method,
+      tier,
       details
     });
-  },
-
-  readLogs: () => {
-    if (!fs.existsSync(LOG_FILE)) return [];
-    const lines = fs.readFileSync(LOG_FILE, 'utf8').trim().split('\n');
-    return lines.map(line => JSON.parse(line));
+  } catch (err) {
+    console.error('MongoDB audit log write failed:', err.message);
   }
 };
