@@ -29,6 +29,7 @@ const {
 // Routes
 // -----------------------------
 const faxRoutes = require('./src/routes/faxRoutes');
+const faxRetryRoutes = require('./src/routes/faxRetryRoutes');
 const webhookRoutes = require('./src/routes/webhookRoutes');
 const auditRoutes = require('./src/routes/auditRoutes');
 const analyticsRoutes = require('./src/routes/analyticsRoutes');
@@ -75,6 +76,7 @@ app.get('/health', (req, res) => {
 // Main Routes
 // -----------------------------
 app.use('/fax', faxRoutes);
+app.use('/fax/retry', faxRetryRoutes);
 app.use('/admin/audit', auditRoutes);
 app.use('/analytics', analyticsRoutes);
 
