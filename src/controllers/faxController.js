@@ -1,57 +1,55 @@
 // src/controllers/faxController.js
-const { sendFax } = require('../services/sendFaxService');
-const audit = require('../services/auditService');
 
-exports.sendFax = async (req, res, next) => {
+const axios = require('axios');
+const Fax = require('../models/Fax');
+
+exports.sendFax = async (req, res) => {
   try {
-    if (!req.body.to || !req.body.fileUrl) {
-      return next({
-        status: 400,
-        message: "Missing required fields: 'to' and 'fileUrl'",
-        correlationId: req.correlationId
-      });
-    }
+    const { to, fileUrl } = req.body;
 
-    const payload = {
+    const response = await axios.post(
+      `https://fax.${process.env.SINCH_REGION}.sinch.com/v1/faxes`,
+      {
+        to,
+        from: process.env.SINCH_FAX_NUMBER,
+        fileUrl
+      },
+      {
+        headers: {
+          'Authorization': `Basic ${Buffer.from(`${process.env.SINCH_API_KEY}:${process.env.SINCH_API_SECRET}`).toString('base64')}`,
+          'Content-Type': 'application/json'
+        }
+      }
+    );
+
+    // Save fax record in MongoDB
+    await Fax.create({
+      tenantId: req.tenantId,
+      apiKeyId: req.apiKeyId,
+      direction: 'outbound',
+      to,
       from: process.env.SINCH_FAX_NUMBER,
-      to: Array.isArray(req.body.to) ? req.body.to : [req.body.to],
-      media: [{ url: req.body.fileUrl }]
-    };
-
-    const correlationId = req.correlationId;
-
-    // Send fax via provider
-    const result = await sendFax(payload, correlationId);
-
-    // 🔥 AUDIT: Fax send initiated
-    await audit.logFaxEvent({
-      tenantId: req.tenantId || 'system',
-      userId: req.user?.id || null,
-      faxId: result.id,
-      eventType: 'SEND_INITIATED',
-      recipient: req.body.to,
-      pages: req.body.pages || 'unknown',
-      status: 'QUEUED',
-      correlationId,
-      ip: req.ip,
-      userAgent: req.headers['user-agent'],
-      success: true
+      status: 'queued',
+      providerFaxId: response.data.id,
+      pages: response.data.pages || null,
+      metadata: {
+        correlationId: req.correlationId
+      }
     });
 
-    res.status(201).json({
+    res.json({
       success: true,
-      faxId: result.id,
-      status: result.status,
-      correlationId
+      faxId: response.data.id,
+      correlationId: req.correlationId
     });
 
-  } catch (error) {
-    next({
-      status: error.status || 500,
-      message: error.message,
-      details: error.details || null,
-      correlationId: req.correlationId,
-      timestamp: new Date().toISOString()
+  } catch (err) {
+    console.error('Fax send error:', err.message);
+
+    res.status(500).json({
+      success: false,
+      error: 'Failed to send fax',
+      correlationId: req.correlationId
     });
   }
 };
