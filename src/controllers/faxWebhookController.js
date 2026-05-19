@@ -1,49 +1,48 @@
 // src/controllers/webhookController.js
 
-const auditService = require('../audit/auditService');
+const Fax = require('../models/Fax');
+const WebhookEvent = require('../models/WebhookEvent');
 
-/**
- * Handles inbound fax webhooks from Sinch.
- * Normalizes the payload, logs an audit event, and returns 200 immediately.
- */
-module.exports = {
-  handleFaxWebhook: async (req, res) => {
-    try {
-      const event = req.body;
+exports.handleFaxWebhook = async (req, res) => {
+  try {
+    const payload = req.body;
+    const providerFaxId = payload.id;
+    const status = payload.status;
 
-      // Basic validation
-      if (!event || !event.id || !event.status) {
-        auditService.log(req, "webhook", "invalid_payload", { body: req.body });
-        return res.status(400).json({
-          success: false,
-          error: "Invalid webhook payload."
-        });
-      }
+    // Store webhook event
+    const event = await WebhookEvent.create({
+      tenantId: null, // or derive from fax record
+      faxId: null,
+      providerFaxId,
+      status,
+      rawPayload: payload,
+      processingStatus: 'pending'
+    });
 
-      // Normalize event
-      const normalized = {
-        faxId: event.id,
-        status: event.status,
-        pages: event.pages || null,
-        from: event.from || null,
-        to: event.to || null,
-        timestamp: event.timestamp || new Date().toISOString()
-      };
+    // Update fax status
+    const fax = await Fax.findOneAndUpdate(
+      { providerFaxId },
+      {
+        status,
+        errorCode: payload.errorCode || null,
+        errorMessage: payload.errorMessage || null,
+        updatedAt: new Date()
+      },
+      { new: true }
+    );
 
-      // Audit log
-      auditService.log(req, "webhook", "fax_status_update", normalized);
-
-      // TODO: Persist to DB (future upgrade)
-      // TODO: Trigger notifications (future upgrade)
-
-      // Sinch requires fast 200 response
-      return res.status(200).json({ success: true });
-    } catch (err) {
-      auditService.log(req, "webhook", "handler_error", { error: err.message });
-      return res.status(500).json({
-        success: false,
-        error: "Webhook handler failed."
-      });
+    // Link event to fax if found
+    if (fax) {
+      event.faxId = fax._id;
+      event.tenantId = fax.tenantId;
+      event.processingStatus = 'processed';
+      await event.save();
     }
+
+    res.json({ success: true });
+
+  } catch (err) {
+    console.error('Webhook error:', err.message);
+    res.status(500).json({ success: false });
   }
 };
