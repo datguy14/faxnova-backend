@@ -34,6 +34,7 @@ const faxDeleteRoutes = require('./src/routes/faxDeleteRoutes');
 const faxResendRoutes = require('./src/routes/faxResendRoutes');
 const faxDownloadRoutes = require('./src/routes/faxDownloadRoutes');
 const webhookRoutes = require('./src/routes/webhookRoutes');
+const inboundFaxRoutes = require('./src/routes/inboundFaxRoutes');
 const auditRoutes = require('./src/routes/auditRoutes');
 const analyticsRoutes = require('./src/routes/analyticsRoutes');
 const adminAnalyticsRoutes = require('./src/routes/adminAnalyticsRoutes');
@@ -89,16 +90,4 @@ app.use('/analytics', analyticsRoutes);
 app.use('/admin/analytics', adminAnalyticsRoutes);
 
 // -----------------------------
-// Webhooks (NO API key, NO rate limits)
-// -----------------------------
-app.use('/webhooks', webhookRoutes);
-
-// -----------------------------
-// Error Handler (always last)
-// -----------------------------
-app.use(errorHandler);
-
-// -----------------------------
-// Start Server
-// -----------------------------
-const PORT = process.env
+// Webhooks (NO API
