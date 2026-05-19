@@ -32,6 +32,7 @@ const faxRoutes = require('./src/routes/faxRoutes');
 const faxRetryRoutes = require('./src/routes/faxRetryRoutes');
 const faxDeleteRoutes = require('./src/routes/faxDeleteRoutes');
 const faxResendRoutes = require('./src/routes/faxResendRoutes');
+const faxDownloadRoutes = require('./src/routes/faxDownloadRoutes');
 const webhookRoutes = require('./src/routes/webhookRoutes');
 const auditRoutes = require('./src/routes/auditRoutes');
 const analyticsRoutes = require('./src/routes/analyticsRoutes');
@@ -82,6 +83,7 @@ app.use('/fax', faxRoutes);
 app.use('/fax/retry', faxRetryRoutes);
 app.use('/fax/delete', faxDeleteRoutes);
 app.use('/fax/resend', faxResendRoutes);
+app.use('/fax/download', faxDownloadRoutes);
 app.use('/admin/audit', auditRoutes);
 app.use('/analytics', analyticsRoutes);
 app.use('/admin/analytics', adminAnalyticsRoutes);
@@ -99,8 +101,4 @@ app.use(errorHandler);
 // -----------------------------
 // Start Server
 // -----------------------------
-const PORT = process.env.PORT || 3000;
-
-app.listen(PORT, () => {
-  console.log(`🚀 FaxNova backend running on port ${PORT}`);
-});
+const PORT = process.env
