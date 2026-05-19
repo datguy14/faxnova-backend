@@ -1,7 +1,7 @@
 {
   "name": "faxnova-backend",
   "version": "1.1.0",
-  "description": "Production-ready Node.js Fax Backend with Multi-Provider Support (Sinch + Telnyx)",
+  "description": "Production-ready Multi-Provider Fax Backend (Sinch + Telnyx) with Swagger UI",
   "main": "server.js",
   "scripts": {
     "start": "node server.js",
@@ -17,9 +17,11 @@
     "telnyx",
     "fax-api",
     "foip",
+    "multi-provider",
     "micro-saas",
     "express",
-    "nodejs"
+    "nodejs",
+    "swagger"
   ],
   "repository": {
     "type": "git",
@@ -34,8 +36,10 @@
     "express-rate-limit": "^7.4.0",
     "helmet": "^7.1.0",
     "morgan": "^1.10.0",
+    "swagger-ui-express": "^5.0.1",
     "telnyx": "^2.3.0",
-    "uuid": "^9.0.0"
+    "uuid": "^9.0.0",
+    "yamljs": "^0.3.0"
   },
   "devDependencies": {
     "nodemon": "^3.1.0"
