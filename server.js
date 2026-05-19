@@ -5,11 +5,18 @@ const express = require('express');
 const app = express();
 
 // -----------------------------
-// Core Middleware
+// Database
+// -----------------------------
+const { connectToDatabase } = require('./src/db');
+connectToDatabase();
+
+// -----------------------------
+// Middleware
 // -----------------------------
 const correlationId = require('./src/middleware/correlationId');
 const requestLogger = require('./src/middleware/requestLogger');
 const getTierFromApiKey = require('./src/middleware/getTierFromApiKey');
+const tenantMiddleware = require('./src/middleware/tenant');
 const errorHandler = require('./src/middleware/errorHandler');
 
 const {
@@ -22,7 +29,9 @@ const {
 // Routes
 // -----------------------------
 const faxRoutes = require('./src/routes/faxRoutes');
+const webhookRoutes = require('./src/routes/webhookRoutes');
 const auditRoutes = require('./src/routes/auditRoutes');
+const analyticsRoutes = require('./src/routes/analyticsRoutes');
 
 // -----------------------------
 // Middleware Order (Critical)
@@ -35,12 +44,17 @@ app.use(correlationId);
 app.use(express.json());
 
 // 3. Structured request logging
-app.use(requestLogger);
+if (process.env.ENABLE_REQUEST_LOGGER === "true") {
+  app.use(requestLogger);
+}
 
 // 4. API key → tier detection
 app.use(getTierFromApiKey);
 
-// 5. Global rate limit based on tier
+// 5. Tenant assignment (after API key)
+app.use(tenantMiddleware);
+
+// 6. Global rate limit based on tier
 app.use((req, res, next) => {
   const tier = req.apiTier || 'free';
 
@@ -62,6 +76,12 @@ app.get('/health', (req, res) => {
 // -----------------------------
 app.use('/fax', faxRoutes);
 app.use('/admin/audit', auditRoutes);
+app.use('/analytics', analyticsRoutes);
+
+// -----------------------------
+// Webhooks (NO API key, NO rate limits)
+// -----------------------------
+app.use('/webhooks', webhookRoutes);
 
 // -----------------------------
 // Error Handler (always last)
@@ -74,4 +94,5 @@ app.use(errorHandler);
 const PORT = process.env.PORT || 3000;
 
 app.listen(PORT, () => {
-  console.log(`FaxNova backend
+  console.log(`🚀 FaxNova backend running on port ${PORT}`);
+});
