@@ -127,6 +127,116 @@ The server will not start unless all required variables are present.
 
 ---
 
+📡 API Reference
+
+Base URL
+Production:
+`
+https://your-domain.com
+`
+
+Local:
+`
+http://localhost:3000
+`
+
+---
+
+1. Send Fax
+
+POST /fax/send
+
+Send a fax using the configured provider (Sinch or Telnyx).  
+If failover is enabled, the secondary provider is used automatically.
+
+Request Body
+`
+{
+  "to": "+15551234567",
+  "from": "+15557654321",
+  "pdfUrl": "https://example.com/document.pdf"
+}
+`
+
+Success Response
+`
+{
+  "success": true,
+  "provider": "sinch",
+  "faxId": "abc123",
+  "message": "Fax queued successfully"
+}
+`
+
+Error Response
+`
+{
+  "success": false,
+  "error": "ProviderError",
+  "details": "Invalid fax number"
+}
+`
+
+---
+
+2. Get Fax Status
+
+GET /fax/status/:id
+
+Retrieve the delivery status of a fax previously sent.
+
+Success Response
+`
+{
+  "success": true,
+  "provider": "telnyx",
+  "faxId": "abc123",
+  "status": "delivered",
+  "timestamp": "2026-05-25T18:22:10Z"
+}
+`
+
+---
+
+3. Health Check
+
+GET /health
+
+`
+{
+  "status": "ok",
+  "uptime": 10234,
+  "timestamp": 1716660000
+}
+`
+
+---
+
+4. Version
+
+GET /version
+
+`
+{
+  "version": "1.1.0"
+}
+`
+
+---
+
+5. Error Format
+All errors follow a unified structure:
+
+`
+{
+  "success": false,
+  "error": "ErrorType",
+  "details": "Human-readable explanation"
+}
+`
+
+---
+
 🧪 Running the Server
 
 Development
@@ -138,19 +248,6 @@ Production
 `
 npm start
 `
-
----
-
-📡 API Endpoints
-
-POST /fax/send
-Send a fax using the configured provider (or failover).
-
-GET /fax/status/:id
-Retrieve fax delivery status.
-
-GET /health
-Health check endpoint (if enabled).
 
 ---
 
