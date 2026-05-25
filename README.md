@@ -21,9 +21,9 @@ This backend is optimized for:
 - Pinned Dependencies for reproducible builds  
 - Environment Validation (validateEnv.js)  
 - Security Middleware (Helmet, Rate Limiting, CORS)  
-- Request Logging (Morgan)  
-- UUID‑based request tracking  
-- Clean Express architecture  
+- Request Logging (Morgan + UUID tracking)  
+- OpenAPI Specification (openapi.yaml)  
+- Clean /src architecture  
 - Production‑ready .env.example  
 
 ---
@@ -40,32 +40,43 @@ This backend is optimized for:
 
 ---
 
-📁 Project Structure
+📁 Project Structure (Using /src Architecture)
 `
 faxnova-backend/
 │
-├── server.js
-├── package.json
+├── public/
+│   └── .well-known/
+│
+├── src/
+│   ├── controllers/
+│   │   └── faxController.js
+│   │
+│   ├── routes/
+│   │   └── faxRoutes.js
+│   │
+│   ├── middleware/
+│   │   ├── errorHandler.js
+│   │   ├── requestLogger.js
+│   │   └── security.js
+│   │
+│   ├── providers/
+│   │   ├── sinchProvider.js
+│   │   ├── telnyxProvider.js
+│   │   └── providerFactory.js
+│   │
+│   └── utils/
+│       └── validateEnv.js
+│
+├── .github/
+│
 ├── .env.example
-│
-├── utils/
-│   └── validateEnv.js
-│
-├── routes/
-│   └── fax.js
-│
-├── controllers/
-│   └── faxController.js
-│
-├── providers/
-│   ├── sinchProvider.js
-│   ├── telnyxProvider.js
-│   └── providerFactory.js
-│
-└── middleware/
-    ├── errorHandler.js
-    ├── requestLogger.js
-    └── security.js
+├── DEPLOYMENT_CHECKLIST.md
+├── FAX_LIFECYCLE.md
+├── LICENSE
+├── openapi.yaml
+├── package.json
+├── server.js
+└── SECURITY.md
 `
 
 ---
@@ -142,12 +153,7 @@ http://localhost:3000
 
 ---
 
-1. Send Fax
-
-POST /fax/send
-
-Send a fax using the configured provider (Sinch or Telnyx).  
-If failover is enabled, the secondary provider is used automatically.
+1. Send Fax — POST /fax/send
 
 Request Body
 `
@@ -170,11 +176,7 @@ Success Response
 
 ---
 
-2. Get Fax Status
-
-GET /fax/status/:id
-
-Retrieve the delivery status of a fax previously sent.
+2. Get Fax Status — GET /fax/status/:id
 
 Success Response
 `
@@ -189,10 +191,7 @@ Success Response
 
 ---
 
-3. Health Check
-
-GET /health
-
+3. Health Check — GET /health
 `
 {
   "status": "ok",
@@ -203,10 +202,7 @@ GET /health
 
 ---
 
-4. Version
-
-GET /version
-
+4. Version — GET /version
 `
 {
   "version": "1.1.0"
@@ -216,8 +212,6 @@ GET /version
 ---
 
 5. Error Format
-All errors follow a unified structure:
-
 `
 {
   "success": false,
@@ -245,9 +239,9 @@ npm start
 🛡 Security
 
 FaxNova includes:
-- Helmet for HTTP header hardening  
+- Helmet  
 - Rate limiting  
-- CORS configuration  
+- CORS  
 - UUID request tracking  
 - Environment validation  
 
@@ -286,21 +280,13 @@ Automatically detected from:
 ---
 
 3. Add Environment Variables
-
-Add all variables from .env.example:
-
-- Server  
-- Security  
-- Sinch  
-- Telnyx  
-- Failover  
+Add all variables from .env.example.
 
 FaxNova will not start unless all required variables are present.
 
 ---
 
 4. Deploy
-
 Render will:
 
 1. Clone the repo  
@@ -332,49 +318,37 @@ POST /fax/send
 
 1. Build Fails Immediately
 Cause: Missing or invalid dependency  
-Fix:  
-- Ensure package.json uses pinned versions  
-- Run npm install locally to confirm no errors  
+Fix: Run npm install locally to confirm no errors  
 
 ---
 
-2. “Missing Environment Variables” Error
+2. “Missing Environment Variables”
 Cause: validateEnv.js blocked startup  
-Fix:  
-- Open Render → Environment  
-- Add all variables from .env.example  
+Fix: Add all variables from .env.example  
 
 ---
 
 3. “Cannot Access PDF URL”
 Cause: PDF is not publicly accessible  
-Fix:  
-- Use a public S3 bucket  
-- Use a direct HTTPS link  
+Fix: Use a public S3 bucket or direct HTTPS link  
 
 ---
 
 4. Provider Errors (Sinch / Telnyx)
 Cause: Invalid API key or number  
-Fix:  
-- Re‑check provider credentials  
-- Ensure numbers are fax‑enabled  
+Fix: Re‑check provider credentials  
 
 ---
 
 5. App Deploys but Crashes
-Cause: Missing .env values or invalid JSON  
-Fix:  
-- Check Render logs  
-- Validate JSON formatting  
+Cause: Missing .env values  
+Fix: Check Render logs  
 
 ---
 
 6. Cold Starts / Slow Boot
 Cause: Free tier instance sleeping  
-Fix:  
-- Upgrade to Starter plan  
-- Add uptime monitoring  
+Fix: Upgrade to Starter plan  
 
 ---
 
