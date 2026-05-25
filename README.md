@@ -3,40 +3,116 @@ Production‑ready Node.js fax backend with multi‑provider support (Sinch + Te
 
 ---
 
+🏷️ Buyer‑Ready Acquisition Summary
+FaxNova is a fully built, production‑ready fax delivery backend designed for developers, SaaS founders, and companies that need a modern alternative to legacy fax infrastructure. It provides a clean, scalable Node.js architecture with multi‑provider fax delivery (Sinch + Telnyx), automatic failover, webhook lifecycle handling, and a complete deployment pipeline.
+
+This is not a prototype — it is a turnkey backend system that a buyer can deploy, extend, or productize immediately.
+
+---
+
+🧾 Included in the Sale
+The acquisition includes 100% of the FaxNova backend codebase, documentation, deployment assets, and operational tooling required to run, extend, or commercialize the product immediately.
+
+1. Complete Production‑Ready Backend
+- Full Node.js backend using a clean, scalable /src architecture
+- Modular provider system with Sinch and Telnyx fax delivery
+- Automatic provider failover logic
+- Unified error handling and response formatting
+- Health, version, and status endpoints
+- UUID‑based request tracing
+- Fully pinned dependencies for reproducible builds
+
+2. Provider Integrations
+- Complete Sinch fax provider implementation
+- Complete Telnyx fax provider implementation
+- Provider factory for easy expansion
+- Shared request/response normalization
+- Status polling + delivery tracking
+
+3. Documentation & Specs
+- OpenAPI 3.0 specification (openapi.yaml)
+- FAX_LIFECYCLE.md — full inbound/outbound fax lifecycle
+- DEPLOYMENT_CHECKLIST.md — production readiness checklist
+- SECURITY.md — security posture and best practices
+- README.md — full API reference, deployment guide, troubleshooting guide
+
+4. Deployment & Ops
+- Render deployment guide
+- Render troubleshooting guide
+- .well-known directory for domain verification
+- Production‑ready .env.example
+- Environment validation system (validateEnv.js)
+- Logging middleware with correlation IDs
+- Security middleware (Helmet, CORS, rate limiting)
+
+5. Source Code & Project Assets
+- Entire GitHub repository
+- Clean, verified commit history
+- MIT license (commercial‑friendly)
+- All scripts, utilities, and configuration files
+- server.js entrypoint
+- package.json with pinned versions
+
+6. Transfer of Ownership
+The buyer receives:
+- Full IP rights
+- Full code ownership
+- Full documentation ownership
+- Full deployment rights
+- Full commercial rights
+
+No dependencies on the original founder.  
+No proprietary services.  
+No vendor lock‑in.
+
+---
+
+⚙️ Tech Highlights
+- Multi‑provider fax engine with Sinch + Telnyx
+- Automatic failover for high deliverability
+- Provider‑agnostic architecture (easy to add Twilio, InterFAX, etc.)
+- OpenAPI‑driven development
+- Secure by default: Helmet, CORS, rate limiting, UUID tracing
+- Environment validation ensures safe deployments
+- Production‑ready: pinned dependencies, clean logs, health endpoints
+- Deployable in under 10 minutes on Render
+
+---
+
 🚀 Overview
 FaxNova is a lightweight, reliable FOIP backend designed for SaaS builders, developers, and businesses that need to send and receive faxes programmatically.  
 It supports multiple fax providers, automatic failover, secure request handling, and modern Express best practices.
 
 This backend is optimized for:
-- Micro‑SaaS products  
-- API‑only fax services  
-- Serverless or container deployments  
-- Render, Railway, Fly.io, and Docker environments  
+- Micro‑SaaS products
+- API‑only fax services
+- Serverless or container deployments
+- Render, Railway, Fly.io, and Docker environments
 
 ---
 
 ✨ Features
-- Multi‑Provider Fax Support (Sinch + Telnyx)  
-- Automatic Provider Failover  
-- Pinned Dependencies for reproducible builds  
-- Environment Validation (validateEnv.js)  
-- Security Middleware (Helmet, Rate Limiting, CORS)  
-- Request Logging (Morgan + UUID tracking)  
-- OpenAPI Specification (openapi.yaml)  
-- Clean /src architecture  
-- Production‑ready .env.example  
+- Multi‑Provider Fax Support (Sinch + Telnyx)
+- Automatic Provider Failover
+- Pinned Dependencies
+- Environment Validation
+- Security Middleware
+- Request Logging
+- OpenAPI Specification
+- Clean /src architecture
+- Production‑ready .env.example
 
 ---
 
 🧰 Tech Stack
-- Node.js 20.x  
-- Express 4  
-- Axios  
-- Helmet  
-- express‑rate‑limit  
-- Telnyx Node SDK  
-- dotenv  
-- nodemon (dev)  
+- Node.js 20.x
+- Express 4
+- Axios
+- Helmet
+- express‑rate‑limit
+- Telnyx Node SDK
+- dotenv
+- nodemon (dev)
 
 ---
 
@@ -49,26 +125,12 @@ faxnova-backend/
 │
 ├── src/
 │   ├── controllers/
-│   │   └── faxController.js
-│   │
 │   ├── routes/
-│   │   └── faxRoutes.js
-│   │
 │   ├── middleware/
-│   │   ├── errorHandler.js
-│   │   ├── requestLogger.js
-│   │   └── security.js
-│   │
 │   ├── providers/
-│   │   ├── sinchProvider.js
-│   │   ├── telnyxProvider.js
-│   │   └── providerFactory.js
-│   │
 │   └── utils/
-│       └── validateEnv.js
 │
 ├── .github/
-│
 ├── .env.example
 ├── DEPLOYMENT_CHECKLIST.md
 ├── FAX_LIFECYCLE.md
@@ -82,59 +144,41 @@ faxnova-backend/
 ---
 
 🔧 Installation
-
-Clone the repo:
-
 `
 git clone https://github.com/datguy14/faxnova-backend.git (github.com in Bing)
 cd faxnova-backend
-`
-
-Install dependencies:
-
-`
 npm install
-`
-
-Copy the environment template:
-
-`
 cp .env.example .env
 `
-
-Fill in your provider keys and configuration.
 
 ---
 
 🔐 Environment Variables
-
 All required variables are documented in .env.example.
 
 Server
-- PORT
-- NODE_ENV
+- PORT  
+- NODE_ENV  
 
 Security
-- JWT_SECRET
-- RATELIMITWINDOW_MS
-- RATELIMITMAX
+- JWT_SECRET  
+- RATELIMITWINDOW_MS  
+- RATELIMITMAX  
 
 Sinch
-- SINCHAPIKEY
-- SINCHAPISECRET
-- SINCHSERVICEPLAN_ID
-- SINCHFAXNUMBER
+- SINCHAPIKEY  
+- SINCHAPISECRET  
+- SINCHSERVICEPLAN_ID  
+- SINCHFAXNUMBER  
 
 Telnyx
-- TELNYXAPIKEY
-- TELNYXCONNECTIONID
-- TELNYXFAXNUMBER
+- TELNYXAPIKEY  
+- TELNYXCONNECTIONID  
+- TELNYXFAXNUMBER  
 
 Failover
-- ENABLEPROVIDERFAILOVER
-- PRIMARY_PROVIDER
-
-The server will not start unless all required variables are present.
+- ENABLEPROVIDERFAILOVER  
+- PRIMARY_PROVIDER  
 
 ---
 
@@ -154,8 +198,6 @@ http://localhost:3000
 ---
 
 1. Send Fax — POST /fax/send
-
-Request Body
 `
 {
   "to": "+15551234567",
@@ -164,28 +206,15 @@ Request Body
 }
 `
 
-Success Response
-`
-{
-  "success": true,
-  "provider": "sinch",
-  "faxId": "abc123",
-  "message": "Fax queued successfully"
-}
-`
-
 ---
 
 2. Get Fax Status — GET /fax/status/:id
-
-Success Response
 `
 {
   "success": true,
   "provider": "telnyx",
   "faxId": "abc123",
-  "status": "delivered",
-  "timestamp": "2026-05-25T18:22:10Z"
+  "status": "delivered"
 }
 `
 
@@ -193,31 +222,14 @@ Success Response
 
 3. Health Check — GET /health
 `
-{
-  "status": "ok",
-  "uptime": 10234,
-  "timestamp": 1716660000
-}
+{ "status": "ok" }
 `
 
 ---
 
 4. Version — GET /version
 `
-{
-  "version": "1.1.0"
-}
-`
-
----
-
-5. Error Format
-`
-{
-  "success": false,
-  "error": "ErrorType",
-  "details": "Human-readable explanation"
-}
+{ "version": "1.1.0" }
 `
 
 ---
@@ -237,7 +249,6 @@ npm start
 ---
 
 🛡 Security
-
 FaxNova includes:
 - Helmet  
 - Rate limiting  
@@ -250,105 +261,54 @@ FaxNova includes:
 🚀 Render Deployment Guide
 
 1. Create a New Web Service
-1. Log in to Render  
-2. Click New → Web Service  
-3. Connect GitHub  
-4. Select faxnova-backend  
-5. Choose the main branch  
-
----
+- Log in to Render  
+- New → Web Service  
+- Connect GitHub  
+- Select faxnova-backend  
+- Choose main  
 
 2. Build & Runtime Settings
-
-Build Command
+Build:
 `
 npm install
 `
-
-Start Command
+Start:
 `
 npm start
 `
 
-Node Version
-Automatically detected from:
-
-`
-"engines": { "node": "20.x" }
-`
-
----
-
 3. Add Environment Variables
-Add all variables from .env.example.
-
-FaxNova will not start unless all required variables are present.
-
----
+Copy everything from .env.example.
 
 4. Deploy
-Render will:
+Render will clone, install, and start automatically.
 
-1. Clone the repo  
-2. Install dependencies  
-3. Start the server  
-
----
-
-5. Verify Deployment
-
-Health Check
-`
-/health
-`
-
-Version
-`
-/version
-`
-
-Send Fax Test
-`
-POST /fax/send
-`
+5. Verify
+- /health
+- /version
+- Test fax via /fax/send
 
 ---
 
 🛠 Render Troubleshooting Guide
 
-1. Build Fails Immediately
-Cause: Missing or invalid dependency  
-Fix: Run npm install locally to confirm no errors  
+Build Fails
+Run npm install locally to confirm no dependency issues.
 
----
+Missing Environment Variables
+Ensure all .env.example values are added.
 
-2. “Missing Environment Variables”
-Cause: validateEnv.js blocked startup  
-Fix: Add all variables from .env.example  
+PDF URL Not Accessible
+Use a public HTTPS link or S3 bucket.
 
----
+Provider Errors
+Verify Sinch/Telnyx credentials.
 
-3. “Cannot Access PDF URL”
-Cause: PDF is not publicly accessible  
-Fix: Use a public S3 bucket or direct HTTPS link  
+App Crashes on Boot
+Check Render logs for missing env vars.
 
----
-
-4. Provider Errors (Sinch / Telnyx)
-Cause: Invalid API key or number  
-Fix: Re‑check provider credentials  
-
----
-
-5. App Deploys but Crashes
-Cause: Missing .env values  
-Fix: Check Render logs  
-
----
-
-6. Cold Starts / Slow Boot
-Cause: Free tier instance sleeping  
-Fix: Upgrade to Starter plan  
+Slow Boot / Cold Starts
+Upgrade from free tier.
 
 ---
 
@@ -358,13 +318,12 @@ MIT License — free for commercial and private use.
 ---
 
 🤝 Contributing
-Pull requests are welcome.  
-For major changes, open an issue first to discuss what you’d like to modify.
+Pull requests welcome.
 
 ---
 
 🧩 Roadmap
-- Web dashboard (FaxNova UI)  
+- FaxNova UI dashboard  
 - Provider‑agnostic webhook ingestion  
 - Multi‑tenant support  
 - Stripe billing integration  
