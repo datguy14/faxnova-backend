@@ -168,15 +168,6 @@ Success Response
 }
 `
 
-Error Response
-`
-{
-  "success": false,
-  "error": "ProviderError",
-  "details": "Invalid fax number"
-}
-`
-
 ---
 
 2. Get Fax Status
@@ -262,20 +253,128 @@ FaxNova includes:
 
 ---
 
-🧱 Deployment
+🚀 Render Deployment Guide
 
-FaxNova is optimized for:
-- Render  
-- Railway  
-- Fly.io  
-- Docker  
-- Bare‑metal Node servers  
+1. Create a New Web Service
+1. Log in to Render  
+2. Click New → Web Service  
+3. Connect GitHub  
+4. Select faxnova-backend  
+5. Choose the main branch  
 
-Render Notes
-- Set all environment variables in the Render dashboard  
-- Node version is pinned via engines.node  
-- Build command: npm install  
-- Start command: npm start  
+---
+
+2. Build & Runtime Settings
+
+Build Command
+`
+npm install
+`
+
+Start Command
+`
+npm start
+`
+
+Node Version
+Automatically detected from:
+
+`
+"engines": { "node": "20.x" }
+`
+
+---
+
+3. Add Environment Variables
+
+Add all variables from .env.example:
+
+- Server  
+- Security  
+- Sinch  
+- Telnyx  
+- Failover  
+
+FaxNova will not start unless all required variables are present.
+
+---
+
+4. Deploy
+
+Render will:
+
+1. Clone the repo  
+2. Install dependencies  
+3. Start the server  
+
+---
+
+5. Verify Deployment
+
+Health Check
+`
+/health
+`
+
+Version
+`
+/version
+`
+
+Send Fax Test
+`
+POST /fax/send
+`
+
+---
+
+🛠 Render Troubleshooting Guide
+
+1. Build Fails Immediately
+Cause: Missing or invalid dependency  
+Fix:  
+- Ensure package.json uses pinned versions  
+- Run npm install locally to confirm no errors  
+
+---
+
+2. “Missing Environment Variables” Error
+Cause: validateEnv.js blocked startup  
+Fix:  
+- Open Render → Environment  
+- Add all variables from .env.example  
+
+---
+
+3. “Cannot Access PDF URL”
+Cause: PDF is not publicly accessible  
+Fix:  
+- Use a public S3 bucket  
+- Use a direct HTTPS link  
+
+---
+
+4. Provider Errors (Sinch / Telnyx)
+Cause: Invalid API key or number  
+Fix:  
+- Re‑check provider credentials  
+- Ensure numbers are fax‑enabled  
+
+---
+
+5. App Deploys but Crashes
+Cause: Missing .env values or invalid JSON  
+Fix:  
+- Check Render logs  
+- Validate JSON formatting  
+
+---
+
+6. Cold Starts / Slow Boot
+Cause: Free tier instance sleeping  
+Fix:  
+- Upgrade to Starter plan  
+- Add uptime monitoring  
 
 ---
 
