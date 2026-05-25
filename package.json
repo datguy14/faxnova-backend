@@ -20,14 +20,14 @@
     "micro-saas",
     "express",
     "nodejs"
-  ],
+  },
   "repository": {
     "type": "git",
     "url": "https://github.com/datguy14/faxnova-backend.git"
   },
   "license": "MIT",
   "dependencies": {
-    "axios": "1.8.0",
+    "axios": "1.7.7",
     "cors": "2.8.5",
     "dotenv": "16.4.5",
     "express": "4.19.2",
@@ -40,4 +40,4 @@
   "devDependencies": {
     "nodemon": "3.1.0"
   }
-}
+    }
