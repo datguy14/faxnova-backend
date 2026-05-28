@@ -1,12 +1,10 @@
-// src/controllers/faxController.js
-
 const Fax = require('../models/Fax')
 const audit = require('../audit/auditService')
 const faxRouter = require('../integrations/faxRouter')
 const logger = require('../utils/logger')
 
 /**
- * Send Fax (Provider-Aware)
+ * SEND FAX (Provider-Aware)
  */
 exports.sendFax = async (req, res) => {
   const { to, fileUrl, from, provider } = req.body
@@ -36,7 +34,7 @@ exports.sendFax = async (req, res) => {
       to,
       fileUrl,
       from: from || undefined,
-      provider // optional override
+      provider
     })
 
     // Save fax record
@@ -125,7 +123,7 @@ exports.sendFax = async (req, res) => {
 }
 
 /**
- * Get Fax Status (Provider-Aware)
+ * GET FAX STATUS (Provider-Aware)
  */
 exports.getFaxStatus = async (req, res) => {
   const { id } = req.params
