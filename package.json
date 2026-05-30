@@ -6,7 +6,7 @@
   "scripts": {
     "start": "node server.js",
     "dev": "nodemon server.js",
-    "test": "echo \"Error: no test specified\" && exit 1"
+    "test": "jest"
   },
   "engines": {
     "node": "20.x"
@@ -16,28 +16,23 @@
     "sinch",
     "telnyx",
     "fax-api",
-    "foip",
-    "micro-saas",
-    "express",
+    "fax-saas",
     "nodejs"
-  ],
+  },
   "repository": {
     "type": "git",
-    "url": "https://github.com/datguy14/faxnova-backend.git"
+    "url": "https://github.com/detayyl4/faxnova-backend.git"
   },
-  "license": "MIT",
   "dependencies": {
-    "axios": "1.7.7",
-    "cors": "2.8.5",
-    "dotenv": "16.4.5",
-    "express": "4.19.2",
-    "express-rate-limit": "7.4.0",
-    "helmet": "7.1.0",
-    "morgan": "1.10.0",
-    "telnyx": "^3.0.0"
-    "uuid": "9.0.0"
+    "express": "^4.19.2",
+    "express-rate-limit": "^7.4.0",
+    "helmet": "^7.0.0",
+    "sinch": "^1.10.0",
+    "telnyx": "^2.13.0",
+    "uuid": "^9.0.0"
   },
   "devDependencies": {
-    "nodemon": "3.1.0"
+    "nodemon": "^3.1.0",
+    "jest": "^29.7.0"
   }
-}
+    }
