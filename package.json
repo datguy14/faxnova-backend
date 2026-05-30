@@ -18,7 +18,7 @@
     "fax-api",
     "fax-saas",
     "nodejs"
-  },
+  ],
   "repository": {
     "type": "git",
     "url": "https://github.com/detayyl4/faxnova-backend.git"
@@ -28,11 +28,11 @@
     "express-rate-limit": "^7.4.0",
     "helmet": "^7.0.0",
     "sinch": "^1.10.0",
-    "telnyx": "^2.13.0",
+    "telnyx": "^3.0.0",
     "uuid": "^9.0.0"
   },
   "devDependencies": {
     "nodemon": "^3.1.0",
     "jest": "^29.7.0"
   }
-    }
+}
