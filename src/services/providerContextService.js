@@ -2,6 +2,7 @@
 
 const { getProviderRoutingRules } = require('./providerRoutingRules');
 const { updateProviderHealth, getProviderHealth } = require('./providerOutageService');
+const { getProviderBillingRates } = require('./providerBillingService');
 
 // ===== Provider Error Maps =====
 const SINCH_ERROR_MAP = {
@@ -37,6 +38,7 @@ async function getTelnyxLogs(faxId) {
 // ===== Main Provider Context Builder =====
 module.exports.getProviderContext = async function getProviderContext(provider, faxId) {
   const routingRules = getProviderRoutingRules(provider);
+  const billing = getProviderBillingRates(provider);
 
   // Base provider metadata
   const base = {
@@ -44,6 +46,7 @@ module.exports.getProviderContext = async function getProviderContext(provider, 
     hipaa: routingRules.hipaa,
     encryption: true,
     routingRules,
+    billing,
   };
 
   // Provider-specific logic
