@@ -1,58 +1,98 @@
 // src/routes/faxRoutes.js
-
 const express = require('express');
 const router = express.Router();
+const rateLimit = require('express-rate-limit');
+const { z } = require('zod');
 
-const {
-  freeSendFax,
-  freeSendFaxHourly,
-  freeStatus,
+const agentAuth = require('../middleware/agentAuth');
+const Fax = require('../models/Fax');
 
-  proSendFax,
-  proSendFaxHourly,
-  proStatus,
+// 🔐 Protect all fax routes
+router.use(agentAuth);
 
-  bizSendFax,
-  bizSendFaxHourly,
-  bizStatus
-} = require('../middleware/rateLimit');
+// Proxy‑safe rate limiter for fax sending
+const faxSendLimiter = rateLimit({
+  windowMs: 60 * 1000,
+  max: 30,
+  keyGenerator: (req) =>
+    req.headers['x-forwarded-for']?.split(',')[0] || req.ip,
+});
 
-const faxController = require('../controllers/faxController');
+// Zod validation schema
+const sendFaxSchema = z.object({
+  to: z.string().min(10, 'Recipient fax number is required'),
+  fileUrl: z.string().url('fileUrl must be a valid URL'),
+  coverPage: z.string().optional(),
+});
 
-/**
- * Selects the correct rate limiter based on API key tier.
- * req.apiTier is set by getTierFromApiKey middleware.
- */
-function tierLimiter(free, pro, biz) {
-  return (req, res, next) => {
-    const tier = req.apiTier || 'free';
-
-    if (tier === 'pro') return pro(req, res, next);
-    if (tier === 'business') return biz(req, res, next);
-
-    return free(req, res, next); // default to free tier
-  };
-}
-
-/* -------------------------------------------------------
+/* ============================================================
    SEND FAX
-------------------------------------------------------- */
+============================================================ */
+router.post('/send', faxSendLimiter, async (req, res) => {
+  try {
+    const parsed = sendFaxSchema.safeParse(req.body);
 
-router.post(
-  '/send',
-  tierLimiter(freeSendFax, proSendFax, bizSendFax),
-  tierLimiter(freeSendFaxHourly, proSendFaxHourly, bizSendFaxHourly),
-  faxController.sendFax
-);
+    if (!parsed.success) {
+      return res.status(400).json({
+        success: false,
+        error: parsed.error.flatten().fieldErrors,
+      });
+    }
 
-/* -------------------------------------------------------
-   GET FAX STATUS
-------------------------------------------------------- */
+    const { to, fileUrl, coverPage } = parsed.data;
 
-router.get(
-  '/status/:id',
-  tierLimiter(freeStatus, proStatus, bizStatus),
-  faxController.getFaxStatus
-);
+    const fax = await Fax.create({
+      userId: req.user._id,
+      to,
+      fileUrl,
+      coverPage: coverPage || null,
+      status: 'queued',
+    });
+
+    // TODO: enqueue provider send job here
+
+    res.json({ success: true, fax });
+  } catch (err) {
+    console.error('Send fax error:', err);
+    res.status(500).json({ success: false, error: 'Failed to send fax' });
+  }
+});
+
+/* ============================================================
+   GET FAX BY ID
+============================================================ */
+router.get('/:id', async (req, res) => {
+  try {
+    const fax = await Fax.findOne({
+      _id: req.params.id,
+      userId: req.user._id,
+    });
+
+    if (!fax) {
+      return res.status(404).json({ success: false, error: 'Fax not found' });
+    }
+
+    res.json({ success: true, fax });
+  } catch (err) {
+    console.error('Get fax error:', err);
+    res.status(500).json({ success: false, error: 'Failed to fetch fax' });
+  }
+});
+
+/* ============================================================
+   LIST USER FAXES
+============================================================ */
+router.get('/', async (req, res) => {
+  try {
+    const faxes = await Fax.find({ userId: req.user._id })
+      .sort({ createdAt: -1 })
+      .limit(100);
+
+    res.json({ success: true, faxes });
+  } catch (err) {
+    console.error('List fax error:', err);
+    res.status(500).json({ success: false, error: 'Failed to list faxes' });
+  }
+});
 
 module.exports = router;
