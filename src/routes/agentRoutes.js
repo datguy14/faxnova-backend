@@ -86,7 +86,7 @@ router.post('/troubleshoot', async (req, res) => {
 
 
 // ==========================================================
-// ROUTING LOGIC AGENT
+// ROUTING LOGIC AGENT (Provider-Aware + Failover-Aware)
 // ==========================================================
 router.post('/routing', async (req, res) => {
   try {
@@ -98,6 +98,12 @@ router.post('/routing', async (req, res) => {
     const metadata = await getFaxMetadata(faxId);
     const extractedFields = await getExtractedFields(faxId);
     const aiResult = await getClassification(faxId);
+
+    // Provider context now includes:
+    // - routing rules
+    // - retry rules
+    // - outage detection
+    // - failover metadata
     const providerContext = await getProviderContext(user.defaultProvider, faxId);
 
     const response = await handleRoutingDecision({
