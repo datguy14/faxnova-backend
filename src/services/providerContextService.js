@@ -63,6 +63,7 @@ module.exports.getProviderContext = async function getProviderContext(provider, 
       },
       region: routingRules.preferredRegions[0] || 'us-east',
       health,
+      failoverTo: routingRules.failoverTo,
     };
   }
 
@@ -82,6 +83,7 @@ module.exports.getProviderContext = async function getProviderContext(provider, 
       },
       region: routingRules.preferredRegions[0] || 'us-central',
       health,
+      failoverTo: routingRules.failoverTo,
     };
   }
 
@@ -98,5 +100,6 @@ module.exports.getProviderContext = async function getProviderContext(provider, 
     },
     region: 'unknown',
     health: getProviderHealth(provider),
+    failoverTo: null,
   };
 };
