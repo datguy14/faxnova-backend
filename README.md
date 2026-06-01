@@ -1,331 +1,191 @@
-FaxNova Backend
-Production‑ready Node.js fax backend with multi‑provider support (Sinch + Telnyx), rate limiting, security middleware, environment validation, and clean modular architecture.
+# 📡 FaxNova Backend  
+### Multi‑Provider AI‑Driven Fax Routing Engine (Sinch + Telnyx)
+
+FaxNova is a carrier‑grade, AI‑powered fax orchestration backend designed for reliability, compliance, and intelligent routing.  
+It integrates multiple fax providers, applies predictive analytics, and uses a multi‑agent AI system to troubleshoot, classify, and route faxes in real time.
 
 ---
 
-🏷️ Buyer‑Ready Acquisition Summary
-FaxNova is a fully built, production‑ready fax delivery backend designed for developers, SaaS founders, and companies that need a modern alternative to legacy fax infrastructure. It provides a clean, scalable Node.js architecture with multi‑provider fax delivery (Sinch + Telnyx), automatic failover, webhook lifecycle handling, and a complete deployment pipeline.
+## 🚀 Features
 
-This is not a prototype — it is a turnkey backend system that a buyer can deploy, extend, or productize immediately.
+### 🔀 Multi‑Provider Routing Engine
+- Intelligent routing between **Sinch** and **Telnyx**
+- Provider‑specific rules, regions, and capabilities
+- HIPAA‑aware routing with encryption enforcement
 
----
+### 🔁 Retry & Failover Intelligence
+- Provider‑specific retry limits and delays  
+- Immediate failover on critical error codes  
+- Automatic provider switching when thresholds are exceeded  
+- Area‑code‑aware routing bias
 
-🧾 Included in the Sale
-The acquisition includes 100% of the FaxNova backend codebase, documentation, deployment assets, and operational tooling required to run, extend, or commercialize the product immediately.
+### ⚠️ Outage Detection
+- Real‑time provider health scoring  
+- Error‑rate monitoring  
+- Latency tracking  
+- Automatic provider degradation → failover logic
 
-1. Complete Production‑Ready Backend
-- Full Node.js backend using a clean, scalable /src architecture
-- Modular provider system with Sinch and Telnyx fax delivery
-- Automatic provider failover logic
-- Unified error handling and response formatting
-- Health, version, and status endpoints
-- UUID‑based request tracing
-- Fully pinned dependencies for reproducible builds
+### 💵 Provider Billing Engine
+- Cost‑per‑page modeling  
+- Retry cost multipliers  
+- Failover cost multipliers  
+- Region surcharges  
+- SLA penalty modeling  
+- True provider cost calculation per fax
 
-2. Provider Integrations
-- Complete Sinch fax provider implementation
-- Complete Telnyx fax provider implementation
-- Provider factory for easy expansion
-- Shared request/response normalization
-- Status polling + delivery tracking
+### 📊 Provider Performance Analytics
+- Latency scoring  
+- Error‑rate scoring  
+- Retry‑rate scoring  
+- SLA score  
+- Cost efficiency score  
+- Stability score  
+- Unified **performanceScore (0–100)**
 
-3. Documentation & Specs
-- OpenAPI 3.0 specification (openapi.yaml)
-- FAX_LIFECYCLE.md — full inbound/outbound fax lifecycle
-- DEPLOYMENT_CHECKLIST.md — production readiness checklist
-- SECURITY.md — security posture and best practices
-- README.md — full API reference, deployment guide, troubleshooting guide
+### 🤖 AI Agent System
+Six specialized agents:
+- **Routing Agent** — determines provider, retries, failover  
+- **Troubleshooting Agent** — explains failures, logs, provider issues  
+- **Billing Agent** — cost breakdowns, margin analysis  
+- **Sales Agent** — demos, feature explanations  
+- **Compliance Agent** — HIPAA, audit logs, security context  
+- **Onboarding Agent** — guides new users
 
-4. Deployment & Ops
-- Render deployment guide
-- Render troubleshooting guide
-- .well-known directory for domain verification
-- Production‑ready .env.example
-- Environment validation system (validateEnv.js)
-- Logging middleware with correlation IDs
-- Security middleware (Helmet, CORS, rate limiting)
-
-5. Source Code & Project Assets
-- Entire GitHub repository
-- Clean, verified commit history
-- MIT license (commercial‑friendly)
-- All scripts, utilities, and configuration files
-- server.js entrypoint
-- package.json with pinned versions
-
-6. Transfer of Ownership
-The buyer receives:
-- Full IP rights
-- Full code ownership
-- Full documentation ownership
-- Full deployment rights
-- Full commercial rights
-
-No dependencies on the original founder.  
-No proprietary services.  
-No vendor lock‑in.
+### 🧠 Provider Context Engine
+Every fax request receives a unified provider context containing:
+- Routing rules  
+- Retry rules  
+- Outage health  
+- Failover metadata  
+- Billing rates  
+- Performance analytics  
+- Error maps  
+- Logs  
+- Region + HIPAA metadata  
 
 ---
 
-⚙️ Tech Highlights
-- Multi‑provider fax engine with Sinch + Telnyx
-- Automatic failover for high deliverability
-- Provider‑agnostic architecture (easy to add Twilio, InterFAX, etc.)
-- OpenAPI‑driven development
-- Secure by default: Helmet, CORS, rate limiting, UUID tracing
-- Environment validation ensures safe deployments
-- Production‑ready: pinned dependencies, clean logs, health endpoints
-- Deployable in under 10 minutes on Render
+## 🏗️ Architecture Overview
+
+
+/src ├── agents/                 # AI agent logic ├── models/                 # Mongoose models ├── routes/                 # API routes (agentRoutes.js, faxRoutes.js) ├── services/               # Provider intelligence layer │    ├── providerContextService.js │    ├── providerRoutingRules.js │    ├── providerOutageService.js │    ├── providerBillingService.js │    ├── providerPerformanceService.js │    ├── faxMetadataService.js │    ├── extractionService.js │    └── classifierService.js ├── middleware/             # Auth, API key validation └── utils/                  # Helpers, constants
+
 
 ---
 
-🚀 Overview
-FaxNova is a lightweight, reliable FOIP backend designed for SaaS builders, developers, and businesses that need to send and receive faxes programmatically.  
-It supports multiple fax providers, automatic failover, secure request handling, and modern Express best practices.
+## 🔌 Provider Intelligence Layer
 
-This backend is optimized for:
-- Micro‑SaaS products
-- API‑only fax services
-- Serverless or container deployments
-- Render, Railway, Fly.io, and Docker environments
+### `providerContextService.js`
+Builds the unified provider context:
+- Logs  
+- Error maps  
+- Retry rules  
+- Failover rules  
+- Outage health  
+- Billing rates  
+- Performance analytics  
 
----
+### `providerRoutingRules.js`
+Defines provider‑specific:
+- Regions  
+- Retry limits  
+- Failover targets  
+- Immediate failover errors  
+- Area‑code bias  
 
-✨ Features
-- Multi‑Provider Fax Support (Sinch + Telnyx)
-- Automatic Provider Failover
-- Pinned Dependencies
-- Environment Validation
-- Security Middleware
-- Request Logging
-- OpenAPI Specification
-- Clean /src architecture
-- Production‑ready .env.example
+### `providerOutageService.js`
+Tracks:
+- Error rate  
+- Latency  
+- Provider health (HEALTHY / DEGRADED / DOWN)
 
----
+### `providerBillingService.js`
+Computes:
+- Cost per page  
+- Retry cost  
+- Failover cost  
+- Region surcharges  
+- SLA penalties  
 
-🧰 Tech Stack
-- Node.js 20.x
-- Express 4
-- Axios
-- Helmet
-- express‑rate‑limit
-- Telnyx Node SDK
-- dotenv
-- nodemon (dev)
-
----
-
-📁 Project Structure (Using /src Architecture)
-`
-faxnova-backend/
-│
-├── public/
-│   └── .well-known/
-│
-├── src/
-│   ├── controllers/
-│   ├── routes/
-│   ├── middleware/
-│   ├── providers/
-│   └── utils/
-│
-├── .github/
-├── .env.example
-├── DEPLOYMENT_CHECKLIST.md
-├── FAX_LIFECYCLE.md
-├── LICENSE
-├── openapi.yaml
-├── package.json
-├── server.js
-└── SECURITY.md
-`
+### `providerPerformanceService.js`
+Computes:
+- SLA score  
+- Cost score  
+- Stability score  
+- Performance score  
 
 ---
 
-🔧 Installation
-`
-git clone https://github.com/datguy14/faxnova-backend.git (github.com in Bing)
-cd faxnova-backend
-npm install
-cp .env.example .env
-`
+## 🧪 API Endpoints
+
+### `/agents/routing`
+AI‑driven routing decision using:
+- Provider context  
+- Classification  
+- Extracted fields  
+- Logs  
+- Metadata  
+
+### `/agents/troubleshoot`
+Explains:
+- Provider failures  
+- Error codes  
+- Outage conditions  
+- Retry behavior  
+
+### `/agents/billing`
+Breaks down:
+- Provider cost  
+- Margin  
+- Failover impact  
+
+### `/agents/compliance`
+HIPAA + audit log analysis.
+
+### `/agents/sales`
+Demo + feature explanation.
+
+### `/agents/onboarding`
+Guided onboarding.
 
 ---
 
-🔐 Environment Variables
-All required variables are documented in .env.example.
-
-Server
-- PORT  
-- NODE_ENV  
-
-Security
-- JWT_SECRET  
-- RATELIMITWINDOW_MS  
-- RATELIMITMAX  
-
-Sinch
-- SINCHAPIKEY  
-- SINCHAPISECRET  
-- SINCHSERVICEPLAN_ID  
-- SINCHFAXNUMBER  
-
-Telnyx
-- TELNYXAPIKEY  
-- TELNYXCONNECTIONID  
-- TELNYXFAXNUMBER  
-
-Failover
-- ENABLEPROVIDERFAILOVER  
-- PRIMARY_PROVIDER  
+## 🔐 Security & Compliance
+- API key authentication  
+- HIPAA‑aware routing  
+- Provider isolation  
+- Encrypted metadata  
+- Audit logs  
 
 ---
 
-📡 API Reference
-
-Base URL
-Production:
-`
-https://your-domain.com
-`
-
-Local:
-`
-http://localhost:3000
-`
+## 🛠️ Tech Stack
+- Node.js  
+- Express  
+- MongoDB / Mongoose  
+- OpenAI (AI agents)  
+- Sinch Fax API  
+- Telnyx Fax API  
 
 ---
 
-1. Send Fax — POST /fax/send
-`
-{
-  "to": "+15551234567",
-  "from": "+15557654321",
-  "pdfUrl": "https://example.com/document.pdf"
-}
-`
+## 📈 Roadmap
+- Provider SLA scoring  
+- Weighted routing engine  
+- Provider score history  
+- Customer margin analytics  
+- Provider performance dashboard  
+- Event bus + webhook normalization  
+- TypeScript migration  
 
 ---
 
-2. Get Fax Status — GET /fax/status/:id
-`
-{
-  "success": true,
-  "provider": "telnyx",
-  "faxId": "abc123",
-  "status": "delivered"
-}
-`
+## 🧑‍💻 Author
+**Charles Locklear**  
+Founder, NovaStack Technologies LLC  
+Builder of FaxNova + NovaRegula Suite
 
 ---
 
-3. Health Check — GET /health
-`
-{ "status": "ok" }
-`
-
----
-
-4. Version — GET /version
-`
-{ "version": "1.1.0" }
-`
-
----
-
-🧪 Running the Server
-
-Development
-`
-npm run dev
-`
-
-Production
-`
-npm start
-`
-
----
-
-🛡 Security
-FaxNova includes:
-- Helmet  
-- Rate limiting  
-- CORS  
-- UUID request tracking  
-- Environment validation  
-
----
-
-🚀 Render Deployment Guide
-
-1. Create a New Web Service
-- Log in to Render  
-- New → Web Service  
-- Connect GitHub  
-- Select faxnova-backend  
-- Choose main  
-
-2. Build & Runtime Settings
-Build:
-`
-npm install
-`
-Start:
-`
-npm start
-`
-
-3. Add Environment Variables
-Copy everything from .env.example.
-
-4. Deploy
-Render will clone, install, and start automatically.
-
-5. Verify
-- /health
-- /version
-- Test fax via /fax/send
-
----
-
-🛠 Render Troubleshooting Guide
-
-Build Fails
-Run npm install locally to confirm no dependency issues.
-
-Missing Environment Variables
-Ensure all .env.example values are added.
-
-PDF URL Not Accessible
-Use a public HTTPS link or S3 bucket.
-
-Provider Errors
-Verify Sinch/Telnyx credentials.
-
-App Crashes on Boot
-Check Render logs for missing env vars.
-
-Slow Boot / Cold Starts
-Upgrade from free tier.
-
----
-
-📜 License
-MIT License — free for commercial and private use.
-
----
-
-🤝 Contributing
-Pull requests welcome.
-
----
-
-🧩 Roadmap
-- FaxNova UI dashboard  
-- Provider‑agnostic webhook ingestion  
-- Multi‑tenant support  
-- Stripe billing integration  
-- Fax queue + retry engine  
-`
+## 📄 License
+MIT License
