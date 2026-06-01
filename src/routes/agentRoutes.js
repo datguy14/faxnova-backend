@@ -1,26 +1,13 @@
 // src/routes/agentRoutes.js
 const express = require('express');
 const router = express.Router();
+const rateLimit = require('express-rate-limit');
 
-// ===== Middleware =====
 const agentAuth = require('../middleware/agentAuth');
 
-// Protect all agent endpoints
-router.use(agentAuth);
-
-// ===== Import Agents =====
-const { handleOnboardingQuestion } = require('../agents/onboardingAgent');
-const { handleTroubleshootingQuestion } = require('../agents/troubleshootingAgent');
-const { handleRoutingDecision } = require('../agents/routingAgent');
-const { handleBillingQuestion } = require('../agents/billingAgent');
-const { handleSalesQuestion } = require('../agents/salesAgent');
-const { handleComplianceQuestion } = require('../agents/complianceAgent');
-
-// ===== Import Models / Services =====
 const Fax = require('../models/Fax');
 const FaxLog = require('../models/FaxLog');
 const AuditLog = require('../models/AuditLog');
-const User = require('../models/User');
 const Invoice = require('../models/Invoice');
 const Usage = require('../models/Usage');
 
@@ -29,10 +16,31 @@ const { getExtractedFields } = require('../services/extractionService');
 const { getClassification } = require('../services/classifierService');
 const { getProviderContext } = require('../services/providerContextService');
 
+const {
+  handleOnboardingQuestion,
+  handleTroubleshootingQuestion,
+  handleRoutingDecision,
+  handleBillingQuestion,
+  handleSalesQuestion,
+  handleComplianceQuestion,
+} = require('../agents');
 
-// ==========================================================
-// ONBOARDING AGENT
-// ==========================================================
+// 🔐 Protect all agent routes
+router.use(agentAuth);
+
+// Rate limiter (proxy‑safe)
+const agentLimiter = rateLimit({
+  windowMs: 60 * 1000,
+  max: 60,
+  keyGenerator: (req) =>
+    req.headers['x-forwarded-for']?.split(',')[0] || req.ip,
+});
+
+router.use(agentLimiter);
+
+/* ============================================================
+   ONBOARDING AGENT
+============================================================ */
 router.post('/onboarding', async (req, res) => {
   try {
     const user = req.user;
@@ -54,17 +62,18 @@ router.post('/onboarding', async (req, res) => {
   }
 });
 
-
-// ==========================================================
-// TROUBLESHOOTING AGENT
-// ==========================================================
+/* ============================================================
+   TROUBLESHOOTING AGENT
+============================================================ */
 router.post('/troubleshoot', async (req, res) => {
   try {
     const { faxId } = req.body;
     const user = req.user;
 
-    const fax = await Fax.findById(faxId);
-    const logs = await FaxLog.find({ faxId });
+    const fax = await Fax.findOne({ _id: faxId, userId: user._id });
+    if (!fax) return res.status(404).json({ success: false, error: 'Fax not found' });
+
+    const logs = await FaxLog.find({ faxId, userId: user._id });
     const metadata = await getFaxMetadata(faxId);
     const providerContext = await getProviderContext(user.defaultProvider, faxId);
 
@@ -84,26 +93,21 @@ router.post('/troubleshoot', async (req, res) => {
   }
 });
 
-
-// ==========================================================
-// ROUTING LOGIC AGENT (Provider-Aware + Failover-Aware)
-// ==========================================================
+/* ============================================================
+   ROUTING AGENT
+============================================================ */
 router.post('/routing', async (req, res) => {
   try {
     const { faxId } = req.body;
     const user = req.user;
 
-    const fax = await Fax.findById(faxId);
-    const logs = await FaxLog.find({ faxId });
+    const fax = await Fax.findOne({ _id: faxId, userId: user._id });
+    if (!fax) return res.status(404).json({ success: false, error: 'Fax not found' });
+
+    const logs = await FaxLog.find({ faxId, userId: user._id });
     const metadata = await getFaxMetadata(faxId);
     const extractedFields = await getExtractedFields(faxId);
     const aiResult = await getClassification(faxId);
-
-    // Provider context now includes:
-    // - routing rules
-    // - retry rules
-    // - outage detection
-    // - failover metadata
     const providerContext = await getProviderContext(user.defaultProvider, faxId);
 
     const response = await handleRoutingDecision({
@@ -123,10 +127,9 @@ router.post('/routing', async (req, res) => {
   }
 });
 
-
-// ==========================================================
-// BILLING & SUPPORT AGENT
-// ==========================================================
+/* ============================================================
+   BILLING AGENT
+============================================================ */
 router.post('/billing', async (req, res) => {
   try {
     const user = req.user;
@@ -151,13 +154,13 @@ router.post('/billing', async (req, res) => {
   }
 });
 
-
-// ==========================================================
-// SALES DEMO AGENT
-// ==========================================================
+/* ============================================================
+   SALES AGENT
+============================================================ */
 router.post('/sales', async (req, res) => {
   try {
     const user = req.user;
+
     const usage = await Usage.findOne({ userId: user._id });
     const providerContext = await getProviderContext(user.defaultProvider, null);
 
@@ -175,10 +178,9 @@ router.post('/sales', async (req, res) => {
   }
 });
 
-
-// ==========================================================
-// COMPLIANCE AGENT
-// ==========================================================
+/* ============================================================
+   COMPLIANCE AGENT
+============================================================ */
 router.post('/compliance', async (req, res) => {
   try {
     const user = req.user;
@@ -199,6 +201,5 @@ router.post('/compliance', async (req, res) => {
     res.status(500).json({ success: false, error: 'Compliance agent failed' });
   }
 });
-
 
 module.exports = router;
