@@ -1,26 +1,28 @@
-// src/middleware/agentAuth.js
+const jwt = require('jsonwebtoken');
 const User = require('../models/User');
 
 module.exports = async function agentAuth(req, res, next) {
   try {
-    const apiKey = req.headers['x-faxnova-key'];
+    const authHeader = req.headers.authorization || '';
+    const token = authHeader.startsWith('Bearer ')
+      ? authHeader.slice(7)
+      : null;
 
-    if (!apiKey) {
-      return res.status(401).json({ success: false, error: 'Missing API key' });
+    if (!token) {
+      return res.status(401).json({ success: false, error: 'Missing token' });
     }
 
-    const user = await User.findOne({ apiKey });
+    const decoded = jwt.verify(token, process.env.JWT_SECRET);
+    const user = await User.findById(decoded.id);
 
     if (!user) {
-      return res.status(403).json({ success: false, error: 'Invalid API key' });
+      return res.status(401).json({ success: false, error: 'Invalid user' });
     }
 
-    // Attach user to request for downstream agents
     req.user = user;
-
     next();
   } catch (err) {
-    console.error('Agent Auth Error:', err);
-    res.status(500).json({ success: false, error: 'Authentication failed' });
+    console.error('Auth error:', err);
+    return res.status(401).json({ success: false, error: 'Unauthorized' });
   }
 };
