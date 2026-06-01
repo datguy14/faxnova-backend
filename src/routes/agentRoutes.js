@@ -2,6 +2,12 @@
 const express = require('express');
 const router = express.Router();
 
+// ===== Middleware =====
+const agentAuth = require('../middleware/agentAuth');
+
+// Protect all agent endpoints
+router.use(agentAuth);
+
 // ===== Import Agents =====
 const { handleOnboardingQuestion } = require('../agents/onboardingAgent');
 const { handleTroubleshootingQuestion } = require('../agents/troubleshootingAgent');
@@ -28,14 +34,13 @@ const { getClassification } = require('../services/classifierService');
 // ==========================================================
 router.post('/onboarding', async (req, res) => {
   try {
-    const { message, userId } = req.body;
+    const user = req.user;
 
-    const user = await User.findById(userId);
-    const usage = await Usage.findOne({ userId });
-    const invoices = await Invoice.find({ userId });
+    const usage = await Usage.findOne({ userId: user._id });
+    const invoices = await Invoice.find({ userId: user._id });
 
     const response = await handleOnboardingQuestion({
-      userMessage: message,
+      userMessage: req.body.message,
       user,
       usage,
       invoices,
@@ -54,17 +59,19 @@ router.post('/onboarding', async (req, res) => {
 // ==========================================================
 router.post('/troubleshoot', async (req, res) => {
   try {
-    const { message, faxId } = req.body;
+    const { faxId } = req.body;
+    const user = req.user;
 
     const fax = await Fax.findById(faxId);
     const logs = await FaxLog.find({ faxId });
     const metadata = await getFaxMetadata(faxId);
 
     const response = await handleTroubleshootingQuestion({
-      userMessage: message,
+      userMessage: req.body.message,
       fax,
       logs,
       metadata,
+      user,
     });
 
     res.json({ success: true, response });
@@ -81,6 +88,7 @@ router.post('/troubleshoot', async (req, res) => {
 router.post('/routing', async (req, res) => {
   try {
     const { faxId } = req.body;
+    const user = req.user;
 
     const fax = await Fax.findById(faxId);
     const logs = await FaxLog.find({ faxId });
@@ -94,6 +102,7 @@ router.post('/routing', async (req, res) => {
       faxMetadata: metadata,
       logs,
       fax,
+      user,
     });
 
     res.json({ success: true, response });
@@ -109,17 +118,17 @@ router.post('/routing', async (req, res) => {
 // ==========================================================
 router.post('/billing', async (req, res) => {
   try {
-    const { message, userId } = req.body;
+    const user = req.user;
 
-    const usage = await Usage.findOne({ userId });
-    const invoices = await Invoice.find({ userId });
-    const user = await User.findById(userId);
+    const usage = await Usage.findOne({ userId: user._id });
+    const invoices = await Invoice.find({ userId: user._id });
 
     const response = await handleBillingQuestion({
-      userMessage: message,
+      userMessage: req.body.message,
       usage,
       invoice: invoices?.[0] || null,
       plan: user?.plan || null,
+      user,
     });
 
     res.json({ success: true, response });
@@ -135,13 +144,11 @@ router.post('/billing', async (req, res) => {
 // ==========================================================
 router.post('/sales', async (req, res) => {
   try {
-    const { message, userId } = req.body;
-
-    const user = await User.findById(userId);
-    const usage = await Usage.findOne({ userId });
+    const user = req.user;
+    const usage = await Usage.findOne({ userId: user._id });
 
     const response = await handleSalesQuestion({
-      userMessage: message,
+      userMessage: req.body.message,
       leadInfo: user,
       usageEstimate: usage,
     });
@@ -159,19 +166,19 @@ router.post('/sales', async (req, res) => {
 // ==========================================================
 router.post('/compliance', async (req, res) => {
   try {
-    const { message, userId } = req.body;
+    const user = req.user;
 
-    const auditLog = await AuditLog.find({ userId });
-    const user = await User.findById(userId);
+    const auditLog = await AuditLog.find({ userId: user._id });
 
     const response = await handleComplianceQuestion({
-      userMessage: message,
+      userMessage: req.body.message,
       auditLog,
       securityContext: {
         provider: user?.defaultProvider || 'sinch',
         encryption: true,
         hipaa: true,
       },
+      user,
     });
 
     res.json({ success: true, response });
