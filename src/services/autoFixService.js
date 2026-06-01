@@ -1,7 +1,8 @@
 // src/services/autoFixService.js
 
-const { execSync } = require('child_process');
 const fs = require('fs');
+const path = require('path');
+const { runGit } = require('../utils/gitExec');
 
 module.exports.applyPatchAndCommit = async function applyPatchAndCommit({
   fileName,
@@ -9,19 +10,18 @@ module.exports.applyPatchAndCommit = async function applyPatchAndCommit({
   commitMessage,
 }) {
   try {
-    // Write patch to temp file
-    const patchPath = `/tmp/${fileName}.patch`;
+    const patchPath = path.join('/tmp', `${fileName}.patch`);
     fs.writeFileSync(patchPath, patch);
 
     // Apply patch
-    execSync(`git apply ${patchPath}`);
+    await runGit(`git apply ${patchPath}`);
 
     // Commit
-    execSync(`git add ${fileName}`);
-    execSync(`git commit -m "${commitMessage}"`);
+    await runGit(`git add ${fileName}`);
+    await runGit(`git commit -m "${commitMessage}"`);
 
     // Push
-    execSync(`git push`);
+    await runGit(`git push`);
 
     return true;
   } catch (err) {
