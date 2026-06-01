@@ -1,6 +1,7 @@
 // src/services/providerContextService.js
 
 const { getProviderRoutingRules } = require('./providerRoutingRules');
+const { updateProviderHealth, getProviderHealth } = require('./providerOutageService');
 
 // ===== Provider Error Maps =====
 const SINCH_ERROR_MAP = {
@@ -16,18 +17,19 @@ const TELNYX_ERROR_MAP = {
 };
 
 // ===== Provider Log Fetchers =====
-// (You can replace these with real API calls later)
+// Replace with real API calls later
 async function getSinchLogs(faxId) {
   return [
     { event: "queued", timestamp: Date.now() - 5000 },
     { event: "sent", timestamp: Date.now() - 3000 },
+    { event: "delivered", timestamp: Date.now() - 1000, latency: 2000 },
   ];
 }
 
 async function getTelnyxLogs(faxId) {
   return [
     { event: "accepted", timestamp: Date.now() - 4000 },
-    { event: "delivered", timestamp: Date.now() - 2000 },
+    { event: "delivered", timestamp: Date.now() - 2000, latency: 2500 },
   ];
 }
 
@@ -36,6 +38,7 @@ async function getTelnyxLogs(faxId) {
 module.exports.getProviderContext = async function getProviderContext(provider, faxId) {
   const routingRules = getProviderRoutingRules(provider);
 
+  // Base provider metadata
   const base = {
     provider,
     hipaa: routingRules.hipaa,
@@ -43,32 +46,57 @@ module.exports.getProviderContext = async function getProviderContext(provider, 
     routingRules,
   };
 
+  // Provider-specific logic
   if (provider === 'sinch') {
+    const logs = faxId ? await getSinchLogs(faxId) : [];
+    const health = updateProviderHealth('sinch', logs);
+
     return {
       ...base,
-      logs: faxId ? await getSinchLogs(faxId) : [],
+      logs,
       errorMap: SINCH_ERROR_MAP,
-      retryPolicy: routingRules.maxRetries,
+      retry: {
+        maxRetries: routingRules.maxRetries,
+        retryDelays: routingRules.retryDelays,
+        immediateFailoverErrors: routingRules.immediateFailoverErrors,
+        failoverTo: routingRules.failoverTo,
+      },
       region: routingRules.preferredRegions[0] || 'us-east',
+      health,
     };
   }
 
   if (provider === 'telnyx') {
+    const logs = faxId ? await getTelnyxLogs(faxId) : [];
+    const health = updateProviderHealth('telnyx', logs);
+
     return {
       ...base,
-      logs: faxId ? await getTelnyxLogs(faxId) : [],
+      logs,
       errorMap: TELNYX_ERROR_MAP,
-      retryPolicy: routingRules.maxRetries,
+      retry: {
+        maxRetries: routingRules.maxRetries,
+        retryDelays: routingRules.retryDelays,
+        immediateFailoverErrors: routingRules.immediateFailoverErrors,
+        failoverTo: routingRules.failoverTo,
+      },
       region: routingRules.preferredRegions[0] || 'us-central',
+      health,
     };
   }
 
-  // Default provider fallback
+  // Default fallback
   return {
     ...base,
     logs: [],
     errorMap: {},
-    retryPolicy: 1,
+    retry: {
+      maxRetries: 1,
+      retryDelays: [5000],
+      immediateFailoverErrors: [],
+      failoverTo: null,
+    },
     region: 'unknown',
+    health: getProviderHealth(provider),
   };
 };
