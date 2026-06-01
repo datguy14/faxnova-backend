@@ -7,10 +7,10 @@ const { z } = require('zod');
 const agentAuth = require('../middleware/agentAuth');
 const Fax = require('../models/Fax');
 
-// 🔐 Protect all fax routes
+// 🔐 1. AUTH FIRST — protects everything below
 router.use(agentAuth);
 
-// Proxy‑safe rate limiter for fax sending
+// 2. Then rate limiters (safe behind auth)
 const faxSendLimiter = rateLimit({
   windowMs: 60 * 1000,
   max: 30,
@@ -18,7 +18,7 @@ const faxSendLimiter = rateLimit({
     req.headers['x-forwarded-for']?.split(',')[0] || req.ip,
 });
 
-// Zod validation schema
+// 3. Zod validation schema
 const sendFaxSchema = z.object({
   to: z.string().min(10, 'Recipient fax number is required'),
   fileUrl: z.string().url('fileUrl must be a valid URL'),
@@ -48,8 +48,6 @@ router.post('/send', faxSendLimiter, async (req, res) => {
       coverPage: coverPage || null,
       status: 'queued',
     });
-
-    // TODO: enqueue provider send job here
 
     res.json({ success: true, fax });
   } catch (err) {
