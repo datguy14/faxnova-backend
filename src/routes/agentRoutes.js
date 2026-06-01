@@ -16,7 +16,7 @@ const { handleBillingQuestion } = require('../agents/billingAgent');
 const { handleSalesQuestion } = require('../agents/salesAgent');
 const { handleComplianceQuestion } = require('../agents/complianceAgent');
 
-// ===== Import Models / Services for Context Injection =====
+// ===== Import Models / Services =====
 const Fax = require('../models/Fax');
 const FaxLog = require('../models/FaxLog');
 const AuditLog = require('../models/AuditLog');
@@ -27,6 +27,7 @@ const Usage = require('../models/Usage');
 const { getFaxMetadata } = require('../services/faxMetadataService');
 const { getExtractedFields } = require('../services/extractionService');
 const { getClassification } = require('../services/classifierService');
+const { getProviderContext } = require('../services/providerContextService');
 
 
 // ==========================================================
@@ -65,6 +66,7 @@ router.post('/troubleshoot', async (req, res) => {
     const fax = await Fax.findById(faxId);
     const logs = await FaxLog.find({ faxId });
     const metadata = await getFaxMetadata(faxId);
+    const providerContext = await getProviderContext(user.defaultProvider, faxId);
 
     const response = await handleTroubleshootingQuestion({
       userMessage: req.body.message,
@@ -72,6 +74,7 @@ router.post('/troubleshoot', async (req, res) => {
       logs,
       metadata,
       user,
+      providerContext,
     });
 
     res.json({ success: true, response });
@@ -95,6 +98,7 @@ router.post('/routing', async (req, res) => {
     const metadata = await getFaxMetadata(faxId);
     const extractedFields = await getExtractedFields(faxId);
     const aiResult = await getClassification(faxId);
+    const providerContext = await getProviderContext(user.defaultProvider, faxId);
 
     const response = await handleRoutingDecision({
       aiResult,
@@ -103,6 +107,7 @@ router.post('/routing', async (req, res) => {
       logs,
       fax,
       user,
+      providerContext,
     });
 
     res.json({ success: true, response });
@@ -122,6 +127,7 @@ router.post('/billing', async (req, res) => {
 
     const usage = await Usage.findOne({ userId: user._id });
     const invoices = await Invoice.find({ userId: user._id });
+    const providerContext = await getProviderContext(user.defaultProvider, null);
 
     const response = await handleBillingQuestion({
       userMessage: req.body.message,
@@ -129,6 +135,7 @@ router.post('/billing', async (req, res) => {
       invoice: invoices?.[0] || null,
       plan: user?.plan || null,
       user,
+      providerContext,
     });
 
     res.json({ success: true, response });
@@ -146,11 +153,13 @@ router.post('/sales', async (req, res) => {
   try {
     const user = req.user;
     const usage = await Usage.findOne({ userId: user._id });
+    const providerContext = await getProviderContext(user.defaultProvider, null);
 
     const response = await handleSalesQuestion({
       userMessage: req.body.message,
       leadInfo: user,
       usageEstimate: usage,
+      providerContext,
     });
 
     res.json({ success: true, response });
@@ -169,15 +178,12 @@ router.post('/compliance', async (req, res) => {
     const user = req.user;
 
     const auditLog = await AuditLog.find({ userId: user._id });
+    const providerContext = await getProviderContext(user.defaultProvider, null);
 
     const response = await handleComplianceQuestion({
       userMessage: req.body.message,
       auditLog,
-      securityContext: {
-        provider: user?.defaultProvider || 'sinch',
-        encryption: true,
-        hipaa: true,
-      },
+      securityContext: providerContext,
       user,
     });
 
