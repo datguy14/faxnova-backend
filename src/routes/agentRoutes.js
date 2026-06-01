@@ -23,6 +23,7 @@ const {
   handleBillingQuestion,
   handleSalesQuestion,
   handleComplianceQuestion,
+  handleCodeAudit,
 } = require('../agents');
 
 // 🔐 Protect all agent routes
@@ -199,6 +200,35 @@ router.post('/compliance', async (req, res) => {
   } catch (err) {
     console.error('Compliance Agent Error:', err);
     res.status(500).json({ success: false, error: 'Compliance agent failed' });
+  }
+});
+
+/* ============================================================
+   CODE AUDIT + AUTO‑FIX AGENT
+============================================================ */
+router.post('/audit-code', async (req, res) => {
+  try {
+    const { fileName, fileContent, projectContext, message, autoFix } = req.body;
+
+    if (!fileName || !fileContent) {
+      return res.status(400).json({
+        success: false,
+        error: "fileName and fileContent are required",
+      });
+    }
+
+    const response = await handleCodeAudit({
+      fileName,
+      fileContent,
+      projectContext,
+      userMessage: message,
+      autoFix: autoFix === true,
+    });
+
+    res.json({ success: true, response });
+  } catch (err) {
+    console.error("Code Audit Agent Error:", err);
+    res.status(500).json({ success: false, error: "Code audit failed" });
   }
 });
 
