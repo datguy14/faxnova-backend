@@ -3,6 +3,7 @@
 const { getProviderRoutingRules } = require('./providerRoutingRules');
 const { updateProviderHealth, getProviderHealth } = require('./providerOutageService');
 const { getProviderBillingRates } = require('./providerBillingService');
+const { calculateProviderPerformance } = require('./providerPerformanceService');
 
 // ===== Provider Error Maps =====
 const SINCH_ERROR_MAP = {
@@ -53,6 +54,13 @@ module.exports.getProviderContext = async function getProviderContext(provider, 
   if (provider === 'sinch') {
     const logs = faxId ? await getSinchLogs(faxId) : [];
     const health = updateProviderHealth('sinch', logs);
+    const region = routingRules.preferredRegions[0] || 'us-east';
+    const performance = calculateProviderPerformance({
+      logs,
+      billing,
+      health,
+      region,
+    });
 
     return {
       ...base,
@@ -64,15 +72,23 @@ module.exports.getProviderContext = async function getProviderContext(provider, 
         immediateFailoverErrors: routingRules.immediateFailoverErrors,
         failoverTo: routingRules.failoverTo,
       },
-      region: routingRules.preferredRegions[0] || 'us-east',
+      region,
       health,
       failoverTo: routingRules.failoverTo,
+      performance,
     };
   }
 
   if (provider === 'telnyx') {
     const logs = faxId ? await getTelnyxLogs(faxId) : [];
     const health = updateProviderHealth('telnyx', logs);
+    const region = routingRules.preferredRegions[0] || 'us-central';
+    const performance = calculateProviderPerformance({
+      logs,
+      billing,
+      health,
+      region,
+    });
 
     return {
       ...base,
@@ -84,13 +100,23 @@ module.exports.getProviderContext = async function getProviderContext(provider, 
         immediateFailoverErrors: routingRules.immediateFailoverErrors,
         failoverTo: routingRules.failoverTo,
       },
-      region: routingRules.preferredRegions[0] || 'us-central',
+      region,
       health,
       failoverTo: routingRules.failoverTo,
+      performance,
     };
   }
 
   // Default fallback
+  const health = getProviderHealth(provider);
+  const region = 'unknown';
+  const performance = calculateProviderPerformance({
+    logs: [],
+    billing,
+    health,
+    region,
+  });
+
   return {
     ...base,
     logs: [],
@@ -101,8 +127,9 @@ module.exports.getProviderContext = async function getProviderContext(provider, 
       immediateFailoverErrors: [],
       failoverTo: null,
     },
-    region: 'unknown',
-    health: getProviderHealth(provider),
+    region,
+    health,
     failoverTo: null,
+    performance,
   };
 };
