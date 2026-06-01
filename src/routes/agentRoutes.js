@@ -2,7 +2,7 @@
 const express = require('express');
 const router = express.Router();
 
-// Import all agents
+// ===== Import Agents =====
 const { handleOnboardingQuestion } = require('../agents/onboardingAgent');
 const { handleTroubleshootingQuestion } = require('../agents/troubleshootingAgent');
 const { handleRoutingDecision } = require('../agents/routingAgent');
@@ -10,16 +10,35 @@ const { handleBillingQuestion } = require('../agents/billingAgent');
 const { handleSalesQuestion } = require('../agents/salesAgent');
 const { handleComplianceQuestion } = require('../agents/complianceAgent');
 
-// ===============================
-// Onboarding Agent
-// ===============================
+// ===== Import Models / Services for Context Injection =====
+const Fax = require('../models/Fax');
+const FaxLog = require('../models/FaxLog');
+const AuditLog = require('../models/AuditLog');
+const User = require('../models/User');
+const Invoice = require('../models/Invoice');
+const Usage = require('../models/Usage');
+
+const { getFaxMetadata } = require('../services/faxMetadataService');
+const { getExtractedFields } = require('../services/extractionService');
+const { getClassification } = require('../services/classifierService');
+
+
+// ==========================================================
+// ONBOARDING AGENT
+// ==========================================================
 router.post('/onboarding', async (req, res) => {
   try {
     const { message, userId } = req.body;
 
+    const user = await User.findById(userId);
+    const usage = await Usage.findOne({ userId });
+    const invoices = await Invoice.find({ userId });
+
     const response = await handleOnboardingQuestion({
       userMessage: message,
-      userId,
+      user,
+      usage,
+      invoices,
     });
 
     res.json({ success: true, response });
@@ -29,17 +48,23 @@ router.post('/onboarding', async (req, res) => {
   }
 });
 
-// ===============================
-// Troubleshooting Agent
-// ===============================
+
+// ==========================================================
+// TROUBLESHOOTING AGENT
+// ==========================================================
 router.post('/troubleshoot', async (req, res) => {
   try {
-    const { message, faxId, logs } = req.body;
+    const { message, faxId } = req.body;
+
+    const fax = await Fax.findById(faxId);
+    const logs = await FaxLog.find({ faxId });
+    const metadata = await getFaxMetadata(faxId);
 
     const response = await handleTroubleshootingQuestion({
       userMessage: message,
-      faxId,
+      fax,
       logs,
+      metadata,
     });
 
     res.json({ success: true, response });
@@ -49,17 +74,26 @@ router.post('/troubleshoot', async (req, res) => {
   }
 });
 
-// ===============================
-// Routing Logic Agent
-// ===============================
+
+// ==========================================================
+// ROUTING LOGIC AGENT
+// ==========================================================
 router.post('/routing', async (req, res) => {
   try {
-    const { aiResult, extractedFields, faxMetadata } = req.body;
+    const { faxId } = req.body;
+
+    const fax = await Fax.findById(faxId);
+    const logs = await FaxLog.find({ faxId });
+    const metadata = await getFaxMetadata(faxId);
+    const extractedFields = await getExtractedFields(faxId);
+    const aiResult = await getClassification(faxId);
 
     const response = await handleRoutingDecision({
       aiResult,
       extractedFields,
-      faxMetadata,
+      faxMetadata: metadata,
+      logs,
+      fax,
     });
 
     res.json({ success: true, response });
@@ -69,18 +103,23 @@ router.post('/routing', async (req, res) => {
   }
 });
 
-// ===============================
-// Billing & Support Agent
-// ===============================
+
+// ==========================================================
+// BILLING & SUPPORT AGENT
+// ==========================================================
 router.post('/billing', async (req, res) => {
   try {
-    const { message, usage, invoice, plan } = req.body;
+    const { message, userId } = req.body;
+
+    const usage = await Usage.findOne({ userId });
+    const invoices = await Invoice.find({ userId });
+    const user = await User.findById(userId);
 
     const response = await handleBillingQuestion({
       userMessage: message,
       usage,
-      invoice,
-      plan,
+      invoice: invoices?.[0] || null,
+      plan: user?.plan || null,
     });
 
     res.json({ success: true, response });
@@ -90,17 +129,21 @@ router.post('/billing', async (req, res) => {
   }
 });
 
-// ===============================
-// Sales Demo Agent
-// ===============================
+
+// ==========================================================
+// SALES DEMO AGENT
+// ==========================================================
 router.post('/sales', async (req, res) => {
   try {
-    const { message, leadInfo, usageEstimate } = req.body;
+    const { message, userId } = req.body;
+
+    const user = await User.findById(userId);
+    const usage = await Usage.findOne({ userId });
 
     const response = await handleSalesQuestion({
       userMessage: message,
-      leadInfo,
-      usageEstimate,
+      leadInfo: user,
+      usageEstimate: usage,
     });
 
     res.json({ success: true, response });
@@ -110,17 +153,25 @@ router.post('/sales', async (req, res) => {
   }
 });
 
-// ===============================
-// Compliance Agent
-// ===============================
+
+// ==========================================================
+// COMPLIANCE AGENT
+// ==========================================================
 router.post('/compliance', async (req, res) => {
   try {
-    const { message, auditLog, securityContext } = req.body;
+    const { message, userId } = req.body;
+
+    const auditLog = await AuditLog.find({ userId });
+    const user = await User.findById(userId);
 
     const response = await handleComplianceQuestion({
       userMessage: message,
       auditLog,
-      securityContext,
+      securityContext: {
+        provider: user?.defaultProvider || 'sinch',
+        encryption: true,
+        hipaa: true,
+      },
     });
 
     res.json({ success: true, response });
@@ -129,5 +180,6 @@ router.post('/compliance', async (req, res) => {
     res.status(500).json({ success: false, error: 'Compliance agent failed' });
   }
 });
+
 
 module.exports = router;
