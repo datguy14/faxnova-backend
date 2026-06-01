@@ -55,7 +55,7 @@ Output Format:
 - How it improves the system
 `;
 
-  // Call your LLM here
+  // Call your LLM
   const auditResult = await global.llm.chatCompletion({
     system: systemPrompt,
     user: `
@@ -68,9 +68,8 @@ ${fileContent}
     `,
   });
 
-  const { patch } = auditResult;
+  const patch = auditResult?.patch;
 
-  // Auto‑fix mode: apply patch to repo
   if (autoFix && patch) {
     await applyPatchAndCommit({
       fileName,
