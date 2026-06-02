@@ -18,7 +18,7 @@
     "fax-api",
     "fax-saas",
     "nodejs"
-  },
+  ],
   "repository": {
     "type": "git",
     "url": "https://github.com/datguy14/faxnova-backend.git"
@@ -35,4 +35,4 @@
     "nodemon": "^3.1.0",
     "jest": "^29.7.0"
   }
-    }
+}
