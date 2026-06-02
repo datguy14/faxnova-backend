@@ -1,191 +1,125 @@
-# 📡 FaxNova Backend  
-### Multi‑Provider AI‑Driven Fax Routing Engine (Sinch + Telnyx)
+  integrations/     # Provider integrations (Sinch, Telnyx)
+  middleware/       # Auth, rate limiting, validation
+  models/           # Mongoose models
+  routes/           # API routes
+  services/         # Core services (fax, usage, billing)
+  utils/            # Helpers, validators, env checks
 
-FaxNova is a carrier‑grade, AI‑powered fax orchestration backend designed for reliability, compliance, and intelligent routing.  
-It integrates multiple fax providers, applies predictive analytics, and uses a multi‑agent AI system to troubleshoot, classify, and route faxes in real time.
+🔌 API Endpoints
 
----
+Fax
 
-## 🚀 Features
+POST /fax/send
 
-### 🔀 Multi‑Provider Routing Engine
-- Intelligent routing between **Sinch** and **Telnyx**
-- Provider‑specific rules, regions, and capabilities
-- HIPAA‑aware routing with encryption enforcement
+GET /fax/:id
 
-### 🔁 Retry & Failover Intelligence
-- Provider‑specific retry limits and delays  
-- Immediate failover on critical error codes  
-- Automatic provider switching when thresholds are exceeded  
-- Area‑code‑aware routing bias
+GET /fax
 
-### ⚠️ Outage Detection
-- Real‑time provider health scoring  
-- Error‑rate monitoring  
-- Latency tracking  
-- Automatic provider degradation → failover logic
+DELETE /fax/:id
 
-### 💵 Provider Billing Engine
-- Cost‑per‑page modeling  
-- Retry cost multipliers  
-- Failover cost multipliers  
-- Region surcharges  
-- SLA penalty modeling  
-- True provider cost calculation per fax
+Agents
 
-### 📊 Provider Performance Analytics
-- Latency scoring  
-- Error‑rate scoring  
-- Retry‑rate scoring  
-- SLA score  
-- Cost efficiency score  
-- Stability score  
-- Unified **performanceScore (0–100)**
+POST /agents/audit-code
 
-### 🤖 AI Agent System
-Six specialized agents:
-- **Routing Agent** — determines provider, retries, failover  
-- **Troubleshooting Agent** — explains failures, logs, provider issues  
-- **Billing Agent** — cost breakdowns, margin analysis  
-- **Sales Agent** — demos, feature explanations  
-- **Compliance Agent** — HIPAA, audit logs, security context  
-- **Onboarding Agent** — guides new users
+POST /agents/troubleshoot
 
-### 🧠 Provider Context Engine
-Every fax request receives a unified provider context containing:
-- Routing rules  
-- Retry rules  
-- Outage health  
-- Failover metadata  
-- Billing rates  
-- Performance analytics  
-- Error maps  
-- Logs  
-- Region + HIPAA metadata  
+POST /agents/route
 
----
+Auth
 
-## 🏗️ Architecture Overview
+POST /auth/login
 
+POST /auth/register
 
-/src ├── agents/                 # AI agent logic ├── models/                 # Mongoose models ├── routes/                 # API routes (agentRoutes.js, faxRoutes.js) ├── services/               # Provider intelligence layer │    ├── providerContextService.js │    ├── providerRoutingRules.js │    ├── providerOutageService.js │    ├── providerBillingService.js │    ├── providerPerformanceService.js │    ├── faxMetadataService.js │    ├── extractionService.js │    └── classifierService.js ├── middleware/             # Auth, API key validation └── utils/                  # Helpers, constants
+Explore the API reference.
 
+🛠️ Environment Variables
 
----
+PORT=
+MONGO_URI=
+JWT_SECRET=
 
-## 🔌 Provider Intelligence Layer
+# Providers
+SINCH_API_KEY=
+SINCH_API_SECRET=
+TELNYX_API_KEY=
 
-### `providerContextService.js`
-Builds the unified provider context:
-- Logs  
-- Error maps  
-- Retry rules  
-- Failover rules  
-- Outage health  
-- Billing rates  
-- Performance analytics  
+# AI
+OPENAI_API_KEY=
 
-### `providerRoutingRules.js`
-Defines provider‑specific:
-- Regions  
-- Retry limits  
-- Failover targets  
-- Immediate failover errors  
-- Area‑code bias  
+# Audit Agent
+AUDIT_AGENT_URL=
+AUDIT_AGENT_KEY=
 
-### `providerOutageService.js`
-Tracks:
-- Error rate  
-- Latency  
-- Provider health (HEALTHY / DEGRADED / DOWN)
+# Allowed file hosts (SSRF protection)
+ALLOWED_FILE_HOSTS=
 
-### `providerBillingService.js`
-Computes:
-- Cost per page  
-- Retry cost  
-- Failover cost  
-- Region surcharges  
-- SLA penalties  
+Learn about environment configuration.
 
-### `providerPerformanceService.js`
-Computes:
-- SLA score  
-- Cost score  
-- Stability score  
-- Performance score  
+🧪 Running Locally
 
----
+Install dependencies
 
-## 🧪 API Endpoints
+npm install
 
-### `/agents/routing`
-AI‑driven routing decision using:
-- Provider context  
-- Classification  
-- Extracted fields  
-- Logs  
-- Metadata  
+Start development server
 
-### `/agents/troubleshoot`
-Explains:
-- Provider failures  
-- Error codes  
-- Outage conditions  
-- Retry behavior  
+npm run dev
 
-### `/agents/billing`
-Breaks down:
-- Provider cost  
-- Margin  
-- Failover impact  
+Start production server
 
-### `/agents/compliance`
-HIPAA + audit log analysis.
+npm start
 
-### `/agents/sales`
-Demo + feature explanation.
+🔐 Security & Compliance
 
-### `/agents/onboarding`
-Guided onboarding.
+FaxNova Backend includes:
 
----
+SSRF‑safe file URL validation
 
-## 🔐 Security & Compliance
-- API key authentication  
-- HIPAA‑aware routing  
-- Provider isolation  
-- Encrypted metadata  
-- Audit logs  
+Provider‑safe routing
 
----
+Strict input validation
 
-## 🛠️ Tech Stack
-- Node.js  
-- Express  
-- MongoDB / Mongoose  
-- OpenAI (AI agents)  
-- Sinch Fax API  
-- Telnyx Fax API  
+Webhook signature verification
 
----
+Audit logging
 
-## 📈 Roadmap
-- Provider SLA scoring  
-- Weighted routing engine  
-- Provider score history  
-- Customer margin analytics  
-- Provider performance dashboard  
-- Event bus + webhook normalization  
-- TypeScript migration  
+Error normalization
 
----
+See security overview.
 
-## 🧑‍💻 Author
-**Charles Locklear**  
-Founder, NovaStack Technologies LLC  
-Builder of FaxNova + NovaRegula Suite
+🤖 Audit Agent CI (Included)
 
----
+This repo includes a GitHub Action that:
 
-## 📄 License
-MIT License
+Runs the Audit Agent
+
+Parses issues
+
+Posts PR comments
+
+Fails on critical issues
+
+This ensures continuous code quality and boosts acquisition valuation.
+
+Learn more about the Audit Agent.
+
+🧭 Roadmap (Optional for Buyers)
+
+Frontend dashboard (Next.js)
+
+Team accounts + RBAC
+
+Usage analytics
+
+Provider failover UI
+
+Mobile app (FlutterFlow)
+
+Explore the roadmap.
+
+📬 Contact
+
+For acquisition inquiries or technical questions, contact:
+
+Charles LocklearFounder, NovaStack TechnologiesLaurinburg, NC
