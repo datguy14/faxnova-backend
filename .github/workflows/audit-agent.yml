@@ -1,0 +1,59 @@
+name: Audit Agent
+
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+
+jobs:
+  audit:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repo
+        uses: actions/checkout@v4
+
+      - name: Run Audit Agent
+        id: audit
+        run: |
+          echo "Running FaxNova Audit Agent..."
+
+          RESPONSE=$(curl -s -X POST "$AUDIT_AGENT_URL" \
+            -H "Authorization: Bearer $AUDIT_AGENT_KEY" \
+            -H "Content-Type: application/json" \
+            -d "{\"path\":\"src/\",\"mode\":\"analyze\"}")
+
+          echo "Raw response:"
+          echo "$RESPONSE"
+
+          echo "response=$RESPONSE" >> $GITHUB_OUTPUT
+
+      - name: Parse audit results
+        id: parse
+        run: |
+          echo "Parsing audit results..."
+
+          CRITICAL=$(echo '${{ steps.audit.outputs.response }}' | jq '.issues | map(select(.severity == "critical")) | length')
+
+          echo "critical_count=$CRITICAL" >> $GITHUB_OUTPUT
+
+      - name: Post PR Comment
+        if: github.event_name == 'pull_request'
+        uses: marocchino/sticky-pull-request-comment@v2
+        with:
+          header: audit-agent
+          message: |
+            ### 🔍 FaxNova Audit Agent Report
+            **Critical Issues:** ${{ steps.parse.outputs.critical_count }}
+
+            **Raw Output:**
+            ```
+            ${{ steps.audit.outputs.response }}
+            ```
+
+      - name: Fail on critical issues
+        if: steps.parse.outputs.critical_count != '0'
+        run: |
+          echo "Critical issues found. Failing the build."
+          exit 1
