@@ -10,9 +10,16 @@ jobs:
   audit:
     runs-on: ubuntu-latest
 
+    env:
+      AUDIT_AGENT_URL: ${{ secrets.AUDIT_AGENT_URL }}
+      AUDIT_AGENT_KEY: ${{ secrets.AUDIT_AGENT_KEY }}
+
     steps:
       - name: Checkout repo
         uses: actions/checkout@v4
+
+      - name: Install jq
+        run: sudo apt-get update && sudo apt-get install -y jq
 
       - name: Run Audit Agent
         id: audit
@@ -27,14 +34,16 @@ jobs:
           echo "Raw response:"
           echo "$RESPONSE"
 
-          echo "response=$RESPONSE" >> $GITHUB_OUTPUT
+          RESPONSE_ESCAPED=$(echo "$RESPONSE" | jq -Rs .)
+          echo "response=$RESPONSE_ESCAPED" >> $GITHUB_OUTPUT
 
       - name: Parse audit results
         id: parse
         run: |
-          echo "Parsing audit results..."
+          RAW=${{ steps.audit.outputs.response }}
+          RESPONSE=$(echo "$RAW" | jq -r .)
 
-          CRITICAL=$(echo '${{ steps.audit.outputs.response }}' | jq '.issues | map(select(.severity == "critical")) | length')
+          CRITICAL=$(echo "$RESPONSE" | jq '.issues | map(select(.severity == "critical")) | length')
 
           echo "critical_count=$CRITICAL" >> $GITHUB_OUTPUT
 
