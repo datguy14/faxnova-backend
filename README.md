@@ -1,3 +1,104 @@
+ FaxNova Backend — Multi‑Provider Fax Infrastructure (Acquisition‑Ready)
+
+A production‑grade backend powering FaxNova: a modern, AI‑enhanced, multi‑provider fax delivery platform built for reliability, compliance, and scale.
+
+🚀 Overview
+
+FaxNova Backend is a Node.js + Express service that provides:
+
+Multi‑provider fax delivery (Sinch + Telnyx)
+
+Webhook ingestion + metadata extraction
+
+AI‑powered troubleshooting, routing, compliance, and billing agents
+
+Secure authentication, rate limiting, and validation
+
+Modular, scalable architecture ready for SaaS growth
+
+CI‑powered automated code audits via the Audit Agent
+
+This backend is engineered for high deliverability, provider redundancy, and enterprise‑grade reliability.
+
+Learn more about the architecture.
+
+🧱 Core Features
+
+1. Multi‑Provider Fax Delivery
+
+Provider factory abstraction
+
+Automatic failover
+
+Provider‑specific metadata normalization
+
+Webhook signature validation
+
+Delivery status tracking
+
+Explore provider integrations.
+
+2. AI‑Powered Agent System
+
+FaxNova includes a suite of internal agents:
+
+Troubleshooting Agent
+
+Routing Agent
+
+Compliance Agent
+
+Billing Agent
+
+Sales Agent
+
+Code Audit + Auto‑Fix Agent
+
+These agents enhance reliability, automate debugging, and reduce operational overhead.
+
+Learn about the AI agent system.
+
+3. Secure, Modern Architecture
+
+JWT authentication
+
+Role‑based access
+
+Rate limiting
+
+Input validation
+
+SSRF‑safe file URL validation
+
+Provider isolation
+
+Environment validation
+
+See the security model.
+
+4. Automated Code Audits (CI)
+
+This repository includes a GitHub Action that:
+
+Runs the Audit Agent on every push + PR
+
+Parses issues
+
+Posts results as PR comments
+
+Blocks merges on critical issues
+
+This ensures continuous hardening and boosts acquisition value.
+
+View the Audit Agent CI.
+View the Audit Agent CI.
+
+📂 Project Structure
+
+src/
+  agents/           # AI agent handlers
+  audit/            # Audit Agent logic
+  controllers/      # Business logic
   integrations/     # Provider integrations (Sinch, Telnyx)
   middleware/       # Auth, rate limiting, validation
   models/           # Mongoose models
@@ -33,7 +134,7 @@ POST /auth/register
 
 Explore the API reference.
 
-🛠️ Environment Variables
+🧰 Environment Variables
 
 PORT=
 MONGO_URI=
@@ -86,7 +187,7 @@ Audit logging
 
 Error normalization
 
-See security overview.
+See the security overview.
 
 🤖 Audit Agent CI (Included)
 
@@ -104,7 +205,7 @@ This ensures continuous code quality and boosts acquisition valuation.
 
 Learn more about the Audit Agent.
 
-🧭 Roadmap (Optional for Buyers)
+🗺️ Roadmap (Optional for Buyers)
 
 Frontend dashboard (Next.js)
 
@@ -118,7 +219,7 @@ Mobile app (FlutterFlow)
 
 Explore the roadmap.
 
-📬 Contact
+📞 Contact
 
 For acquisition inquiries or technical questions, contact:
 
