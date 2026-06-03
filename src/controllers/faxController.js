@@ -1,228 +1,85 @@
-// src/controllers/faxController.js
-const { z } = require('zod');
-const Fax = require('../models/Fax');
+const { z } = require("zod");
+const Fax = require("../models/Fax");
+const sendFaxService = require("../services/sendFaxService");
+const logger = require("../utils/logger");
 
-const PROVIDER_WHITELIST = ['sinch', 'telnyx'];
-
-/* ============================================================
-   SCHEMAS
-============================================================ */
-
-const sendFaxSchema = z.object({
-  to: z
-    .string()
-    .min(10, 'Recipient fax number is required')
-    .regex(/^\+?[0-9]{10,15}$/, 'Invalid fax number format'),
-  from: z
-    .string()
-    .min(10, 'Sender fax number is required')
-    .regex(/^\+?[0-9]{10,15}$/, 'Invalid fax number format'),
-  fileUrl: z
-    .string()
-    .url('fileUrl must be a valid URL')
-    .refine(
-      (url) => url.startsWith('https://') || url.startsWith('http://'),
-      'fileUrl must be HTTP/HTTPS'
-    ),
+// =========================
+// Zod Schema
+// =========================
+const faxSchema = z.object({
+  to: z.string().min(10, "Recipient fax number is required"),
+  from: z.string().optional(),
+  fileUrl: z.string().url("A valid file URL is required"),
   provider: z
     .string()
-    .toLowerCase()
-    .refine((p) => PROVIDER_WHITELIST.includes(p), 'Invalid provider'),
-  coverPage: z.string().optional(),
-});
-
-const idParamSchema = z.object({
-  id: z.string().min(1, 'Fax ID is required'),
-});
-
-const listQuerySchema = z.object({
-  limit: z
-    .string()
     .optional()
-    .transform((v) => (v ? parseInt(v, 10) : 50))
-    .refine((v) => v > 0 && v <= 200, 'limit must be between 1 and 200'),
-  status: z
-    .string()
-    .optional()
-    .toLowerCase()
-    .refine(
-      (s) => !s || ['queued', 'sending', 'delivered', 'failed', 'canceled'].includes(s),
-      'Invalid status filter'
-    ),
+    .transform((val) => val?.toLowerCase()), // FIXED: replaces .toLowerCase()
 });
 
-const retrySchema = z.object({
-  id: z.string().min(1, 'Fax ID is required'),
-});
-
-/* ============================================================
-   SEND FAX
-============================================================ */
-
+// =========================
+// Send Fax Controller
+// =========================
 exports.sendFax = async (req, res) => {
   try {
-    const parsed = sendFaxSchema.safeParse(req.body);
+    const parsed = faxSchema.parse(req.body);
 
-    if (!parsed.success) {
-      return res.status(400).json({
-        success: false,
-        error: parsed.error.flatten().fieldErrors,
-      });
-    }
+    const provider =
+      parsed.provider || process.env.DEFAULT_FAX_PROVIDER || "sinch";
 
-    const { to, from, fileUrl, provider, coverPage } = parsed.data;
+    logger.info(`Sending fax using provider: ${provider}`);
 
-    const fax = await Fax.create({
-      userId: req.user._id,
-      to,
-      from,
-      fileUrl,
+    const faxRecord = await Fax.create({
+      to: parsed.to,
+      from: parsed.from,
+      fileUrl: parsed.fileUrl,
       provider,
-      coverPage: coverPage || null,
-      status: 'queued',
+      status: "queued",
     });
 
-    // TODO: enqueue provider send job here
+    const result = await sendFaxService(provider, faxRecord);
 
-    res.json({ success: true, fax });
+    return res.status(200).json({
+      message: "Fax queued successfully",
+      faxId: faxRecord._id,
+      provider,
+      result,
+    });
   } catch (err) {
-    console.error('Send fax controller error:', err);
-    res.status(500).json({ success: false, error: 'Failed to send fax' });
-  }
-};
+    logger.error("Error sending fax:", err);
 
-/* ============================================================
-   GET FAX BY ID
-============================================================ */
-
-exports.getFaxById = async (req, res) => {
-  try {
-    const parsed = idParamSchema.safeParse({ id: req.params.id });
-
-    if (!parsed.success) {
+    if (err instanceof z.ZodError) {
       return res.status(400).json({
-        success: false,
-        error: parsed.error.flatten().fieldErrors,
+        error: "Validation failed",
+        details: err.errors,
       });
     }
 
-    const fax = await Fax.findOne({
-      _id: parsed.data.id,
-      userId: req.user._id,
+    return res.status(500).json({
+      error: "Failed to send fax",
+      details: err.message,
     });
+  }
+};
+
+// =========================
+// Get Fax Status
+// =========================
+exports.getFaxStatus = async (req, res) => {
+  try {
+    const fax = await Fax.findById(req.params.id);
 
     if (!fax) {
-      return res.status(404).json({ success: false, error: 'Fax not found' });
+      return res.status(404).json({ error: "Fax not found" });
     }
 
-    res.json({ success: true, fax });
-  } catch (err) {
-    console.error('Get fax controller error:', err);
-    res.status(500).json({ success: false, error: 'Failed to fetch fax' });
-  }
-};
-
-/* ============================================================
-   LIST FAXES
-============================================================ */
-
-exports.listFaxes = async (req, res) => {
-  try {
-    const parsed = listQuerySchema.safeParse(req.query);
-
-    if (!parsed.success) {
-      return res.status(400).json({
-        success: false,
-        error: parsed.error.flatten().fieldErrors,
-      });
-    }
-
-    const { limit, status } = parsed.data;
-
-    const query = { userId: req.user._id };
-    if (status) query.status = status;
-
-    const faxes = await Fax.find(query)
-      .sort({ createdAt: -1 })
-      .limit(limit);
-
-    res.json({ success: true, faxes });
-  } catch (err) {
-    console.error('List faxes controller error:', err);
-    res.status(500).json({ success: false, error: 'Failed to list faxes' });
-  }
-};
-
-/* ============================================================
-   RETRY FAX
-============================================================ */
-
-exports.retryFax = async (req, res) => {
-  try {
-    const parsed = retrySchema.safeParse({ id: req.params.id });
-
-    if (!parsed.success) {
-      return res.status(400).json({
-        success: false,
-        error: parsed.error.flatten().fieldErrors,
-      });
-    }
-
-    const fax = await Fax.findOne({
-      _id: parsed.data.id,
-      userId: req.user._id,
+    return res.json({
+      id: fax._id,
+      status: fax.status,
+      provider: fax.provider,
+      createdAt: fax.createdAt,
     });
-
-    if (!fax) {
-      return res.status(404).json({ success: false, error: 'Fax not found' });
-    }
-
-    if (!['failed', 'canceled'].includes(fax.status)) {
-      return res.status(400).json({
-        success: false,
-        error: 'Only failed or canceled faxes can be retried',
-      });
-    }
-
-    fax.status = 'queued';
-    await fax.save();
-
-    // TODO: enqueue provider retry job here
-
-    res.json({ success: true, fax });
   } catch (err) {
-    console.error('Retry fax controller error:', err);
-    res.status(500).json({ success: false, error: 'Failed to retry fax' });
-  }
-};
-
-/* ============================================================
-   DELETE FAX
-============================================================ */
-
-exports.deleteFax = async (req, res) => {
-  try {
-    const parsed = idParamSchema.safeParse({ id: req.params.id });
-
-    if (!parsed.success) {
-      return res.status(400).json({
-        success: false,
-        error: parsed.error.flatten().fieldErrors,
-      });
-    }
-
-    const fax = await Fax.findOneAndDelete({
-      _id: parsed.data.id,
-      userId: req.user._id,
-    });
-
-    if (!fax) {
-      return res.status(404).json({ success: false, error: 'Fax not found' });
-    }
-
-    res.json({ success: true, deleted: true });
-  } catch (err) {
-    console.error('Delete fax controller error:', err);
-    res.status(500).json({ success: false, error: 'Failed to delete fax' });
+    logger.error("Error fetching fax status:", err);
+    return res.status(500).json({ error: "Failed to fetch fax status" });
   }
 };
