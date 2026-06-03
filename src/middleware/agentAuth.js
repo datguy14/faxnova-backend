@@ -1,28 +1,27 @@
-const jwt = require('jsonwebtoken');
-const User = require('../models/User');
+const jwt = require("jsonwebtoken");
 
-module.exports = async function agentAuth(req, res, next) {
+module.exports = function agentAuth(req, res, next) {
   try {
-    const authHeader = req.headers.authorization || '';
-    const token = authHeader.startsWith('Bearer ')
-      ? authHeader.slice(7)
-      : null;
+    const apiKey = req.headers["x-api-key"];
 
-    if (!token) {
-      return res.status(401).json({ success: false, error: 'Missing token' });
+    if (!apiKey) {
+      return res.status(401).json({
+        error: "Missing API key",
+        code: "NO_API_KEY"
+      });
     }
 
-    const decoded = jwt.verify(token, process.env.JWT_SECRET);
-    const user = await User.findById(decoded.id);
+    // Verify API key using your AGENT_API_KEY secret
+    const decoded = jwt.verify(apiKey, process.env.AGENT_API_KEY);
 
-    if (!user) {
-      return res.status(401).json({ success: false, error: 'Invalid user' });
-    }
+    // Attach decoded agent info to request
+    req.agent = decoded;
 
-    req.user = user;
-    next();
+    return next();
   } catch (err) {
-    console.error('Auth error:', err);
-    return res.status(401).json({ success: false, error: 'Unauthorized' });
+    return res.status(403).json({
+      error: "Invalid or expired API key",
+      code: "INVALID_API_KEY"
+    });
   }
 };
