@@ -27,7 +27,7 @@
     "express": "^4.19.2",
     "express-rate-limit": "^7.4.0",
     "helmet": "^7.0.0",
-    "sinch": "1.0.0",
+    "@sinch/sdk-core": "^1.0.0",
     "telnyx": "^3.0.0",
     "uuid": "^9.0.0"
   },
