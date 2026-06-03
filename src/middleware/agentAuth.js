@@ -5,32 +5,47 @@ module.exports = function agentAuth(req, res, next) {
     const apiKey = req.headers["x-api-key"];
 
     if (!apiKey) {
-      return res.status(401).json({ error: "Missing API key" });
+      return res.status(401).json({
+        error: "Missing API key",
+        code: "NO_API_KEY"
+      });
     }
 
-    // Verify + decode
+    // Verify signature + decode payload
     const decoded = jwt.verify(apiKey, process.env.AGENT_API_KEY);
 
-    // Basic payload hardening
-    if (!decoded || !decoded.id || !decoded.name) {
-      return res.status(403).json({ error: "Invalid API key payload" });
+    // Validate payload shape
+    if (
+      !decoded ||
+      typeof decoded !== "object" ||
+      !decoded.id ||
+      typeof decoded.id !== "string" ||
+      !decoded.name ||
+      typeof decoded.name !== "string"
+    ) {
+      return res.status(403).json({
+        error: "Invalid API key payload",
+        code: "INVALID_PAYLOAD"
+      });
     }
 
-    // Attach a clean agent object
+    // Attach sanitized agent object
     req.agent = {
       id: decoded.id,
       name: decoded.name,
       role: decoded.role || "agent"
     };
 
-    // Optional: tag requests for logging / rate limiting
+    // Optional: tag for rate limiting / logging
     req.agentId = decoded.id;
 
     return next();
   } catch (err) {
     const isExpired = err.name === "TokenExpiredError";
+
     return res.status(403).json({
-      error: isExpired ? "Expired API key" : "Invalid API key"
+      error: isExpired ? "Expired API key" : "Invalid API key",
+      code: isExpired ? "EXPIRED" : "INVALID"
     });
   }
 };
