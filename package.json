@@ -38,7 +38,8 @@
     "mongoose": "^8.3.2",
     "axios": "^1.6.8",
     "swagger-ui-express": "^5.0.0",
-    "swagger-jsdoc": "^6.2.8"
+    "swagger-jsdoc": "^6.2.8",
+    "yamljs": "^0.3.0"
   },
   "devDependencies": {
     "nodemon": "^3.1.0",
