@@ -1,45 +1,25 @@
-// src/routes/faxRoutes.js
-const express = require('express');
+const express = require("express");
 const router = express.Router();
-const rateLimit = require('express-rate-limit');
+const rateLimit = require("express-rate-limit");
 
-const agentAuth = require('../middleware/agentAuth');
-const faxController = require('../controllers/faxController');
+const agentAuth = require("../middleware/agentAuth");
+const faxController = require("../controllers/faxController");
 
-// 🔐 1. AUTH FIRST — protects everything below
+// Protect all routes
 router.use(agentAuth);
 
-// 2. Then rate limiters (safe behind auth)
+// Rate limiter
 const faxSendLimiter = rateLimit({
   windowMs: 60 * 1000,
   max: 30,
   keyGenerator: (req) =>
-    req.headers['x-forwarded-for']?.split(',')[0] || req.ip,
+    req.headers["x-forwarded-for"]?.split(",")[0] || req.ip,
 });
 
-/* ============================================================
-   SEND FAX
-============================================================ */
-router.post('/send', faxSendLimiter, faxController.sendFax);
+// SEND FAX
+router.post("/send", faxSendLimiter, faxController.sendFax);
 
-/* ============================================================
-   GET FAX BY ID
-============================================================ */
-router.get('/:id', faxController.getFaxById);
-
-/* ============================================================
-   LIST USER FAXES
-============================================================ */
-router.get('/', faxController.listFaxes);
-
-/* ============================================================
-   RETRY FAX
-============================================================ */
-router.post('/:id/retry', faxController.retryFax);
-
-/* ============================================================
-   DELETE FAX
-============================================================ */
-router.delete('/:id', faxController.deleteFax);
+// GET FAX STATUS
+router.get("/:id/status", faxController.getFaxStatus);
 
 module.exports = router;
