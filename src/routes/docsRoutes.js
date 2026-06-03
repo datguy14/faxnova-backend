@@ -1,17 +1,15 @@
-// src/routes/docsRoutes.js
 const express = require("express");
 const router = express.Router();
 const swaggerUi = require("swagger-ui-express");
 const YAML = require("yamljs");
 const path = require("path");
 
-// Absolute, Render‑safe path to openapi.yaml
-const openapiPath = path.join(process.cwd(), "src", "openapi.yaml");
+// Correct path: openapi.yaml is in project root
+const openapiPath = path.join(process.cwd(), "openapi.yaml");
 
 // Load the OpenAPI spec
 const swaggerDocument = YAML.load(openapiPath);
 
-// Serve Swagger UI
 router.use(
   "/",
   swaggerUi.serve,
@@ -29,7 +27,6 @@ router.use(
   })
 );
 
-// Optional: health/info endpoint for docs
 router.get("/info", (req, res) => {
   res.json({
     api: "FaxNova Backend",
