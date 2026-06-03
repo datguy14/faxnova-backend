@@ -1,7 +1,7 @@
 {
   "name": "faxnova-backend",
   "version": "1.1.0",
-  "description": "Production-ready Node.js Fax Backend with Multi-Provider Support (Sinch + Telnyx)",
+  "description": "FaxNova backend service with multi-provider faxing, agents, and Swagger documentation.",
   "main": "server.js",
   "scripts": {
     "start": "node server.js",
@@ -11,35 +11,22 @@
   "engines": {
     "node": "20.x"
   },
-  "keywords": [
-    "fax",
-    "sinch",
-    "telnyx",
-    "fax-api",
-    "fax-saas",
-    "nodejs"
-  ],
-  "repository": {
-    "type": "git",
-    "url": "https://github.com/datguy14/faxnova-backend.git"
-  },
   "dependencies": {
     "express": "^4.19.2",
-    "express-rate-limit": "^7.4.0",
-    "helmet": "^7.0.0",
-    "@sinch/sdk-core": "^1.0.0",
-    "telnyx": "^3.0.0",
-    "uuid": "^9.0.0",
-    "dotenv": "^16.4.5",
     "cors": "^2.8.5",
+    "helmet": "^7.0.0",
     "morgan": "^1.10.0",
-    "jsonwebtoken": "^9.0.2",
-    "zod": "^3.23.8",
+    "dotenv": "^16.4.5",
     "mongoose": "^8.3.2",
+    "jsonwebtoken": "^9.0.2",
     "axios": "^1.6.8",
+    "uuid": "^9.0.0",
+    "zod": "^3.23.8",
     "swagger-ui-express": "^5.0.0",
     "swagger-jsdoc": "^6.2.8",
-    "yamljs": "^0.3.0"
+    "yamljs": "^0.3.0",
+    "@sinch/sdk-core": "^1.0.0",
+    "telnyx": "^3.0.0"
   },
   "devDependencies": {
     "nodemon": "^3.1.0",
