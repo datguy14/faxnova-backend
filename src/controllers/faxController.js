@@ -13,7 +13,7 @@ const faxSchema = z.object({
   provider: z
     .string()
     .optional()
-    .transform((val) => val?.toLowerCase()) // FIXED: replaces .toLowerCase()
+    .transform((val) => val?.toLowerCase())
 });
 
 // =========================
