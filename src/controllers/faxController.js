@@ -13,7 +13,7 @@ const faxSchema = z.object({
   provider: z
     .string()
     .optional()
-    .transform((val) => val?.toLowerCase()), // FIXED: replaces .toLowerCase()
+    .transform((val) => val?.toLowerCase()) // FIXED: replaces .toLowerCase()
 });
 
 // =========================
@@ -33,7 +33,7 @@ exports.sendFax = async (req, res) => {
       from: parsed.from,
       fileUrl: parsed.fileUrl,
       provider,
-      status: "queued",
+      status: "queued"
     });
 
     const result = await sendFaxService(provider, faxRecord);
@@ -42,7 +42,7 @@ exports.sendFax = async (req, res) => {
       message: "Fax queued successfully",
       faxId: faxRecord._id,
       provider,
-      result,
+      result
     });
   } catch (err) {
     logger.error("Error sending fax:", err);
@@ -50,13 +50,13 @@ exports.sendFax = async (req, res) => {
     if (err instanceof z.ZodError) {
       return res.status(400).json({
         error: "Validation failed",
-        details: err.errors,
+        details: err.errors
       });
     }
 
     return res.status(500).json({
       error: "Failed to send fax",
-      details: err.message,
+      details: err.message
     });
   }
 };
@@ -76,7 +76,7 @@ exports.getFaxStatus = async (req, res) => {
       id: fax._id,
       status: fax.status,
       provider: fax.provider,
-      createdAt: fax.createdAt,
+      createdAt: fax.createdAt
     });
   } catch (err) {
     logger.error("Error fetching fax status:", err);
