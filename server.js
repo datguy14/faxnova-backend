@@ -52,7 +52,7 @@ app.get("/health", (req, res) => {
 app.use("/docs", require("./src/routes/docsRoutes"));
 app.use("/agents", require("./src/routes/agentRoutes"));
 app.use("/fax", require("./src/routes/faxRoutes"));
-app.use("/webhooks", require("./src/routes/webhookRoutes")); // Sinch/Telnyx
+app.use("/webhooks", require("./src/routes/faxWebhookRoutes")); // ✔ Correct file
 
 // -----------------------------
 // 404 handler
