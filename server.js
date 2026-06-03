@@ -27,9 +27,7 @@ if (!mongoUri) {
 }
 
 mongoose
-  .connect(mongoUri, {
-    autoIndex: true
-  })
+  .connect(mongoUri, { autoIndex: true })
   .then(() => console.log("✅ Connected to MongoDB"))
   .catch((err) => {
     console.error("❌ MongoDB connection error:", err);
@@ -49,10 +47,9 @@ app.get("/health", (req, res) => {
 });
 
 // -----------------------------
-// Routes
+// Routes (ONLY the ones that exist)
 // -----------------------------
 app.use("/docs", require("./src/routes/docsRoutes"));
-app.use("/auth", require("./src/routes/authRoutes"));
 app.use("/agents", require("./src/routes/agentRoutes"));
 app.use("/fax", require("./src/routes/faxRoutes"));
 app.use("/webhooks", require("./src/routes/webhookRoutes")); // Sinch/Telnyx
