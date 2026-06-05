@@ -1,32 +1,16 @@
-// src/db.js
+import mongoose from "mongoose";
 
-const mongoose = require('mongoose');
-
-/**
- * Establish a single shared MongoDB connection.
- * This is called once from server.js at startup.
- */
-async function connectToDatabase() {
-  const uri = process.env.MONGO_URI;
-
-  if (!uri) {
-    throw new Error("❌ MONGO_URI is missing. Check your environment variables.");
-  }
-
+const connectDB = async () => {
   try {
-    await mongoose.connect(uri, {
-      autoIndex: true,          // helpful during development
-      serverSelectionTimeoutMS: 5000
+    const conn = await mongoose.connect(process.env.MONGO_URI, {
+      serverSelectionTimeoutMS: 5000,
     });
 
-    console.log("✅ Connected to MongoDB");
-  } catch (err) {
-    console.error("❌ MongoDB connection failed:", err.message);
+    console.log(`✅ MongoDB connected: ${conn.connection.host}`);
+  } catch (error) {
+    console.error("❌ MongoDB connection error:", error.message);
     process.exit(1);
   }
-}
-
-module.exports = {
-  connectToDatabase,
-  mongoose
 };
+
+export default connectDB;
