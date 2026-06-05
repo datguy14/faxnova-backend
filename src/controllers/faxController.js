@@ -1,6 +1,6 @@
 import axios from "axios";
 import { z } from "zod";
-import Fax from "../models/faxModel.js";
+import Fax from "../models/Fax.js";
 
 // Zod schema with correct lowercase transform
 const faxSchema = z.object({
@@ -9,12 +9,11 @@ const faxSchema = z.object({
   provider: z.string().optional().transform(val => val?.toLowerCase()),
 });
 
-// Send Fax Controller
+// SEND FAX
 export const sendFax = async (req, res) => {
   try {
     const { to, fileUrl, provider } = faxSchema.parse(req.body);
 
-    // Determine provider endpoint
     let endpoint = "";
     let apiKey = "";
 
@@ -28,13 +27,9 @@ export const sendFax = async (req, res) => {
       return res.status(400).json({ error: "Invalid provider" });
     }
 
-    // Send fax request
     const response = await axios.post(
       endpoint,
-      {
-        to,
-        fileUrl,
-      },
+      { to, fileUrl },
       {
         headers: {
           Authorization: `Bearer ${apiKey}`,
@@ -43,7 +38,6 @@ export const sendFax = async (req, res) => {
       }
     );
 
-    // Save fax record
     const faxRecord = await Fax.create({
       provider,
       to,
@@ -65,7 +59,7 @@ export const sendFax = async (req, res) => {
   }
 };
 
-// Get Fax Status Controller
+// GET FAX STATUS
 export const getFaxStatus = async (req, res) => {
   try {
     const { faxId, provider } = req.params;
