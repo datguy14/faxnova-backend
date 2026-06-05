@@ -3,12 +3,21 @@ import cors from 'cors';
 import morgan from 'morgan';
 import dotenv from 'dotenv';
 
+import connectDB from './src/config/db.js';
 import faxRoutes from './src/routes/faxRoutes.js';
 import faxWebhookRoutes from './src/routes/faxWebhookRoutes.js';
 import logger from './src/utils/logger.js';
 
 dotenv.config();
 
+// -----------------------------
+// Connect to MongoDB FIRST
+// -----------------------------
+connectDB();
+
+// -----------------------------
+// Initialize Express
+// -----------------------------
 const app = express();
 
 // -----------------------------
