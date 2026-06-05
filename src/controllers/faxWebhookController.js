@@ -2,29 +2,55 @@ import Fax from "../models/Fax.js";
 import FaxLog from "../models/FaxLog.js";
 import WebhookEvent from "../models/WebhookEvent.js";
 
+/**
+ * Normalize provider from headers
+ */
+const detectProvider = (headers) => {
+  const raw =
+    headers["x-fax-provider"] ||
+    headers["user-agent"] ||
+    headers["telnyx-signature-ed25519"] ? "telnyx" : null;
+
+  return raw?.toLowerCase() || "unknown";
+};
+
+/**
+ * Extract faxId from ANY provider payload shape
+ */
+const extractFaxId = (payload) => {
+  return (
+    payload?.faxId ||
+    payload?.id ||
+    payload?.data?.id ||
+    payload?.data?.payload?.fax_id ||
+    payload?.data?.payload?.faxId ||
+    null
+  );
+};
+
+/**
+ * Extract status from ANY provider payload shape
+ */
+const extractStatus = (payload) => {
+  return (
+    payload?.status ||
+    payload?.data?.status ||
+    payload?.data?.payload?.status ||
+    payload?.event_type ||
+    null
+  );
+};
+
+/**
+ * Main webhook handler
+ */
 export const handleFaxWebhook = async (req, res) => {
   try {
-    // Provider header (you can customize this depending on Sinch/Telnyx)
-    const provider =
-      req.headers["x-fax-provider"]?.toLowerCase() ||
-      req.headers["user-agent"]?.toLowerCase() ||
-      "unknown";
-
+    const provider = detectProvider(req.headers);
     const payload = req.body;
 
-    // Extract faxId + status safely (Sinch vs Telnyx)
-    const faxId =
-      payload.faxId ||
-      payload.id ||
-      payload.data?.id ||
-      payload.data?.payload?.fax_id ||
-      null;
-
-    const status =
-      payload.status ||
-      payload.data?.status ||
-      payload.data?.payload?.status ||
-      null;
+    const faxId = extractFaxId(payload);
+    const status = extractStatus(payload);
 
     // Always store raw webhook event
     await WebhookEvent.create({
@@ -36,7 +62,7 @@ export const handleFaxWebhook = async (req, res) => {
 
     // If we can match a fax, update it
     if (faxId) {
-      await Fax.findOneAndUpdate(
+      const updatedFax = await Fax.findOneAndUpdate(
         { faxId },
         { status },
         { new: true }
@@ -48,12 +74,26 @@ export const handleFaxWebhook = async (req, res) => {
         action: "webhook_received",
         message: `Webhook received with status: ${status}`,
       });
+
+      return res.status(200).json({
+        received: true,
+        faxId,
+        status,
+        updated: Boolean(updatedFax),
+      });
     }
 
-    res.status(200).json({ received: true });
+    // If no faxId found, still acknowledge webhook
+    return res.status(200).json({
+      received: true,
+      faxId: null,
+      status,
+      warning: "Webhook received but no faxId was detected",
+    });
   } catch (error) {
-    console.error("Webhook Error:", error);
-    res.status(500).json({
+    console.error("❌ Webhook Error:", error);
+
+    return res.status(500).json({
       error: "Failed to process webhook",
       details: error.message,
     });
