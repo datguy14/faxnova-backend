@@ -1,85 +1,37 @@
-// server.js (root)
-const express = require("express");
-const cors = require("cors");
-const helmet = require("helmet");
-const morgan = require("morgan");
-const mongoose = require("mongoose");
-require("dotenv").config();
+import express from "express";
+import dotenv from "dotenv";
+import cors from "cors";
+import mongoose from "mongoose";
+import faxRoutes from "./src/routes/faxRoutes.js";
+
+dotenv.config();
 
 const app = express();
 
-// -----------------------------
-// Core middleware
-// -----------------------------
+// Middleware
 app.use(cors());
-app.use(helmet());
-app.use(express.json({ limit: "10mb" }));
-app.use(morgan("dev"));
+app.use(express.json());
 
-// -----------------------------
-// Database connection
-// -----------------------------
-const mongoUri = process.env.MONGODB_URI || process.env.MONGO_URI;
+// Health check
+app.get("/", (req, res) => {
+  res.status(200).json({ message: "FaxNova backend is running" });
+});
 
-if (!mongoUri) {
-  console.error("❌ Missing MONGODB_URI / MONGO_URI in environment");
-  process.exit(1);
-}
+// Routes
+app.use("/fax", faxRoutes);
+
+// MongoDB Connection
+const MONGO_URI = process.env.MONGO_URI;
 
 mongoose
-  .connect(mongoUri, { autoIndex: true })
+  .connect(MONGO_URI, {
+    serverSelectionTimeoutMS: 5000,
+  })
   .then(() => console.log("✅ Connected to MongoDB"))
-  .catch((err) => {
-    console.error("❌ MongoDB connection error:", err);
-    process.exit(1);
-  });
+  .catch((err) => console.error("❌ MongoDB connection error:", err));
 
-// -----------------------------
-// Health check
-// -----------------------------
-app.get("/health", (req, res) => {
-  res.json({
-    status: "ok",
-    uptime: process.uptime(),
-    env: process.env.NODE_ENV || "development",
-    version: "1.1.0"
-  });
-});
-
-// -----------------------------
-// Routes (ONLY the ones that exist)
-// -----------------------------
-app.use("/docs", require("./src/routes/docsRoutes"));
-app.use("/agents", require("./src/routes/agentRoutes"));
-app.use("/fax", require("./src/routes/faxRoutes"));
-app.use("/webhooks", require("./src/routes/faxWebhookRoutes")); // ✔ Correct file
-
-// -----------------------------
-// 404 handler
-// -----------------------------
-app.use((req, res) => {
-  res.status(404).json({
-    error: "Not found",
-    path: req.originalUrl
-  });
-});
-
-// -----------------------------
-// Global error handler
-// -----------------------------
-app.use((err, req, res, next) => {
-  console.error("Unhandled error:", err);
-  res.status(500).json({
-    error: "Internal server error",
-    details: process.env.NODE_ENV === "production" ? undefined : err.message
-  });
-});
-
-// -----------------------------
-// Start server
-// -----------------------------
-const PORT = process.env.PORT || 3000;
-
+// Start Server
+const PORT = process.env.PORT || 10000;
 app.listen(PORT, () => {
   console.log(`🚀 FaxNova backend running on port ${PORT}`);
 });
