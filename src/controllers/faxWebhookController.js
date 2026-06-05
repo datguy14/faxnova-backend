@@ -1,128 +1,61 @@
-// src/controllers/webhookController.js
+import Fax from "../models/Fax.js";
+import FaxLog from "../models/FaxLog.js";
+import WebhookEvent from "../models/WebhookEvent.js";
 
-const Fax = require('../models/Fax');
-const WebhookEvent = require('../models/WebhookEvent');
-const audit = require('../audit/auditService');
-
-exports.handleFaxWebhook = async (req, res) => {
+export const handleFaxWebhook = async (req, res) => {
   try {
+    // Provider header (you can customize this depending on Sinch/Telnyx)
+    const provider =
+      req.headers["x-fax-provider"]?.toLowerCase() ||
+      req.headers["user-agent"]?.toLowerCase() ||
+      "unknown";
+
     const payload = req.body;
 
-    const providerFaxId = payload.id;
-    const status = payload.status;
-    const errorCode = payload.errorCode || null;
-    const errorMessage = payload.errorMessage || null;
+    // Extract faxId + status safely (Sinch vs Telnyx)
+    const faxId =
+      payload.faxId ||
+      payload.id ||
+      payload.data?.id ||
+      payload.data?.payload?.fax_id ||
+      null;
 
-    // -----------------------------
-    // AUDIT: Webhook received
-    // -----------------------------
-    audit.logEvent({
-      tenantId: null, // will be filled once fax is found
-      type: 'webhook',
-      action: 'webhook_received',
-      correlationId: null,
-      ip: req.ip,
-      path: req.originalUrl,
-      method: req.method,
-      tier: 'system',
-      details: { providerFaxId, status, payload }
-    });
+    const status =
+      payload.status ||
+      payload.data?.status ||
+      payload.data?.payload?.status ||
+      null;
 
-    // 1. Create webhook event (initially unlinked)
-    const event = await WebhookEvent.create({
-      tenantId: null,
-      faxId: null,
-      providerFaxId,
+    // Always store raw webhook event
+    await WebhookEvent.create({
+      provider,
+      payload,
+      faxId,
       status,
-      rawPayload: payload,
-      processingStatus: 'pending',
-      errorMessage: null,
-      receivedAt: new Date()
     });
 
-    // 2. Update fax status
-    const fax = await Fax.findOneAndUpdate(
-      { providerFaxId },
-      {
-        status,
-        errorCode,
-        errorMessage,
-        updatedAt: new Date()
-      },
-      { new: true }
-    );
+    // If we can match a fax, update it
+    if (faxId) {
+      await Fax.findOneAndUpdate(
+        { faxId },
+        { status },
+        { new: true }
+      );
 
-    // 3. Link webhook event to fax + tenant
-    if (fax) {
-      event.faxId = fax._id;
-      event.tenantId = fax.tenantId;
-      event.processingStatus = 'processed';
-      await event.save();
-
-      // -----------------------------
-      // AUDIT: Fax status updated
-      // -----------------------------
-      audit.logEvent({
-        tenantId: fax.tenantId,
-        type: 'webhook',
-        action: 'fax_status_updated',
-        correlationId: fax.metadata?.correlationId || null,
-        ip: req.ip,
-        path: req.originalUrl,
-        method: req.method,
-        tier: 'system',
-        details: {
-          faxId: fax._id,
-          providerFaxId,
-          newStatus: status
-        }
-      });
-
-    } else {
-      // Fax not found — mark event as failed
-      event.processingStatus = 'failed';
-      event.errorMessage = 'Fax not found for providerFaxId';
-      await event.save();
-
-      // -----------------------------
-      // AUDIT: Fax not found
-      // -----------------------------
-      audit.logEvent({
-        tenantId: null,
-        type: 'webhook',
-        action: 'fax_not_found',
-        correlationId: null,
-        ip: req.ip,
-        path: req.originalUrl,
-        method: req.method,
-        tier: 'system',
-        details: { providerFaxId }
+      await FaxLog.create({
+        faxId,
+        provider,
+        action: "webhook_received",
+        message: `Webhook received with status: ${status}`,
       });
     }
 
-    res.json({ success: true });
-
-  } catch (err) {
-    console.error('Webhook error:', err.message);
-
-    // -----------------------------
-    // AUDIT: Webhook processing failure
-    // -----------------------------
-    audit.logEvent({
-      tenantId: null,
-      type: 'webhook',
-      action: 'webhook_processing_failed',
-      correlationId: null,
-      ip: req.ip,
-      path: req.originalUrl,
-      method: req.method,
-      tier: 'system',
-      details: { error: err.message }
-    });
-
+    res.status(200).json({ received: true });
+  } catch (error) {
+    console.error("Webhook Error:", error);
     res.status(500).json({
-      success: false,
-      error: 'Webhook processing failed'
+      error: "Failed to process webhook",
+      details: error.message,
     });
   }
 };
