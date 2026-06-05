@@ -1,9 +1,9 @@
-import express from "express";
-import { handleFaxWebhook } from "../controllers/webhookController.js";
+import express from 'express';
+import { handleFaxWebhook } from '../controllers/faxWebhookController.js';
 
 const router = express.Router();
 
-// POST /webhook/fax
-router.post("/fax", handleFaxWebhook);
+// POST /fax/webhook
+router.post('/webhook', handleFaxWebhook);
 
 export default router;
