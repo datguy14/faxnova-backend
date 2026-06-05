@@ -5,33 +5,66 @@ import dotenv from 'dotenv';
 
 import faxRoutes from './src/routes/faxRoutes.js';
 import faxWebhookRoutes from './src/routes/faxWebhookRoutes.js';
+import logger from './src/utils/logger.js';
 
 dotenv.config();
 
 const app = express();
 
-// Global middleware
+// -----------------------------
+// Global Middleware
+// -----------------------------
 app.use(cors());
 app.use(express.json({ limit: '10mb' }));
-app.use(morgan('dev'));
 
-// Health check
+// Morgan → pipe logs into your logger utility
+app.use(
+  morgan('combined', {
+    stream: {
+      write: (msg) => logger.info(msg.trim())
+    }
+  })
+);
+
+// -----------------------------
+// Health Check
+// -----------------------------
 app.get('/health', (req, res) => {
-  res.status(200).json({ status: 'ok', timestamp: new Date().toISOString() });
+  logger.info('Health check pinged');
+  res.status(200).json({
+    status: 'ok',
+    uptime: process.uptime(),
+    timestamp: new Date().toISOString()
+  });
 });
 
-// Mount routes
+// -----------------------------
+// Routes
+// -----------------------------
 app.use('/fax', faxRoutes);
 app.use('/fax', faxWebhookRoutes);
 
-// Global error handler
+// -----------------------------
+// 404 Handler
+// -----------------------------
+app.use((req, res) => {
+  logger.warn(`404 Not Found: ${req.method} ${req.originalUrl}`);
+  res.status(404).json({ error: 'Route not found' });
+});
+
+// -----------------------------
+// Global Error Handler
+// -----------------------------
 app.use((err, req, res, next) => {
-  console.error('Unhandled error:', err);
+  logger.error('Unhandled error:', err);
   res.status(500).json({ error: 'Internal server error' });
 });
 
-// Start server
+// -----------------------------
+// Start Server
+// -----------------------------
 const PORT = process.env.PORT || 3000;
+
 app.listen(PORT, () => {
-  console.log(`FaxNova backend running on port ${PORT}`);
+  logger.info(`FaxNova backend running on port ${PORT}`);
 });
