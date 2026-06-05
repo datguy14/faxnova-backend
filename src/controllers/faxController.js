@@ -1,85 +1,111 @@
-const { z } = require("zod");
-const Fax = require("../models/Fax");
-const sendFaxService = require("../services/sendFaxService");
-const logger = require("../utils/logger");
+import axios from "axios";
+import { z } from "zod";
+import Fax from "../models/faxModel.js";
 
-// =========================
-// Zod Schema
-// =========================
+// Zod schema with correct lowercase transform
 const faxSchema = z.object({
-  to: z.string().min(10, "Recipient fax number is required"),
-  from: z.string().optional(),
+  to: z.string().min(5, "Recipient fax number is required"),
   fileUrl: z.string().url("A valid file URL is required"),
-  provider: z
-    .string()
-    .optional()
-    .transform((val) => val?.toLowerCase())
+  provider: z.string().optional().transform(val => val?.toLowerCase()),
 });
 
-// =========================
 // Send Fax Controller
-// =========================
-exports.sendFax = async (req, res) => {
+export const sendFax = async (req, res) => {
   try {
-    const parsed = faxSchema.parse(req.body);
+    const { to, fileUrl, provider } = faxSchema.parse(req.body);
 
-    const provider =
-      parsed.provider || process.env.DEFAULT_FAX_PROVIDER || "sinch";
+    // Determine provider endpoint
+    let endpoint = "";
+    let apiKey = "";
 
-    logger.info(`Sending fax using provider: ${provider}`);
-
-    const faxRecord = await Fax.create({
-      to: parsed.to,
-      from: parsed.from,
-      fileUrl: parsed.fileUrl,
-      provider,
-      status: "queued"
-    });
-
-    const result = await sendFaxService(provider, faxRecord);
-
-    return res.status(200).json({
-      message: "Fax queued successfully",
-      faxId: faxRecord._id,
-      provider,
-      result
-    });
-  } catch (err) {
-    logger.error("Error sending fax:", err);
-
-    if (err instanceof z.ZodError) {
-      return res.status(400).json({
-        error: "Validation failed",
-        details: err.errors
-      });
+    if (provider === "sinch") {
+      endpoint = "https://fax.api.sinch.com/v1/faxes";
+      apiKey = process.env.SINCH_API_KEY;
+    } else if (provider === "telnyx") {
+      endpoint = "https://api.telnyx.com/v2/faxes";
+      apiKey = process.env.TELNYX_API_KEY;
+    } else {
+      return res.status(400).json({ error: "Invalid provider" });
     }
 
-    return res.status(500).json({
+    // Send fax request
+    const response = await axios.post(
+      endpoint,
+      {
+        to,
+        fileUrl,
+      },
+      {
+        headers: {
+          Authorization: `Bearer ${apiKey}`,
+          "Content-Type": "application/json",
+        },
+      }
+    );
+
+    // Save fax record
+    const faxRecord = await Fax.create({
+      provider,
+      to,
+      fileUrl,
+      faxId: response.data.id,
+      status: "sent",
+    });
+
+    res.status(200).json({
+      message: "Fax sent successfully",
+      fax: faxRecord,
+    });
+  } catch (error) {
+    console.error("Send Fax Error:", error);
+    res.status(500).json({
       error: "Failed to send fax",
-      details: err.message
+      details: error.message,
     });
   }
 };
 
-// =========================
-// Get Fax Status
-// =========================
-exports.getFaxStatus = async (req, res) => {
+// Get Fax Status Controller
+export const getFaxStatus = async (req, res) => {
   try {
-    const fax = await Fax.findById(req.params.id);
+    const { faxId, provider } = req.params;
 
-    if (!fax) {
-      return res.status(404).json({ error: "Fax not found" });
+    if (!faxId) {
+      return res.status(400).json({ error: "Fax ID is required" });
     }
 
-    return res.json({
-      id: fax._id,
-      status: fax.status,
-      provider: fax.provider,
-      createdAt: fax.createdAt
+    const providerLower = provider?.toLowerCase();
+
+    let endpoint = "";
+    let apiKey = "";
+
+    if (providerLower === "sinch") {
+      endpoint = `https://fax.api.sinch.com/v1/faxes/${faxId}`;
+      apiKey = process.env.SINCH_API_KEY;
+    } else if (providerLower === "telnyx") {
+      endpoint = `https://api.telnyx.com/v2/faxes/${faxId}`;
+      apiKey = process.env.TELNYX_API_KEY;
+    } else {
+      return res.status(400).json({ error: "Invalid provider" });
+    }
+
+    const response = await axios.get(endpoint, {
+      headers: {
+        Authorization: `Bearer ${apiKey}`,
+      },
     });
-  } catch (err) {
-    logger.error("Error fetching fax status:", err);
-    return res.status(500).json({ error: "Failed to fetch fax status" });
+
+    res.status(200).json({
+      faxId,
+      provider: providerLower,
+      status: response.data.status,
+      raw: response.data,
+    });
+  } catch (error) {
+    console.error("Get Fax Status Error:", error);
+    res.status(500).json({
+      error: "Failed to retrieve fax status",
+      details: error.message,
+    });
   }
 };
