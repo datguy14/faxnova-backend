@@ -3,7 +3,9 @@ import cors from 'cors';
 import morgan from 'morgan';
 import dotenv from 'dotenv';
 
-import connectDB from './src/config/db.js';
+// IMPORTANT: Your db.js is in /config, not /src/config
+import connectDB from './config/db.js';
+
 import faxRoutes from './src/routes/faxRoutes.js';
 import faxWebhookRoutes from './src/routes/faxWebhookRoutes.js';
 import logger from './src/utils/logger.js';
