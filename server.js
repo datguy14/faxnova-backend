@@ -23,7 +23,7 @@ app.get("/", (req, res) => {
 app.use("/fax", faxRoutes);
 app.use("/webhook", webhookRoutes);
 
-// Database
+// Database connection
 connectDB();
 
 // Server
