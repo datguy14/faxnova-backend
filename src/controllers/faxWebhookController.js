@@ -1,6 +1,7 @@
 import Fax from "../models/Fax.js";
 import FaxLog from "../models/FaxLog.js";
 import WebhookEvent from "../models/WebhookEvent.js";
+import { writeResidencyLog } from "../storage/residencyStorage.js";
 
 /**
  * Normalize provider from headers
@@ -42,44 +43,84 @@ const extractStatus = (payload) => {
 };
 
 /**
- * Main webhook handler
+ * Main webhook handler - now residency-aware
  */
 export const handleFaxWebhook = async (req, res) => {
   try {
     const provider = detectProvider(req.headers);
     const payload = req.body;
+    const residencyZone = req.residencyZone || "global";
 
     const faxId = extractFaxId(payload);
     const status = extractStatus(payload);
 
     // Always store raw webhook event
-    await WebhookEvent.create({
+    const webhookEvent = await WebhookEvent.create({
       provider,
       payload,
       faxId,
       status,
+      residencyZone // Store zone for later reference
     });
+
+    // Log webhook to residency storage
+    await writeResidencyLog(
+      residencyZone,
+      "webhook-events.log",
+      JSON.stringify({
+        timestamp: new Date().toISOString(),
+        provider,
+        faxId,
+        status,
+        webhookEventId: webhookEvent._id,
+        residencyZone
+      })
+    );
 
     // If we can match a fax, update it
     if (faxId) {
       const updatedFax = await Fax.findOneAndUpdate(
         { faxId },
-        { status },
+        { 
+          status,
+          residencyZone // Ensure zone is stored
+        },
         { new: true }
       );
 
-      await FaxLog.create({
-        faxId,
-        provider,
-        action: "webhook_received",
-        message: `Webhook received with status: ${status}`,
-      });
+      if (updatedFax) {
+        await FaxLog.create({
+          faxId: updatedFax._id,
+          provider,
+          action: "webhook_received",
+          message: `Webhook received with status: ${status}`,
+          metadata: {
+            residencyZone,
+            webhookEventId: webhookEvent._id
+          }
+        });
+
+        // Log to residency storage
+        await writeResidencyLog(
+          residencyZone,
+          "webhook-updates.log",
+          JSON.stringify({
+            timestamp: new Date().toISOString(),
+            faxId: updatedFax._id,
+            externalFaxId: faxId,
+            provider,
+            status,
+            residencyZone
+          })
+        );
+      }
 
       return res.status(200).json({
         received: true,
         faxId,
         status,
         updated: Boolean(updatedFax),
+        residencyZone
       });
     }
 
@@ -89,13 +130,31 @@ export const handleFaxWebhook = async (req, res) => {
       faxId: null,
       status,
       warning: "Webhook received but no faxId was detected",
+      residencyZone
     });
   } catch (error) {
     console.error("❌ Webhook Error:", error);
+    const residencyZone = req.residencyZone || "global";
+
+    // Log error to residency storage
+    try {
+      await writeResidencyLog(
+        residencyZone,
+        "webhook-errors.log",
+        JSON.stringify({
+          timestamp: new Date().toISOString(),
+          error: error.message,
+          residencyZone
+        })
+      );
+    } catch (logError) {
+      console.error("Failed to log error to residency storage:", logError);
+    }
 
     return res.status(500).json({
       error: "Failed to process webhook",
       details: error.message,
+      residencyZone
     });
   }
 };
