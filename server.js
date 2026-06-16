@@ -5,6 +5,7 @@ import cors from "cors";
 import connectDB from "./src/config/db.js";
 import faxRoutes from "./src/routes/faxRoutes.js";
 import webhookRoutes from "./src/routes/webhookRoutes.js";
+import auth from "./src/middleware/auth.js"; // ⭐ Add auth middleware
 
 dotenv.config();
 
@@ -41,7 +42,7 @@ app.use(
   })
 );
 
-// ⭐ CORS ERROR HANDLER (must come right after CORS)
+// ⭐ CORS ERROR HANDLER
 app.use((err, req, res, next) => {
   if (err.message === "Not allowed by CORS") {
     return res.status(403).json({ error: "CORS: Origin not allowed" });
@@ -57,8 +58,10 @@ app.get("/", (req, res) => {
   res.status(200).json({ message: "FaxNova backend is running" });
 });
 
-// Routes
-app.use("/fax", faxRoutes);
+// ⭐ PROTECT FAX ROUTES WITH AUTH
+app.use("/fax", auth, faxRoutes);
+
+// ⭐ Webhooks stay public (providers must reach them)
 app.use("/webhook", webhookRoutes);
 
 // Database connection
