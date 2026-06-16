@@ -41,6 +41,14 @@ app.use(
   })
 );
 
+// ⭐ CORS ERROR HANDLER (must come right after CORS)
+app.use((err, req, res, next) => {
+  if (err.message === "Not allowed by CORS") {
+    return res.status(403).json({ error: "CORS: Origin not allowed" });
+  }
+  next(err);
+});
+
 // JSON parser
 app.use(express.json());
 
