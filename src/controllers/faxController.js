@@ -1,187 +1,82 @@
-import axios from "axios";
-import { z } from "zod";
-import Fax from "../models/Fax.js";
-import { routeFax } from "../services/providerRouter.js";
-import { writeResidencyLog } from "../storage/residencyStorage.js";
-
-// Zod schema with correct lowercase transform
-const faxSchema = z.object({
-  to: z.string().min(5, "Recipient fax number is required"),
-  fileUrl: z.string().url("A valid file URL is required"),
-  provider: z.string().optional().transform(val => val?.toLowerCase()),
-});
+// src/controllers/fax.controller.js
+import { sendFaxService } from "../services/sendFaxService.js";
+import { faxStatusService } from "../services/faxStatusService.js";
+import { faxRetryService } from "../services/faxRetryService.js";
+import { auditService } from "../services/auditService.js";
 
 /**
- * SEND FAX
- * 
- * Now residency-aware:
- * - Receives residencyZone from middleware
- * - Routes through residency-compliant providers
- * - Logs to zone-partitioned storage
- * - Includes routing metadata in response
+ * POST /fax/send
+ * Send a fax using provider routing, residency rules, and failover logic.
  */
-export const sendFax = async (req, res) => {
+export async function sendFax(req, res, next) {
   try {
-    const { to, fileUrl, provider } = faxSchema.parse(req.body);
-    const residencyZone = req.residencyZone || "global";
+    const { to, from, documentUrl, metadata } = req.body;
 
-    // Route through residency-aware provider router
-    const routingResult = await routeFax(
-      {
-        to,
-        fileUrl,
-        preferredProvider: provider,
-      },
-      residencyZone
-    );
-
-    // Store fax record in database
-    const faxRecord = await Fax.create({
-      provider: routingResult.primaryProvider,
+    const fax = await sendFaxService({
       to,
-      fileUrl,
-      faxId: routingResult.id || routingResult.faxId,
-      status: "sent",
-      residencyZone, // Store zone for later reference
-      primaryProvider: routingResult.primaryProvider,
-      fallbackProvider: routingResult.fallbackProvider || null,
-      failoverUsed: routingResult.failoverUsed || false,
+      from,
+      documentUrl,
+      metadata,
+      tenantId: req.user.tenantId,
+      userId: req.user.id
     });
 
-    // Log to residency-partitioned storage
-    await writeResidencyLog(
-      residencyZone,
-      "fax-deliveries.log",
-      JSON.stringify({
-        faxId: faxRecord._id,
-        externalId: routingResult.id || routingResult.faxId,
-        to,
-        timestamp: new Date().toISOString(),
-        primaryProvider: routingResult.primaryProvider,
-        fallbackProvider: routingResult.fallbackProvider || null,
-        failoverUsed: routingResult.failoverUsed || false,
-        residencyZone,
-      })
-    );
-
-    res.status(200).json({
-      message: "Fax sent successfully",
-      fax: faxRecord,
-      residencyZone,
-      routing: {
-        primaryProvider: routingResult.primaryProvider,
-        fallbackProvider: routingResult.fallbackProvider || null,
-        failoverUsed: routingResult.failoverUsed || false,
-      },
+    await auditService.log({
+      action: "FAX_SENT",
+      tenantId: req.user.tenantId,
+      userId: req.user.id,
+      faxId: fax.id,
+      details: { to, from }
     });
-  } catch (error) {
-    console.error("Send Fax Error:", error);
-    
-    // Log error to residency zone
-    const residencyZone = req.residencyZone || "global";
-    try {
-      await writeResidencyLog(
-        residencyZone,
-        "fax-errors.log",
-        JSON.stringify({
-          timestamp: new Date().toISOString(),
-          error: error.message,
-          residencyZone,
-        })
-      );
-    } catch (logError) {
-      console.error("Failed to log error to residency storage:", logError);
-    }
 
-    res.status(500).json({
-      error: "Failed to send fax",
-      details: error.message,
-      residencyZone,
-    });
+    res.status(201).json({ fax });
+  } catch (err) {
+    next(err);
   }
-};
+}
 
 /**
- * GET FAX STATUS
- * 
- * Now residency-aware:
- * - Receives residencyZone from middleware
- * - Checks provider compliance with zone
- * - Logs status checks to zone-partitioned storage
+ * GET /fax/:id
+ * Retrieve fax status (queued, sending, sent, failed).
  */
-export const getFaxStatus = async (req, res) => {
+export async function getFaxStatus(req, res, next) {
   try {
-    const { faxId, provider } = req.params;
-    const residencyZone = req.residencyZone || "global";
+    const faxId = req.params.id;
 
-    if (!faxId) {
-      return res.status(400).json({ error: "Fax ID is required" });
-    }
-
-    const providerLower = provider?.toLowerCase();
-
-    let endpoint = "";
-    let apiKey = "";
-
-    if (providerLower === "sinch") {
-      endpoint = `https://fax.api.sinch.com/v1/faxes/${faxId}`;
-      apiKey = process.env.SINCH_API_KEY;
-    } else if (providerLower === "telnyx") {
-      endpoint = `https://api.telnyx.com/v2/faxes/${faxId}`;
-      apiKey = process.env.TELNYX_API_KEY;
-    } else {
-      return res.status(400).json({ error: "Invalid provider" });
-    }
-
-    const response = await axios.get(endpoint, {
-      headers: {
-        Authorization: `Bearer ${apiKey}`,
-      },
-    });
-
-    // Log status check
-    await writeResidencyLog(
-      residencyZone,
-      "fax-status-checks.log",
-      JSON.stringify({
-        faxId,
-        provider: providerLower,
-        status: response.data.status,
-        timestamp: new Date().toISOString(),
-        residencyZone,
-      })
-    );
-
-    res.status(200).json({
+    const status = await faxStatusService({
       faxId,
-      provider: providerLower,
-      status: response.data.status,
-      raw: response.data,
-      residencyZone,
+      tenantId: req.user.tenantId
     });
-  } catch (error) {
-    console.error("Get Fax Status Error:", error);
-    
-    const residencyZone = req.residencyZone || "global";
-    try {
-      await writeResidencyLog(
-        residencyZone,
-        "fax-errors.log",
-        JSON.stringify({
-          timestamp: new Date().toISOString(),
-          error: error.message,
-          operation: "getFaxStatus",
-          residencyZone,
-        })
-      );
-    } catch (logError) {
-      console.error("Failed to log error to residency storage:", logError);
-    }
 
-    res.status(500).json({
-      error: "Failed to retrieve fax status",
-      details: error.message,
-      residencyZone,
-    });
+    res.json({ faxId, status });
+  } catch (err) {
+    next(err);
   }
-};
+}
+
+/**
+ * POST /fax/:id/retry
+ * Retry a failed fax using provider failover logic.
+ */
+export async function retryFax(req, res, next) {
+  try {
+    const faxId = req.params.id;
+
+    const result = await faxRetryService({
+      faxId,
+      tenantId: req.user.tenantId,
+      userId: req.user.id
+    });
+
+    await auditService.log({
+      action: "FAX_RETRY",
+      tenantId: req.user.tenantId,
+      userId: req.user.id,
+      faxId
+    });
+
+    res.json({ faxId, result });
+  } catch (err) {
+    next(err);
+  }
+}
