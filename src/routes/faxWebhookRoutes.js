@@ -1,20 +1,34 @@
-import express from 'express';
-import { handleFaxWebhook } from '../controllers/faxWebhookController.js';
-import { residencyGuard } from '../middleware/residencyGuard.js';
+// src/routes/faxWebhookRoutes.js
+import express from "express";
+import {
+  handleProviderStatusWebhook,
+  handleInboundFaxWebhook
+} from "../controllers/webhook.controller.js";
 
 const router = express.Router();
 
 /**
- * POST /webhook
- * Handle fax delivery status webhooks from providers
- * 
- * Headers:
- *   x-country: ISO 3166-1 alpha-2 country code (optional)
- *   Provider-specific headers (x-sinch-signature, x-telnyx-timestamp, etc.)
- * 
- * Residency-aware: Routes webhook processing to correct zone storage
- * Logs delivery status updates to zone-partitioned logs
+ * POST /webhook/provider-status
+ * Provider → FaxNova
+ * Delivery receipts, status updates, failures, retries, etc.
+ * Public endpoint (providers must reach it).
  */
-router.post('/webhook', residencyGuard, handleFaxWebhook);
+router.post(
+  "/provider-status",
+  express.json({ limit: "5mb" }),
+  handleProviderStatusWebhook
+);
+
+/**
+ * POST /webhook/inbound
+ * Provider → FaxNova
+ * Inbound fax reception (PDF/TIFF URLs, metadata, caller ID).
+ * Public endpoint (providers must reach it).
+ */
+router.post(
+  "/inbound",
+  express.json({ limit: "10mb" }),
+  handleInboundFaxWebhook
+);
 
 export default router;
