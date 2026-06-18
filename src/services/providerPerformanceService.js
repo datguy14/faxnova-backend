@@ -1,51 +1,159 @@
 // src/services/providerPerformanceService.js
+import NodeCache from "node-cache";
+import { auditService } from "../audit/auditService.js";
 
-module.exports.calculateProviderPerformance = function calculateProviderPerformance({
-  logs,
-  billing,
-  health,
-  region,
-}) {
-  const total = logs.length;
-  const errors = logs.filter(l => l.event === 'error').length;
-  const retries = logs.filter(l => l.event === 'retry').length;
+/**
+ * Provider Performance Service
+ * ----------------------------
+ * Tracks:
+ *  - latency
+ *  - success rate
+ *  - failure rate
+ *  - cost score (static from providerRoutingRules)
+ *
+ * Used by providerRouter to select the best provider.
+ */
 
-  const latencyEvents = logs.filter(l => l.latency);
-  const avgLatency = latencyEvents.length
-    ? latencyEvents.reduce((a, b) => a + b.latency, 0) / latencyEvents.length
-    : 0;
+const PERFORMANCE_TTL = 10 * 60; // 10 minutes
+const performanceCache = new NodeCache({
+  stdTTL: PERFORMANCE_TTL,
+  checkperiod: 60
+});
 
-  const errorRate = total > 0 ? errors / total : 0;
-  const retryRate = total > 0 ? retries / total : 0;
+// Structure:
+// perf:{provider} = {
+//   latencySamples: [ms, ms, ...],
+//   successes: number,
+//   failures: number,
+//   lastUpdated: timestamp
+// }
 
-  // SLA score (0–100)
-  const slaScore = Math.max(0, 100 - (errorRate * 100) - (retryRate * 50));
+export const providerPerformanceService = {
+  /**
+   * Record latency for a provider.
+   */
+  async recordLatency(provider, ms) {
+    const key = `perf:${provider}`;
+    const existing = performanceCache.get(key) || {
+      latencySamples: [],
+      successes: 0,
+      failures: 0,
+      lastUpdated: new Date()
+    };
 
-  // Cost efficiency score (0–100)
-  const costScore = Math.max(
-    0,
-    100 - (billing.costPerPage * 1000) - (billing.regionSurcharge[region] || 1) * 10
-  );
+    existing.latencySamples.push(ms);
+    existing.lastUpdated = new Date();
 
-  // Stability score (0–100)
-  const stabilityScore = health.status === 'HEALTHY'
-    ? 100
-    : health.status === 'DEGRADED'
-    ? 60
-    : 20;
+    performanceCache.set(key, existing);
+    return existing;
+  },
 
-  return {
-    avgLatency,
-    errorRate,
-    retryRate,
-    slaScore,
-    costScore,
-    stabilityScore,
-    performanceScore: Math.round(
-      (slaScore * 0.4) +
-      (costScore * 0.2) +
-      (stabilityScore * 0.3) +
-      ((1 - errorRate) * 100 * 0.1)
-    ),
-  };
+  /**
+   * Record a successful fax delivery.
+   */
+  async recordSuccess(provider) {
+    const key = `perf:${provider}`;
+    const existing = performanceCache.get(key) || {
+      latencySamples: [],
+      successes: 0,
+      failures: 0,
+      lastUpdated: new Date()
+    };
+
+    existing.successes += 1;
+    existing.lastUpdated = new Date();
+
+    performanceCache.set(key, existing);
+    return existing;
+  },
+
+  /**
+   * Record a failed fax delivery.
+   */
+  async recordFailure(provider) {
+    const key = `perf:${provider}`;
+    const existing = performanceCache.get(key) || {
+      latencySamples: [],
+      successes: 0,
+      failures: 0,
+      lastUpdated: new Date()
+    };
+
+    existing.failures += 1;
+    existing.lastUpdated = new Date();
+
+    performanceCache.set(key, existing);
+
+    await auditService.log({
+      action: "PROVIDER_PERFORMANCE_FAILURE",
+      provider,
+      details: existing
+    });
+
+    return existing;
+  },
+
+  /**
+   * Compute performance score for each provider.
+   */
+  async getPerformanceScores() {
+    const keys = performanceCache.keys();
+    const scores = {};
+
+    for (const key of keys) {
+      if (!key.startsWith("perf:")) continue;
+
+      const provider = key.replace("perf:", "");
+      const data = performanceCache.get(key);
+
+      const avgLatency =
+        data.latencySamples.length > 0
+          ? data.latencySamples.reduce((a, b) => a + b, 0) /
+            data.latencySamples.length
+          : 500;
+
+      const total = data.successes + data.failures;
+      const successRate = total > 0 ? data.successes / total : 0.95;
+
+      scores[provider] = {
+        latency: avgLatency,
+        successRate,
+        cost: 1.0 // cost is overridden by providerRoutingRules
+      };
+    }
+
+    return scores;
+  },
+
+  /**
+   * Dashboard-friendly summary.
+   */
+  async getPerformanceSummary() {
+    const keys = performanceCache.keys();
+
+    return keys
+      .filter((k) => k.startsWith("perf:"))
+      .map((k) => {
+        const provider = k.replace("perf:", "");
+        const data = performanceCache.get(k);
+
+        const avgLatency =
+          data.latencySamples.length > 0
+            ? data.latencySamples.reduce((a, b) => a + b, 0) /
+              data.latencySamples.length
+            : 500;
+
+        const total = data.successes + data.failures;
+        const successRate = total > 0 ? data.successes / total : 0.95;
+
+        return {
+          provider,
+          avgLatency,
+          successes: data.successes,
+          failures: data.failures,
+          successRate,
+          lastUpdated: data.lastUpdated
+        };
+      });
+  }
 };
