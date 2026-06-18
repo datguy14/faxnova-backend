@@ -11,6 +11,8 @@ import {
   getProviderBilling
 } from "../controllers/provider.controller.js";
 
+import { providerHealthController } from "../controllers/providerHealth.controller.js";
+
 const router = express.Router();
 
 /**
@@ -22,20 +24,42 @@ router.get("/", auth, providerLimiter, getAllProviders);
 /**
  * GET /providers/status
  * Returns real-time provider health + routing availability.
+ * (Upgraded to use providerHealthController)
  */
-router.get("/status", auth, providerLimiter, getProviderStatus);
+router.get("/status", auth, providerLimiter, providerHealthController.getStatus);
 
 /**
  * GET /providers/performance
  * Returns provider performance scoring (latency, success rate, cost).
  */
-router.get("/performance", auth, providerLimiter, getProviderPerformance);
+router.get(
+  "/performance",
+  auth,
+  providerLimiter,
+  providerHealthController.getPerformance
+);
 
 /**
  * GET /providers/outages
  * Returns provider outage history + active incidents.
  */
-router.get("/outages", auth, providerLimiter, getProviderOutages);
+router.get(
+  "/outages",
+  auth,
+  providerLimiter,
+  providerHealthController.getOutages
+);
+
+/**
+ * POST /providers/outages/clear
+ * Clears outage state for a provider.
+ */
+router.post(
+  "/outages/clear",
+  auth,
+  providerLimiter,
+  providerHealthController.clearOutage
+);
 
 /**
  * GET /providers/billing
