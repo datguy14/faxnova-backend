@@ -1,9 +1,10 @@
 // src/api/faxApi.js
+
 const BASE_URL = import.meta.env.VITE_FAXNOVA_API_URL;
 const API_KEY = import.meta.env.VITE_FAXNOVA_API_KEY;
 
-export async function getOutboundFaxes() {
-  const res = await fetch(`${BASE_URL}/fax/outbound`, {
+async function request(path) {
+  const res = await fetch(`${BASE_URL}${path}`, {
     headers: {
       Authorization: API_KEY,
       "Content-Type": "application/json"
@@ -11,8 +12,19 @@ export async function getOutboundFaxes() {
   });
 
   if (!res.ok) {
-    throw new Error("Failed to fetch outbound faxes");
+    const text = await res.text();
+    throw new Error(`FaxNova API Error: ${text}`);
   }
 
   return res.json();
+}
+
+// ⭐ Outbound faxes
+export function getOutboundFaxes() {
+  return request("/fax/outbound");
+}
+
+// ⭐ Inbound faxes
+export function getInboundFaxes() {
+  return request("/fax/inbound");
 }
