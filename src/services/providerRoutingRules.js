@@ -1,63 +1,66 @@
 // src/services/providerRoutingRules.js
 
-module.exports.getProviderRoutingRules = function getProviderRoutingRules(provider) {
-  if (provider === 'sinch') {
-    return {
-      hipaa: true,
+/**
+ * Provider definitions for FaxNova v1.
+ * Each provider has:
+ * - name
+ * - weight (routing priority)
+ * - zones (residency zones it supports)
+ * - tiers (API key tiers allowed)
+ * - cost (relative cost score)
+ */
 
-      // Preferred delivery regions
-      preferredRegions: ['us-east', 'us-west'],
-
-      // Retry intelligence
-      maxRetries: 2,
-      retryDelays: [5000, 15000], // 5s then 15s
-
-      // Failover logic
-      failoverTo: 'telnyx',
-
-      // Errors that should trigger immediate failover
-      immediateFailoverErrors: ['4001'], // Document conversion failure
-
-      // Area codes where Sinch performs best
-      areaCodeBias: ['212', '305', '404'],
-
-      throughput: 'high',
-    };
+const PROVIDERS = [
+  {
+    name: "sinch",
+    weight: 0.9,
+    zones: ["us", "ca", "latam"],
+    tiers: ["basic", "pro", "enterprise"],
+    cost: 1.0
+  },
+  {
+    name: "interfax",
+    weight: 0.8,
+    zones: ["us", "eu", "global"],
+    tiers: ["pro", "enterprise"],
+    cost: 1.2
+  },
+  {
+    name: "telnyx",
+    weight: 0.7,
+    zones: ["us", "eu"],
+    tiers: ["basic", "pro", "enterprise"],
+    cost: 0.9
+  },
+  {
+    name: "twilio",
+    weight: 0.6,
+    zones: ["global"],
+    tiers: ["enterprise"],
+    cost: 1.5
   }
+];
 
-  if (provider === 'telnyx') {
-    return {
-      hipaa: true,
+export const providerRoutingRules = {
+  /**
+   * Return all providers.
+   */
+  getAllProviders() {
+    return PROVIDERS;
+  },
 
-      // Preferred delivery regions
-      preferredRegions: ['us-central'],
+  /**
+   * Return providers that support a specific residency zone.
+   */
+  getProvidersForZone(zone) {
+    return PROVIDERS.filter((p) => p.zones.includes(zone));
+  },
 
-      // Retry intelligence
-      maxRetries: 3,
-      retryDelays: [3000, 10000, 20000], // 3s, 10s, 20s
-
-      // Failover logic
-      failoverTo: 'sinch',
-
-      // Errors that should trigger immediate failover
-      immediateFailoverErrors: ['30003'], // Negotiation failed
-
-      // Area codes where Telnyx performs best
-      areaCodeBias: ['615', '702', '919'],
-
-      throughput: 'medium',
-    };
+  /**
+   * Apply API key tier rules.
+   * Removes providers that the tier is not allowed to use.
+   */
+  applyTierRules(providers, tier) {
+    return providers.filter((p) => p.tiers.includes(tier));
   }
-
-  // Default fallback for unknown providers
-  return {
-    hipaa: true,
-    preferredRegions: [],
-    maxRetries: 1,
-    retryDelays: [5000],
-    failoverTo: null,
-    immediateFailoverErrors: [],
-    areaCodeBias: [],
-    throughput: 'unknown',
-  };
 };
