@@ -5,32 +5,52 @@ import { providerLimiter } from "../middleware/rateLimit.js";
 
 import {
   getAllProviders,
-  getProviderStatus,
-  getProviderPerformance,
-  getProviderOutages,
   getProviderBilling
 } from "../controllers/provider.controller.js";
 
 import { providerHealthController } from "../controllers/providerHealth.controller.js";
+import { providerBillingController } from "../controllers/providerBilling.controller.js";
 
 const router = express.Router();
 
 /**
+ * -----------------------------------------------------
+ * PROVIDER METADATA (STATIC)
+ * -----------------------------------------------------
+ */
+
+/**
  * GET /providers
- * Returns all providers + routing metadata.
+ * Returns all providers + static routing metadata.
  */
 router.get("/", auth, providerLimiter, getAllProviders);
 
 /**
- * GET /providers/status
- * Returns real-time provider health + routing availability.
- * (Upgraded to use providerHealthController)
+ * GET /providers/billing
+ * Legacy static billing metadata (still supported).
  */
-router.get("/status", auth, providerLimiter, providerHealthController.getStatus);
+router.get("/billing", auth, providerLimiter, getProviderBilling);
+
+/**
+ * -----------------------------------------------------
+ * PROVIDER HEALTH (REAL‑TIME)
+ * -----------------------------------------------------
+ */
+
+/**
+ * GET /providers/status
+ * Real-time provider health + routing availability.
+ */
+router.get(
+  "/status",
+  auth,
+  providerLimiter,
+  providerHealthController.getStatus
+);
 
 /**
  * GET /providers/performance
- * Returns provider performance scoring (latency, success rate, cost).
+ * Provider latency, success rate, failure rate.
  */
 router.get(
   "/performance",
@@ -41,7 +61,7 @@ router.get(
 
 /**
  * GET /providers/outages
- * Returns provider outage history + active incidents.
+ * Active + historical outage data.
  */
 router.get(
   "/outages",
@@ -62,9 +82,31 @@ router.post(
 );
 
 /**
- * GET /providers/billing
- * Returns provider billing metrics (cost per page, per region, etc.).
+ * -----------------------------------------------------
+ * PROVIDER BILLING (ADVANCED)
+ * -----------------------------------------------------
  */
-router.get("/billing", auth, providerLimiter, getProviderBilling);
+
+/**
+ * POST /providers/billing/calculate
+ * Calculate cost for a single fax.
+ */
+router.post(
+  "/billing/calculate",
+  auth,
+  providerLimiter,
+  providerBillingController.calculateFaxCost
+);
+
+/**
+ * GET /providers/billing/summary?tier=pro
+ * Returns billing summary for all providers.
+ */
+router.get(
+  "/billing/summary",
+  auth,
+  providerLimiter,
+  providerBillingController.getBillingSummary
+);
 
 export default router;
