@@ -1,39 +1,54 @@
-const express = require("express");
+// src/routes/docsRoutes.js
+import express from "express";
+
 const router = express.Router();
-const swaggerUi = require("swagger-ui-express");
-const YAML = require("yamljs");
-const path = require("path");
 
-// Correct path: openapi.yaml is in project root
-const openapiPath = path.join(process.cwd(), "openapi.yaml");
-
-// Load the OpenAPI spec
-const swaggerDocument = YAML.load(openapiPath);
-
-router.use(
-  "/",
-  swaggerUi.serve,
-  swaggerUi.setup(swaggerDocument, {
-    explorer: true,
-    customCss: `
-      .swagger-ui .topbar { display: none }
-      .swagger-ui .info { margin-bottom: 20px }
-    `,
-    customSiteTitle: "FaxNova API Documentation",
-    swaggerOptions: {
-      persistAuthorization: true,
-      displayRequestDuration: true
-    }
-  })
-);
-
-router.get("/info", (req, res) => {
+/**
+ * FaxNova v1 API Documentation
+ * Returns a structured overview of all public + protected endpoints.
+ */
+router.get("/", (req, res) => {
   res.json({
-    api: "FaxNova Backend",
-    version: "1.1.0",
-    docs: "Swagger UI Active",
-    specPath: openapiPath
+    name: "FaxNova API",
+    version: "v1",
+    docs: {
+      health: {
+        GET: "/",
+        description: "Health check for FaxNova backend"
+      },
+      fax: {
+        POST: "/fax/send",
+        GET: "/fax/:faxId/status",
+        POST_retry: "/fax/:faxId/retry",
+        description: "Outbound fax operations"
+      },
+      inbound: {
+        POST: "/webhook/inbound",
+        description: "Provider → FaxNova inbound fax webhook"
+      },
+      providers: {
+        GET: "/providers",
+        GET_status: "/providers/status",
+        GET_performance: "/providers/performance",
+        GET_outages: "/providers/outages",
+        description: "Provider routing + analytics"
+      },
+      analytics: {
+        GET: "/analytics/usage",
+        GET_fax_volume: "/analytics/fax-volume",
+        description: "Tenant analytics + usage metrics"
+      }
+    },
+    auth: {
+      type: "API Key",
+      header: "Authorization: Bearer <API_KEY>",
+      tiers: ["basic", "pro", "enterprise"]
+    },
+    residency: {
+      header: "x-faxnova-zone",
+      description: "Controls data residency + sovereignty routing"
+    }
   });
 });
 
-module.exports = router;
+export default router;
