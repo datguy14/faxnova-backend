@@ -1,11 +1,15 @@
-// src/agents/index.js
+const { handleBillingQuestion } = require('./billingAgent');
+const { handleComplianceQuestion } = require('./complianceAgent');
+const { handleOnboardingQuestion } = require('./onboardingAgent');
+const { handleRoutingDecision } = require('./routingAgent');
+const { handleSalesQuestion } = require('./salesAgent');
+const { handleTroubleshootingQuestion } = require('./troubleshootingAgent');
 
 module.exports = {
-  handleOnboardingQuestion: require('./onboardingAgent'),
-  handleTroubleshootingQuestion: require('./troubleshootingAgent'),
-  handleRoutingDecision: require('./routingAgent'),
-  handleBillingQuestion: require('./billingAgent'),
-  handleSalesQuestion: require('./salesAgent'),
-  handleComplianceQuestion: require('./complianceAgent'),
-  handleCodeAudit: require('./codeAuditAgent'),
+  handleBillingQuestion,
+  handleComplianceQuestion,
+  handleOnboardingQuestion,
+  handleRoutingDecision,
+  handleSalesQuestion,
+  handleTroubleshootingQuestion,
 };
