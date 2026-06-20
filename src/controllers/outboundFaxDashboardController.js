@@ -1,24 +1,11 @@
-// src/controllers/outboundFaxDashboard.controller.js
-import { outboundFaxQueryService } from "../services/outboundFaxQueryService.js";
+const outboundFaxQueryService = require("../services/outboundFaxQueryService");
+const audit = require("../audit/auditService");
 
-/**
- * Outbound Fax Dashboard Controller
- * ---------------------------------
- * Provides dashboard-facing endpoints for:
- *  - paginated outbound fax lists
- *  - filtering (status, provider, residency, date range)
- *  - summary metrics
- *  - volume-by-day chart data
- */
-
-export const outboundFaxDashboardController = {
-  /**
-   * GET /dashboard/outbound
-   * Paginated + filtered outbound fax list.
-   */
+const outboundFaxDashboardController = {
   async list(req, res) {
     try {
       const tenantId = req.tenantId;
+      const correlationId = req.correlationId;
 
       const {
         page,
@@ -41,43 +28,84 @@ export const outboundFaxDashboardController = {
         toDate
       });
 
-      return res.status(200).json(result);
+      audit.logEvent({
+        tenantId,
+        type: "dashboard",
+        action: "outbound_dashboard_list_viewed",
+        correlationId,
+        ip: req.ip,
+        path: req.originalUrl,
+        method: req.method,
+        tier: req.apiTier,
+        details: { filters: req.query }
+      });
+
+      return res.status(200).json({ ...result, correlationId });
     } catch (err) {
+      audit.logEvent({
+        tenantId: req.tenantId,
+        type: "dashboard",
+        action: "outbound_dashboard_list_failed",
+        correlationId: req.correlationId,
+        ip: req.ip,
+        path: req.originalUrl,
+        method: req.method,
+        tier: req.apiTier,
+        details: { error: err.message }
+      });
+
       return res.status(500).json({
         error: "Failed to fetch outbound fax list",
-        details: err.message
+        details: err.message,
+        correlationId: req.correlationId
       });
     }
   },
 
-  /**
-   * GET /dashboard/outbound/summary
-   * Summary metrics for dashboard cards.
-   */
   async summary(req, res) {
     try {
       const tenantId = req.tenantId;
+      const correlationId = req.correlationId;
 
-      const summary = await outboundFaxQueryService.getOutboundSummary(
-        tenantId
-      );
+      const summary = await outboundFaxQueryService.getOutboundSummary(tenantId);
 
-      return res.status(200).json(summary);
+      audit.logEvent({
+        tenantId,
+        type: "dashboard",
+        action: "outbound_dashboard_summary_viewed",
+        correlationId,
+        ip: req.ip,
+        path: req.originalUrl,
+        method: req.method,
+        tier: req.apiTier
+      });
+
+      return res.status(200).json({ ...summary, correlationId });
     } catch (err) {
+      audit.logEvent({
+        tenantId: req.tenantId,
+        type: "dashboard",
+        action: "outbound_dashboard_summary_failed",
+        correlationId: req.correlationId,
+        ip: req.ip,
+        path: req.originalUrl,
+        method: req.method,
+        tier: req.apiTier,
+        details: { error: err.message }
+      });
+
       return res.status(500).json({
         error: "Failed to fetch outbound fax summary",
-        details: err.message
+        details: err.message,
+        correlationId: req.correlationId
       });
     }
   },
 
-  /**
-   * GET /dashboard/outbound/volume?days=30
-   * Volume-by-day chart data.
-   */
   async volume(req, res) {
     try {
       const tenantId = req.tenantId;
+      const correlationId = req.correlationId;
       const days = Number(req.query.days) || 30;
 
       const data = await outboundFaxQueryService.getOutboundVolumeByDay(
@@ -85,12 +113,39 @@ export const outboundFaxDashboardController = {
         days
       );
 
-      return res.status(200).json(data);
+      audit.logEvent({
+        tenantId,
+        type: "dashboard",
+        action: "outbound_dashboard_volume_viewed",
+        correlationId,
+        ip: req.ip,
+        path: req.originalUrl,
+        method: req.method,
+        tier: req.apiTier,
+        details: { days }
+      });
+
+      return res.status(200).json({ ...data, correlationId });
     } catch (err) {
+      audit.logEvent({
+        tenantId: req.tenantId,
+        type: "dashboard",
+        action: "outbound_dashboard_volume_failed",
+        correlationId: req.correlationId,
+        ip: req.ip,
+        path: req.originalUrl,
+        method: req.method,
+        tier: req.apiTier,
+        details: { error: err.message }
+      });
+
       return res.status(500).json({
         error: "Failed to fetch outbound fax volume",
-        details: err.message
+        details: err.message,
+        correlationId: req.correlationId
       });
     }
   }
 };
+
+module.exports = outboundFaxDashboardController;
