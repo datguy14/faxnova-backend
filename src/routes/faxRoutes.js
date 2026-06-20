@@ -1,8 +1,7 @@
-// src/routes/faxRoutes.js
-import express from "express";
-import { sendFax, getFaxStatus, retryFax } from "../controllers/fax.controller.js";
-import auth from "../middleware/auth.js";
-import { faxLimiter } from "../middleware/rateLimit.js";
+const express = require("express");
+const { sendFax, getFaxStatus, retryFax } = require("../controllers/fax.controller.js");
+const auth = require("../middleware/auth.js");
+const { faxLimiter } = require("../middleware/rateLimit.js");
 
 const router = express.Router();
 
@@ -24,4 +23,4 @@ router.get("/:id", auth, getFaxStatus);
  */
 router.post("/:id/retry", auth, faxLimiter, retryFax);
 
-export default router;
+module.exports = router;
