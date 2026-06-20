@@ -1,14 +1,13 @@
-// src/controllers/fax.controller.js
-import { sendFaxService } from "../services/sendFaxService.js";
-import { faxStatusService } from "../services/faxStatusService.js";
-import { faxRetryService } from "../services/faxRetryService.js";
-import { auditService } from "../services/auditService.js";
+const { sendFaxService } = require("../services/sendFaxService.js");
+const { faxStatusService } = require("../services/faxStatusService.js");
+const { faxRetryService } = require("../services/faxRetryService.js");
+const auditService = require("../services/auditService.js");
 
 /**
  * POST /fax/send
  * Send a fax using provider routing, residency rules, and failover logic.
  */
-export async function sendFax(req, res, next) {
+async function sendFax(req, res, next) {
   try {
     const { to, from, documentUrl, metadata } = req.body;
 
@@ -17,15 +16,15 @@ export async function sendFax(req, res, next) {
       from,
       documentUrl,
       metadata,
-      tenantId: req.user.tenantId,
-      userId: req.user.id
+      tenantId: req.tenantId,
+      userId: req.userId
     });
 
-    await auditService.log({
+    await auditService.logEvent({
       action: "FAX_SENT",
-      tenantId: req.user.tenantId,
-      userId: req.user.id,
-      faxId: fax.id,
+      tenantId: req.tenantId,
+      userId: req.userId,
+      faxId: fax._id,
       details: { to, from }
     });
 
@@ -39,13 +38,13 @@ export async function sendFax(req, res, next) {
  * GET /fax/:id
  * Retrieve fax status (queued, sending, sent, failed).
  */
-export async function getFaxStatus(req, res, next) {
+async function getFaxStatus(req, res, next) {
   try {
     const faxId = req.params.id;
 
     const status = await faxStatusService({
       faxId,
-      tenantId: req.user.tenantId
+      tenantId: req.tenantId
     });
 
     res.json({ faxId, status });
@@ -58,20 +57,20 @@ export async function getFaxStatus(req, res, next) {
  * POST /fax/:id/retry
  * Retry a failed fax using provider failover logic.
  */
-export async function retryFax(req, res, next) {
+async function retryFax(req, res, next) {
   try {
     const faxId = req.params.id;
 
     const result = await faxRetryService({
       faxId,
-      tenantId: req.user.tenantId,
-      userId: req.user.id
+      tenantId: req.tenantId,
+      userId: req.userId
     });
 
-    await auditService.log({
+    await auditService.logEvent({
       action: "FAX_RETRY",
-      tenantId: req.user.tenantId,
-      userId: req.user.id,
+      tenantId: req.tenantId,
+      userId: req.userId,
       faxId
     });
 
@@ -80,3 +79,9 @@ export async function retryFax(req, res, next) {
     next(err);
   }
 }
+
+module.exports = {
+  sendFax,
+  getFaxStatus,
+  retryFax
+};
