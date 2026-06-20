@@ -1,3 +1,6 @@
+const audit = require('../audit/auditService');
+const { checkFaxStatus: checkFaxStatusService } = require('../services/faxStatusService');
+
 exports.checkFaxStatus = async (req, res, next) => {
   try {
     const { faxId } = req.params;
@@ -11,7 +14,7 @@ exports.checkFaxStatus = async (req, res, next) => {
       });
     }
 
-    const result = await checkFaxStatus(faxId, correlationId);
+    const result = await checkFaxStatusService(faxId, correlationId);
 
     await audit.logFaxEvent({
       tenantId: req.tenantId || 'system',
@@ -33,6 +36,7 @@ exports.checkFaxStatus = async (req, res, next) => {
       providerStatus: result,
       correlationId
     });
+
   } catch (error) {
     await audit.logFaxEvent({
       faxId: req.params.faxId,
