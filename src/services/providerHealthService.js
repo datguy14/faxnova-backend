@@ -1,7 +1,7 @@
 // src/services/providerHealthService.js
 
 /**
- * Provider Health Service (v1)
+ * Provider Health Service
  * -----------------------------------------
  * Routing Engine v2 needs:
  * - avgLatencyMs
@@ -18,20 +18,23 @@ import { providerOutageService } from "./providerOutageService.js";
 
 export const providerHealthService = {
   async getCurrentHealth() {
-    const performance = await providerPerformanceService.getProviderPerformance();
+    // 1. Get performance metrics (latency + success rate)
+    const performance = await providerPerformanceService.getPerformanceScores();
+
+    // 2. Get outage status
     const outages = await providerOutageService.getOutages();
 
     return {
       sinch: {
-        avgLatencyMs: performance.sinch?.avgLatencyMs ?? 500,
-        successRate: performance.sinch?.successRate ?? 0.8,
-        activeOutage: outages.sinch?.active ?? false,
+        avgLatencyMs: performance.sinch?.latency ?? 500,
+        successRate: performance.sinch?.successRate ?? 0.95,
+        activeOutage: outages.sinch?.active ?? false
       },
       telnyx: {
-        avgLatencyMs: performance.telnyx?.avgLatencyMs ?? 500,
-        successRate: performance.telnyx?.successRate ?? 0.8,
-        activeOutage: outages.telnyx?.active ?? false,
-      },
+        avgLatencyMs: performance.telnyx?.latency ?? 500,
+        successRate: performance.telnyx?.successRate ?? 0.95,
+        activeOutage: outages.telnyx?.active ?? false
+      }
     };
-  },
+  }
 };
