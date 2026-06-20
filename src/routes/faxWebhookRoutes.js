@@ -1,9 +1,8 @@
-// src/routes/faxWebhookRoutes.js
-import express from "express";
-import {
+const express = require("express");
+const {
   handleProviderStatusWebhook,
   handleInboundFaxWebhook
-} from "../controllers/webhook.controller.js";
+} = require("../controllers/webhook.controller.js");
 
 const router = express.Router();
 
@@ -31,4 +30,4 @@ router.post(
   handleInboundFaxWebhook
 );
 
-export default router;
+module.exports = router;
