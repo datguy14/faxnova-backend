@@ -1,9 +1,8 @@
-// src/routes/webhookRoutes.js
-import express from "express";
-import {
+const express = require("express");
+const {
   handleProviderStatusWebhook,
   handleInboundFaxWebhook
-} from "../controllers/webhook.controller.js";
+} = require("../controllers/webhook.controller.js");
 
 const router = express.Router();
 
@@ -13,7 +12,11 @@ const router = express.Router();
  * Used for delivery receipts, status updates, failures, retries, etc.
  * Public endpoint (providers must reach it).
  */
-router.post("/provider-status", express.json({ limit: "5mb" }), handleProviderStatusWebhook);
+router.post(
+  "/provider-status",
+  express.json({ limit: "5mb" }),
+  handleProviderStatusWebhook
+);
 
 /**
  * POST /webhook/inbound
@@ -21,6 +24,10 @@ router.post("/provider-status", express.json({ limit: "5mb" }), handleProviderSt
  * Used for inbound fax reception (PDF/TIFF URLs, metadata, caller ID).
  * Public endpoint (providers must reach it).
  */
-router.post("/inbound", express.json({ limit: "10mb" }), handleInboundFaxWebhook);
+router.post(
+  "/inbound",
+  express.json({ limit: "10mb" }),
+  handleInboundFaxWebhook
+);
 
-export default router;
+module.exports = router;
