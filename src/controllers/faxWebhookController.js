@@ -1,18 +1,17 @@
-import Fax from "../models/Fax.js";
-import FaxLog from "../models/FaxLog.js";
-import WebhookEvent from "../models/WebhookEvent.js";
-import { writeResidencyLog } from "../storage/residencyStorage.js";
+const Fax = require("../models/Fax");
+const FaxLog = require("../models/FaxLog");
+const WebhookEvent = require("../models/WebhookEvent");
+const { writeResidencyLog } = require("../storage/residencyStorage");
+const audit = require("../audit/auditService");
 
 /**
  * Normalize provider from headers
  */
 const detectProvider = (headers) => {
-  const raw =
-    headers["x-fax-provider"] ||
-    headers["user-agent"] ||
-    headers["telnyx-signature-ed25519"] ? "telnyx" : null;
-
-  return raw?.toLowerCase() || "unknown";
+  if (headers["telnyx-signature-ed25519"]) return "telnyx";
+  if (headers["x-fax-provider"]) return headers["x-fax-provider"].toLowerCase();
+  if (headers["user-agent"]) return headers["user-agent"].toLowerCase();
+  return "unknown";
 };
 
 /**
@@ -42,10 +41,7 @@ const extractStatus = (payload) => {
   );
 };
 
-/**
- * Main webhook handler - now residency-aware
- */
-export const handleFaxWebhook = async (req, res) => {
+exports.handleFaxWebhook = async (req, res) => {
   try {
     const provider = detectProvider(req.headers);
     const payload = req.body;
@@ -60,7 +56,7 @@ export const handleFaxWebhook = async (req, res) => {
       payload,
       faxId,
       status,
-      residencyZone // Store zone for later reference
+      residencyZone
     });
 
     // Log webhook to residency storage
@@ -77,14 +73,13 @@ export const handleFaxWebhook = async (req, res) => {
       })
     );
 
-    // If we can match a fax, update it
+    // Attempt to match fax
+    let updatedFax = null;
+
     if (faxId) {
-      const updatedFax = await Fax.findOneAndUpdate(
+      updatedFax = await Fax.findOneAndUpdate(
         { faxId },
-        { 
-          status,
-          residencyZone // Ensure zone is stored
-        },
+        { status, residencyZone },
         { new: true }
       );
 
@@ -100,56 +95,37 @@ export const handleFaxWebhook = async (req, res) => {
           }
         });
 
-        // Log to residency storage
-        await writeResidencyLog(
-          residencyZone,
-          "webhook-updates.log",
-          JSON.stringify({
-            timestamp: new Date().toISOString(),
-            faxId: updatedFax._id,
-            externalFaxId: faxId,
-            provider,
-            status,
-            residencyZone
-          })
-        );
+        audit.logEvent({
+          tenantId: updatedFax.tenantId,
+          type: "fax",
+          action: "webhook_update_success",
+          details: { faxId, status, provider },
+          residencyZone
+        });
       }
-
-      return res.status(200).json({
-        received: true,
-        faxId,
-        status,
-        updated: Boolean(updatedFax),
-        residencyZone
-      });
     }
 
-    // If no faxId found, still acknowledge webhook
     return res.status(200).json({
       received: true,
-      faxId: null,
+      faxId,
       status,
-      warning: "Webhook received but no faxId was detected",
+      updated: Boolean(updatedFax),
       residencyZone
     });
+
   } catch (error) {
-    console.error("❌ Webhook Error:", error);
+    console.error("Webhook Error:", error);
     const residencyZone = req.residencyZone || "global";
 
-    // Log error to residency storage
-    try {
-      await writeResidencyLog(
-        residencyZone,
-        "webhook-errors.log",
-        JSON.stringify({
-          timestamp: new Date().toISOString(),
-          error: error.message,
-          residencyZone
-        })
-      );
-    } catch (logError) {
-      console.error("Failed to log error to residency storage:", logError);
-    }
+    await writeResidencyLog(
+      residencyZone,
+      "webhook-errors.log",
+      JSON.stringify({
+        timestamp: new Date().toISOString(),
+        error: error.message,
+        residencyZone
+      })
+    );
 
     return res.status(500).json({
       error: "Failed to process webhook",
