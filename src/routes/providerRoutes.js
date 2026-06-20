@@ -1,15 +1,14 @@
-// src/routes/providerRoutes.js
-import express from "express";
-import auth from "../middleware/auth.js";
-import { providerLimiter } from "../middleware/rateLimit.js";
+const express = require("express");
+const auth = require("../middleware/auth.js");
+const { providerLimiter } = require("../middleware/rateLimit.js");
 
-import {
+const {
   getAllProviders,
   getProviderBilling
-} from "../controllers/provider.controller.js";
+} = require("../controllers/provider.controller.js");
 
-import { providerHealthController } from "../controllers/providerHealth.controller.js";
-import { providerBillingController } from "../controllers/providerBilling.controller.js";
+const { providerHealthController } = require("../controllers/providerHealth.controller.js");
+const { providerBillingController } = require("../controllers/providerBilling.controller.js");
 
 const router = express.Router();
 
@@ -19,16 +18,8 @@ const router = express.Router();
  * -----------------------------------------------------
  */
 
-/**
- * GET /providers
- * Returns all providers + static routing metadata.
- */
 router.get("/", auth, providerLimiter, getAllProviders);
 
-/**
- * GET /providers/billing
- * Legacy static billing metadata (still supported).
- */
 router.get("/billing", auth, providerLimiter, getProviderBilling);
 
 /**
@@ -37,10 +28,6 @@ router.get("/billing", auth, providerLimiter, getProviderBilling);
  * -----------------------------------------------------
  */
 
-/**
- * GET /providers/status
- * Real-time provider health + routing availability.
- */
 router.get(
   "/status",
   auth,
@@ -48,10 +35,6 @@ router.get(
   providerHealthController.getStatus
 );
 
-/**
- * GET /providers/performance
- * Provider latency, success rate, failure rate.
- */
 router.get(
   "/performance",
   auth,
@@ -59,10 +42,6 @@ router.get(
   providerHealthController.getPerformance
 );
 
-/**
- * GET /providers/outages
- * Active + historical outage data.
- */
 router.get(
   "/outages",
   auth,
@@ -70,10 +49,6 @@ router.get(
   providerHealthController.getOutages
 );
 
-/**
- * POST /providers/outages/clear
- * Clears outage state for a provider.
- */
 router.post(
   "/outages/clear",
   auth,
@@ -87,10 +62,6 @@ router.post(
  * -----------------------------------------------------
  */
 
-/**
- * POST /providers/billing/calculate
- * Calculate cost for a single fax.
- */
 router.post(
   "/billing/calculate",
   auth,
@@ -98,10 +69,6 @@ router.post(
   providerBillingController.calculateFaxCost
 );
 
-/**
- * GET /providers/billing/summary?tier=pro
- * Returns billing summary for all providers.
- */
 router.get(
   "/billing/summary",
   auth,
@@ -109,4 +76,4 @@ router.get(
   providerBillingController.getBillingSummary
 );
 
-export default router;
+module.exports = router;
