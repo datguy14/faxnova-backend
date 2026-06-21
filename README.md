@@ -1,3 +1,97 @@
+FaxNova Backend
+
+Multi‑Provider Fax Infrastructure for Modern Compliance, Reliability & Scale
+
+FaxNova Backend is a production‑grade communications infrastructure service designed for organizations that require high‑deliverability faxing, provider redundancy, data‑residency controls, and AI‑assisted operations.
+
+Built on Node.js + Express, FaxNova delivers a modular, acquisition‑ready architecture that integrates seamlessly with Sinch and Telnyx while providing intelligent routing, automated troubleshooting, and enterprise‑grade observability.
+
+🚀 Platform Overview
+
+FaxNova Backend provides:
+
+Multi‑provider fax delivery with automatic failover
+
+Residency‑aware routing for sovereignty‑sensitive workloads
+
+Webhook ingestion with signature validation
+
+AI‑powered agents for routing, compliance, billing, and troubleshooting
+
+Secure authentication with JWT + rate limiting
+
+Provider‑agnostic abstraction layer for future expansion
+
+Automated code audits via CI‑driven Audit Agent
+
+FaxNova is engineered for high availability, regulatory alignment, and SaaS‑grade scalability.
+
+🧱 Core Capabilities
+
+1. Multi‑Provider Fax Delivery
+
+Intelligent provider selection (Sinch + Telnyx)
+
+Automatic failover on provider outage or degraded performance
+
+Provider‑specific metadata normalization
+
+Delivery status tracking + webhook ingestion
+
+Unified outbound fax pipeline
+
+Explore the provider routing engine.
+
+2. Residency & Sovereignty Engine
+
+FaxNova includes a residency policy layer that ensures outbound faxes comply with:
+
+US‑only routing
+
+EU‑sovereign routing
+
+Global routing
+
+Provider‑level residency constraints
+
+This enables enterprise customers to meet GDPR, tribal sovereignty, and regulated‑industry requirements.
+
+Learn about the residency model.
+
+3. AI‑Powered Internal Agents
+
+FaxNova ships with a suite of internal agents that automate operational intelligence:
+
+Troubleshooting Agent
+
+Routing Agent
+
+Compliance Agent
+
+Billing Agent
+
+Sales Agent
+
+Code Audit Agent (CI‑integrated)
+
+These agents reduce engineering overhead and accelerate debugging, compliance checks, and routing decisions.
+
+Explore the AI agent system.
+
+4. Secure, Modern Architecture
+
+JWT authentication
+
+Role‑based access
+
+Rate limiting
+
+Input validation
+
+SSRF‑safe file URL validation
+
+Provider isolation
+
 Environment validation
 
 Structured audit logging
@@ -6,21 +100,7 @@ See the security model.
 
 5. Automated Code Audits (CI)
 
-Every push and pull request triggers:
-
-Static analysis
-
-Code quality checks
-
-Security checks
-
-Auto‑fix suggestions
-
-PR comments
-
-Merge blocking on critical issues
-
-This dramatically increases acquisition readiness and reduces long‑term maintenance risk.
+Every push and pull request triggers:This dramatically increases acquisition readiness and reduces long‑term maintenance risk.
 
 📂 Project Structure
 
