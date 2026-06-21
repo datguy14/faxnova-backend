@@ -1,6 +1,5 @@
-// src/services/routingService.v2.js
-import { providerHealthService } from "./providerHealthService.js";
-import { providerBillingService } from "./providerBillingService.js";
+const providerHealthService = require("./providerHealthService");
+const providerBillingService = require("./providerBillingService");
 
 const PROVIDERS = ["sinch", "telnyx"];
 
@@ -9,10 +8,10 @@ const WEIGHTS = {
   success: 0.30,
   cost: 0.20,
   residency: 0.15,
-  outage: 0.10,
+  outage: 0.10
 };
 
-export const routingServiceV2 = {
+const routingServiceV2 = {
   async selectProvider({ residencyZone, tier }) {
     const health = await providerHealthService.getCurrentHealth();
     const billing = await providerBillingService.getRates({ tier });
@@ -34,7 +33,17 @@ export const routingServiceV2 = {
         WEIGHTS.residency * residencyScore +
         WEIGHTS.outage * outageScore;
 
-      return { provider, score, metrics: { latencyScore, successScore, costScore, residencyScore, outageScore } };
+      return {
+        provider,
+        score,
+        metrics: {
+          latencyScore,
+          successScore,
+          costScore,
+          residencyScore,
+          outageScore
+        }
+      };
     });
 
     scored.sort((a, b) => b.score - a.score);
@@ -43,7 +52,7 @@ export const routingServiceV2 = {
     const failover = scored[1];
 
     return { primary, failover, scored };
-  },
+  }
 };
 
 function normalizeLatency(ms) {
@@ -59,3 +68,5 @@ function normalizeCost(ratePerPage) {
   if (ratePerPage <= 0.06) return 0.6;
   return 0.3;
 }
+
+module.exports = routingServiceV2;
