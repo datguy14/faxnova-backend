@@ -1,5 +1,4 @@
-// src/services/providerBillingService.js
-import { providerRoutingRules } from "./providerRoutingRules.js";
+const providerRoutingRules = require("./providerRoutingRules");
 
 /**
  * Provider Billing Service
@@ -25,12 +24,13 @@ const TIER_DISCOUNTS = {
   enterprise: 0.20  // 20% discount
 };
 
-export const providerBillingService = {
+const providerBillingService = {
   /**
    * Compute cost for a single fax.
    */
   computeFaxCost({ provider, pages, residencyZone, tier }) {
     const baseRate = BASE_PRICING[residencyZone] || BASE_PRICING.global;
+
     const providerMeta = providerRoutingRules
       .getAllProviders()
       .find((p) => p.name === provider);
@@ -84,3 +84,5 @@ export const providerBillingService = {
     });
   }
 };
+
+module.exports = providerBillingService;
