@@ -1,4 +1,30 @@
-FaxNova BackendMulti‑Provider Fax Infrastructure for Modern Compliance, Reliability & ScaleFaxNova Backend is a production‑grade communications infrastructure service designed for organizations that require high‑deliverability faxing, provider redundancy, data‑residency controls, and AI‑assisted operations.Built on Node.js + Express, FaxNova delivers a modular, acquisition‑ready architecture that integrates seamlessly with Sinch and Telnyx while providing intelligent routing, automated troubleshooting, and enterprise‑grade observability.🚀 Platform OverviewFaxNova Backend provides:Multi‑provider fax delivery with automatic failoverResidency‑aware routing for sovereignty‑sensitive workloadsWebhook ingestion with signature validationAI‑powered agents for routing, compliance, billing, and troubleshootingSecure authentication with JWT + rate limitingProvider‑agnostic abstraction layer for future expansionAutomated code audits via CI‑driven Audit AgentFaxNova is engineered for high availability, regulatory alignment, and SaaS‑grade scalability.🧱 Core Capabilities1. Multi‑Provider Fax DeliveryIntelligent provider selection (Sinch + Telnyx)Automatic failover on provider outage or degraded performanceProvider‑specific metadata normalizationDelivery status tracking + webhook ingestionUnified outbound fax pipelineExplore the provider routing engine.2. Residency & Sovereignty EngineFaxNova includes a residency policy layer that ensures outbound faxes comply with:US‑only routingEU‑sovereign routingGlobal routingProvider‑level residency constraintsThis enables enterprise customers to meet GDPR, tribal sovereignty, and regulated‑industry requirements.Learn about the residency model.3. AI‑Powered Internal AgentsFaxNova ships with a suite of internal agents that automate operational intelligence:Troubleshooting AgentRouting AgentCompliance AgentBilling AgentSales AgentCode Audit Agent (CI‑integrated)These agents reduce engineering overhead and accelerate debugging, compliance checks, and routing decisions.Explore the AI agent system.4. Secure, Modern ArchitectureJWT authenticationRole‑based accessRate limitingInput validationSSRF‑safe file URL validationProvider isolationEnvironment validationStructured audit loggingSee the security model.5. Automated Code Audits (CI)Every push and pull request triggers:Static analysisCode quality checksSecurity checksAuto‑fix suggestionsPR commentsMerge blocking on critical issuesThis dramatically increases acquisition readiness and reduces long‑term maintenance risk.📂 Project StructureCopysrc/
+Environment validation
+
+Structured audit logging
+
+See the security model.
+
+5. Automated Code Audits (CI)
+
+Every push and pull request triggers:
+
+Static analysis
+
+Code quality checks
+
+Security checks
+
+Auto‑fix suggestions
+
+PR comments
+
+Merge blocking on critical issues
+
+This dramatically increases acquisition readiness and reduces long‑term maintenance risk.
+
+📂 Project Structure
+
+src/
   agents/          # AI agent handlers
   audit/           # Audit Agent logic
   controllers/     # Business logic
@@ -7,6 +33,130 @@ FaxNova BackendMulti‑Provider Fax Infrastructure for Modern Compliance, Reliab
   models/          # Mongoose models
   routes/          # API routes
   services/        # Core services (fax, usage, billing)
-  utils/           # Helpers, validators, env checks🔌 API EndpointsFaxPOST /fax/sendGET /fax/:idGET /faxDELETE /fax/:idAgentsPOST /agents/audit-codePOST /agents/troubleshootPOST /agents/routeAuthPOST /auth/loginPOST /auth/registerExplore the API reference.🧰 Environment VariablesCategoryVariableCorePORT, MONGODB_URI, JWT_SECRETAIOPENAI_API_KEYSinchSINCH_KEY_ID, SINCH_KEY_SECRET, SINCH_PROJECT_ID, SINCH_FAX_NUMBERTelnyxTELNYX_API_KEY, TELNYX_CONNECTION_ID, TELNYX_WEBHOOK_SECRETAudit AgentAUDIT_AGENT_URL, AUDIT_AGENT_KEYSecurityALLOWED_FILE_HOSTSLearn about environment configuration.🧪 Running LocallyInstall dependencies:Copynpm installStart development server:Copynpm run devStart production server:Copynpm start🔐 Security & ComplianceFaxNova includes:SSRF‑safe file URL validationProvider‑safe routingStrict input validationWebhook signature verificationAudit loggingError normalizationSee the security overview.🤖 Audit Agent CI (Included)This repository includes a GitHub Action that:Runs the Audit AgentParses issuesPosts PR commentsBlocks merges on critical issuesThis ensures continuous hardening and boosts acquisition valuation.Learn more about the Audit Agent CI.🗺️ RoadmapNext.js dashboardTeam accounts + RBACUsage analyticsProvider failover UIMobile app (FlutterFlow)Explore the roadmap.📞 ContactCharles Locklear
-Founder, NovaStack Technologies
-Laurinburg, NC
+  utils/           # Helpers, validators, env checks
+
+🔌 API Endpoints
+
+Fax
+
+POST /fax/send
+
+GET /fax/:id
+
+GET /fax
+
+DELETE /fax/:id
+
+Agents
+
+POST /agents/audit-code
+
+POST /agents/troubleshoot
+
+POST /agents/route
+
+Auth
+
+POST /auth/login
+
+POST /auth/register
+
+Explore the API reference.
+
+🧰 Environment Variables
+
+Category
+
+Variable
+
+Core
+
+PORT, MONGODB_URI, JWT_SECRET
+
+AI
+
+OPENAI_API_KEY
+
+Sinch
+
+SINCH_KEY_ID, SINCH_KEY_SECRET, SINCH_PROJECT_ID, SINCH_FAX_NUMBER
+
+Telnyx
+
+TELNYX_API_KEY, TELNYX_CONNECTION_ID, TELNYX_WEBHOOK_SECRET
+
+Audit Agent
+
+AUDIT_AGENT_URL, AUDIT_AGENT_KEY
+
+Security
+
+ALLOWED_FILE_HOSTS
+
+Learn about environment configuration.
+
+🧪 Running Locally
+
+Install dependencies:
+
+npm install
+
+Start development server:
+
+npm run dev
+
+Start production server:
+
+npm start
+
+🔐 Security & Compliance
+
+FaxNova includes:
+
+SSRF‑safe file URL validation
+
+Provider‑safe routing
+
+Strict input validation
+
+Webhook signature verification
+
+Audit logging
+
+Error normalization
+
+See the security overview.
+
+🤖 Audit Agent CI (Included)
+
+This repository includes a GitHub Action that:
+
+Runs the Audit Agent
+
+Parses issues
+
+Posts PR comments
+
+Blocks merges on critical issues
+
+This ensures continuous hardening and boosts acquisition valuation.
+
+Learn more about the Audit Agent CI.
+
+🗺️ Roadmap
+
+Next.js dashboard
+
+Team accounts + RBAC
+
+Usage analytics
+
+Provider failover UI
+
+Mobile app (FlutterFlow)
+
+Explore the roadmap.
+
+📞 Contact
+
+Charles LocklearFounder, NovaStack TechnologiesLaurinburg, NC
