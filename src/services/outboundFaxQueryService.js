@@ -1,23 +1,6 @@
-// src/services/outboundFaxQueryService.js
-import OutboundFax from "../models/OutboundFax.js";
+const OutboundFax = require("../models/OutboundFax");
 
-/**
- * Outbound Fax Query Service
- * --------------------------
- * Provides dashboard-friendly queries for outbound fax data.
- * Supports:
- *  - pagination
- *  - filtering
- *  - date ranges
- *  - provider filtering
- *  - residency filtering
- *  - status filtering
- */
-
-export const outboundFaxQueryService = {
-  /**
-   * Fetch outbound faxes with filters + pagination.
-   */
+const outboundFaxQueryService = {
   async listOutboundFaxes({
     tenantId,
     page = 1,
@@ -59,9 +42,6 @@ export const outboundFaxQueryService = {
     };
   },
 
-  /**
-   * Summary metrics for dashboard cards.
-   */
   async getOutboundSummary(tenantId) {
     const total = await OutboundFax.countDocuments({ tenantId });
     const delivered = await OutboundFax.countDocuments({
@@ -81,9 +61,6 @@ export const outboundFaxQueryService = {
     };
   },
 
-  /**
-   * Group outbound faxes by day for charts.
-   */
   async getOutboundVolumeByDay(tenantId, days = 30) {
     const since = new Date();
     since.setDate(since.getDate() - days);
@@ -109,3 +86,5 @@ export const outboundFaxQueryService = {
     }));
   }
 };
+
+module.exports = outboundFaxQueryService;
