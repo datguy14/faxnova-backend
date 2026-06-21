@@ -25,7 +25,9 @@ const REQUIRED_ENV = [
 ];
 
 module.exports = function validateEnv() {
-  const missing = REQUIRED_ENV.filter((key) => !process.env[key]);
+  const missing = REQUIRED_ENV.filter(
+    (key) => !process.env[key] || process.env[key].trim() === ''
+  );
 
   if (missing.length > 0) {
     console.error('❌ Missing required environment variables:');
