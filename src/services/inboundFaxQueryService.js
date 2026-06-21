@@ -1,23 +1,6 @@
-// src/services/inboundFaxQueryService.js
-import InboundFax from "../models/InboundFax.js";
+const InboundFax = require("../models/InboundFax");
 
-/**
- * Inbound Fax Query Service
- * -------------------------
- * Provides dashboard-friendly queries for inbound fax data.
- * Supports:
- *  - pagination
- *  - filtering
- *  - date ranges
- *  - provider filtering
- *  - residency filtering
- *  - status filtering
- */
-
-export const inboundFaxQueryService = {
-  /**
-   * Fetch inbound faxes with filters + pagination.
-   */
+const inboundFaxQueryService = {
   async listInboundFaxes({
     tenantId,
     page = 1,
@@ -59,9 +42,6 @@ export const inboundFaxQueryService = {
     };
   },
 
-  /**
-   * Summary metrics for dashboard cards.
-   */
   async getInboundSummary(tenantId) {
     const total = await InboundFax.countDocuments({ tenantId });
     const delivered = await InboundFax.countDocuments({
@@ -81,9 +61,6 @@ export const inboundFaxQueryService = {
     };
   },
 
-  /**
-   * Group inbound faxes by day for charts.
-   */
   async getInboundVolumeByDay(tenantId, days = 30) {
     const since = new Date();
     since.setDate(since.getDate() - days);
@@ -109,3 +86,5 @@ export const inboundFaxQueryService = {
     }));
   }
 };
+
+module.exports = inboundFaxQueryService;
