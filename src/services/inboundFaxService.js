@@ -1,15 +1,9 @@
-// src/services/inboundFaxService.js
-import InboundFax from "../models/InboundFax.js";
-import { auditService } from "../audit/auditService.js";
-import { residencyEngine } from "../residency/residencyEngine.js";
-import { storageService } from "../storage/storageService.js";
+const InboundFax = require("../models/InboundFax");
+const audit = require("../audit/auditService");
+const residencyEngine = require("../residency/residencyEngine");
+const storageService = require("../storage/storageService");
 
-export const inboundFaxService = {
-  /**
-   * Process inbound fax event from provider webhook.
-   * Normalizes payload, stores metadata, applies residency rules,
-   * and creates inbound fax record.
-   */
+const inboundFaxService = {
   async processInbound(event) {
     const {
       provider,
@@ -22,13 +16,13 @@ export const inboundFaxService = {
       tenantId
     } = normalizeInboundPayload(event);
 
-    // 1. Apply residency + sovereignty rules
+    // 1. Residency + sovereignty
     const residency = residencyEngine.resolveInbound({
       toNumber,
       provider
     });
 
-    // 2. Store media (PDF/TIFF) in correct residency zone
+    // 2. Store media in correct residency zone
     const storedMedia = await storageService.storeInboundFax({
       mediaUrl,
       faxId,
@@ -49,9 +43,10 @@ export const inboundFaxService = {
       receivedAt: timestamp || new Date()
     });
 
-    // 4. Audit log
-    await auditService.log({
-      action: "INBOUND_FAX_RECEIVED",
+    // 4. Audit
+    await audit.logEvent({
+      type: "inbound_fax",
+      action: "inbound_fax_received",
       provider,
       faxId,
       tenantId,
@@ -62,9 +57,6 @@ export const inboundFaxService = {
   }
 };
 
-/**
- * Normalize inbound fax payload from different providers.
- */
 function normalizeInboundPayload(event) {
   return {
     provider: event.provider || "unknown",
@@ -77,3 +69,5 @@ function normalizeInboundPayload(event) {
     tenantId: event.tenantId || null
   };
 }
+
+module.exports = inboundFaxService;
