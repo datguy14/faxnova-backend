@@ -1,11 +1,10 @@
-// src/services/providerRouter.js
-import { providerPerformanceService } from "./providerPerformanceService.js";
-import { providerOutageService } from "./providerOutageService.js";
-import { providerRoutingRules } from "./providerRoutingRules.js";
-import { residencyEngine } from "../residency/residencyEngine.js";
-import { getTierFromApiKey } from "../middleware/getTierFromApiKey.js";
+const providerPerformanceService = require("./providerPerformanceService");
+const providerOutageService = require("./providerOutageService");
+const providerRoutingRules = require("./providerRoutingRules");
+const residencyEngine = require("../residency/residencyEngine");
+const getTierFromApiKey = require("../middleware/getTierFromApiKey");
 
-export const providerRouter = {
+const providerRouter = {
   /**
    * Select the best provider for an outbound fax.
    * Uses residency, outages, performance scoring, and tier rules.
@@ -29,26 +28,37 @@ export const providerRouter = {
       throw new Error("All providers are currently in outage");
     }
 
-    // 4. Apply API key tier rules (Basic, Pro, Enterprise)
+    // 4. Apply API key tier rules
     const tier = getTierFromApiKey(apiKey);
     providers = providerRoutingRules.applyTierRules(providers, tier);
 
-    // 5. Fetch provider performance scores
-    const performance = await providerPerformanceService.getPerformanceScores();
+    if (providers.length === 0) {
+      throw new Error(`No providers available for tier: ${tier}`);
+    }
 
-    // 6. Score providers (latency, success rate, cost, residency match)
+    // 5. Fetch provider performance summary
+    const performance = await providerPerformanceService.getPerformanceSummary();
+
+    // 6. Score providers
     const scored = providers.map((provider) => {
       const perf = performance[provider.name] || {
-        latency: 500,
+        avgLatencyMs: 500,
         successRate: 0.90,
-        cost: 1.0
+        costScore: 1.0
       };
+
+      const latencyScore =
+        perf.avgLatencyMs <= 200 ? 1.0 :
+        perf.avgLatencyMs <= 800 ? 0.5 : 0.2;
+
+      const successScore = perf.successRate ?? 0.9;
+      const costScore = perf.costScore ?? 1.0;
 
       const score =
         provider.weight * 0.4 +
-        perf.successRate * 0.3 +
-        (1 / perf.latency) * 0.2 +
-        (1 / perf.cost) * 0.1;
+        successScore * 0.3 +
+        latencyScore * 0.2 +
+        costScore * 0.1;
 
       return {
         name: provider.name,
@@ -57,7 +67,7 @@ export const providerRouter = {
       };
     });
 
-    // 7. Sort by score (highest wins)
+    // 7. Sort by score
     scored.sort((a, b) => b.score - a.score);
 
     // 8. Select the top provider
@@ -86,3 +96,5 @@ export const providerRouter = {
     };
   }
 };
+
+module.exports = providerRouter;
