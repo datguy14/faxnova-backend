@@ -1,12 +1,8 @@
-// src/services/faxStatusService.js
-import OutboundFax from "../models/OutboundFax.js";
-import { auditService } from "../audit/auditService.js";
-import { providerOutageService } from "./providerOutageService.js";
+const OutboundFax = require("../models/OutboundFax");
+const audit = require("../audit/auditService");
+const providerOutageService = require("./providerOutageService");
 
-export const faxStatusService = {
-  /**
-   * Mark fax as "sending" after provider accepts the job.
-   */
+const faxStatusService = {
   async markSending(faxId, providerResponse) {
     const fax = await OutboundFax.findOne({ faxId });
     if (!fax) throw new Error("Fax not found");
@@ -20,8 +16,9 @@ export const faxStatusService = {
 
     await fax.save();
 
-    await auditService.log({
-      action: "FAX_STATUS_SENDING",
+    await audit.logEvent({
+      type: "fax",
+      action: "fax_status_sending",
       faxId,
       provider: fax.provider,
       details: providerResponse
@@ -30,17 +27,12 @@ export const faxStatusService = {
     return fax;
   },
 
-  /**
-   * Handle provider webhook updates.
-   * Normalizes provider payloads and updates fax status.
-   */
   async updateFromProvider(event) {
     const normalized = normalizeProviderEvent(event);
 
     const fax = await OutboundFax.findOne({ faxId: normalized.faxId });
     if (!fax) throw new Error("Fax not found");
 
-    // Update status
     fax.status = normalized.status;
 
     if (normalized.status === "delivered") {
@@ -51,7 +43,6 @@ export const faxStatusService = {
       fax.errorCode = normalized.errorCode;
       fax.errorMessage = normalized.errorMessage;
 
-      // Track provider outage if needed
       if (normalized.errorCode) {
         await providerOutageService.recordFailure(fax.provider);
       }
@@ -59,9 +50,9 @@ export const faxStatusService = {
 
     await fax.save();
 
-    // Audit log
-    await auditService.log({
-      action: "FAX_STATUS_UPDATE",
+    await audit.logEvent({
+      type: "fax",
+      action: "fax_status_update",
       faxId: fax.faxId,
       provider: fax.provider,
       details: normalized
@@ -71,9 +62,6 @@ export const faxStatusService = {
   }
 };
 
-/**
- * Normalize provider webhook payloads.
- */
 function normalizeProviderEvent(event) {
   return {
     faxId: event.faxId || event.id,
@@ -83,9 +71,6 @@ function normalizeProviderEvent(event) {
   };
 }
 
-/**
- * Map provider-specific statuses to FaxNova statuses.
- */
 function mapProviderStatus(status) {
   const map = {
     queued: "queued",
@@ -99,3 +84,5 @@ function mapProviderStatus(status) {
 
   return map[status] || "failed";
 }
+
+module.exports = faxStatusService;
