@@ -1,27 +1,12 @@
-// src/services/providerHealthService.js
+const providerPerformanceService = require("./providerPerformanceService");
+const providerOutageService = require("./providerOutageService");
 
-/**
- * Provider Health Service
- * -----------------------------------------
- * Routing Engine v2 needs:
- * - avgLatencyMs
- * - successRate
- * - activeOutage
- *
- * This service pulls that data from:
- * - providerPerformanceService
- * - providerOutageService
- */
-
-import { providerPerformanceService } from "./providerPerformanceService.js";
-import { providerOutageService } from "./providerOutageService.js";
-
-export const providerHealthService = {
+const providerHealthService = {
   async getCurrentHealth() {
-    // 1. Get performance metrics (latency + success rate)
+    // 1. Performance metrics
     const performance = await providerPerformanceService.getPerformanceScores();
 
-    // 2. Get outage status
+    // 2. Outage status
     const outages = await providerOutageService.getOutages();
 
     return {
@@ -38,3 +23,5 @@ export const providerHealthService = {
     };
   }
 };
+
+module.exports = providerHealthService;
