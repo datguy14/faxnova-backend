@@ -2,11 +2,12 @@ openapi: 3.1.0
 info:
   title: FaxNova API
   description: |
-    Production-ready Multi-Provider Fax API Backend
-    
-    Supports **Sinch** and **Telnyx** with automatic fallback, unified interface, 
-    and provider-aware status tracking. Perfect for healthcare, legal, finance, 
-    and regulated document delivery.
+    Enterprise-grade Multi-Provider Fax Delivery API
+
+    FaxNova provides a unified, residency-aware, multi-provider faxing platform
+    with automatic failover, webhook normalization, and AI-powered routing.
+
+    Designed for healthcare, legal, finance, government, and regulated industries.
   version: "1.1.0"
   contact:
     name: FaxNova Support
@@ -21,13 +22,26 @@ servers:
   - url: https://api.faxnova.com
     description: Production Server
 
+tags:
+  - name: Fax
+    description: Fax sending, status, and lifecycle operations
+  - name: Configuration
+    description: Provider configuration, routing, and residency metadata
+  - name: Webhooks
+    description: Inbound webhook handling (Sinch + Telnyx)
+  - name: Auth
+    description: Authentication and user management
+  - name: Agents
+    description: AI-powered internal agents (audit, routing, troubleshooting)
+
 paths:
   /fax/send:
     post:
       summary: Send a Fax
-      description: Send a fax using the configured provider (Sinch or Telnyx) with optional override.
-      tags:
-        - Fax
+      description: |
+        Sends a fax using Sinch or Telnyx with automatic fallback and
+        residency-aware routing. Supports provider override and metadata tagging.
+      tags: [Fax]
       security:
         - ApiKeyAuth: []
       requestBody:
@@ -35,66 +49,38 @@ paths:
         content:
           application/json:
             schema:
-              type: object
-              required:
-                - to
-                - fileUrl
-              properties:
-                to:
-                  type: string
-                  example: "+15551234567"
-                  description: Destination phone number in E.164 format
-                fileUrl:
-                  type: string
-                  format: url
-                  example: "https://example.com/document.pdf"
-                  description: Publicly accessible URL of the PDF/document
-                from:
-                  type: string
-                  example: "+15557654321"
-                  description: Sender fax number (optional - uses provider default)
-                provider:
-                  type: string
-                  enum: [sinch, telnyx]
-                  example: "telnyx"
-                  description: Optional provider override. Defaults to DEFAULT_FAX_PROVIDER
+              $ref: '#/components/schemas/SendFaxRequest'
       responses:
         '200':
-          description: Fax successfully queued
+          description: Fax queued successfully
           content:
             application/json:
               schema:
-                type: object
-                properties:
-                  success:
-                    type: boolean
-                    example: true
-                  faxId:
-                    type: string
-                    format: uuid
-                  providerFaxId:
-                    type: string
-                  provider:
-                    type: string
-                    enum: [sinch, telnyx]
-                  status:
-                    type: string
-                    example: "queued"
-                  correlationId:
-                    type: string
+                $ref: '#/components/schemas/SendFaxResponse'
         '400':
-          description: Bad Request
+          description: Validation error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
         '429':
           description: Rate limit exceeded
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
         '500':
           description: Internal server error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
 
   /fax/status/{id}:
     get:
       summary: Get Fax Status
-      description: Retrieve the current status of a fax (provider-aware)
-      tags:
-        - Fax
+      description: Retrieves provider-aware fax status with normalized metadata.
+      tags: [Fax]
       security:
         - ApiKeyAuth: []
       parameters:
@@ -106,34 +92,86 @@ paths:
           description: Internal FaxNova fax ID
       responses:
         '200':
-          description: Fax status retrieved successfully
+          description: Fax status retrieved
           content:
             application/json:
               schema:
-                type: object
-                properties:
-                  success:
-                    type: boolean
-                  faxId:
-                    type: string
-                  providerFaxId:
-                    type: string
-                  provider:
-                    type: string
-                  status:
-                    type: string
-                    enum: [queued, sending, delivered, failed]
-                  details:
-                    type: object
+                $ref: '#/components/schemas/FaxStatusResponse'
         '404':
           description: Fax not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /fax:
+    get:
+      summary: List Faxes
+      description: Paginated fax listing with filters.
+      tags: [Fax]
+      security:
+        - ApiKeyAuth: []
+      parameters:
+        - name: status
+          in: query
+          schema:
+            type: string
+            enum: [queued, sending, delivered, failed]
+        - name: provider
+          in: query
+          schema:
+            type: string
+            enum: [sinch, telnyx]
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            default: 50
+        - name: offset
+          in: query
+          schema:
+            type: integer
+            default: 0
+      responses:
+        '200':
+          description: Fax list retrieved
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/FaxListResponse'
+
+  /fax/{id}:
+    delete:
+      summary: Delete Fax
+      description: Soft-delete or cancel a fax depending on provider status.
+      tags: [Fax]
+      security:
+        - ApiKeyAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Fax deleted or cancel requested
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DeleteFaxResponse'
+        '404':
+          description: Fax not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
 
   /fax/providers:
     get:
-      summary: List Available Providers
-      description: Returns configured providers and routing settings
-      tags:
-        - Configuration
+      summary: List Providers
+      description: Returns provider configuration, residency zones, and routing metadata.
+      tags: [Configuration]
       security:
         - ApiKeyAuth: []
       responses:
@@ -142,34 +180,133 @@ paths:
           content:
             application/json:
               schema:
-                type: object
-                properties:
-                  success:
-                    type: boolean
-                  defaultProvider:
-                    type: string
-                  availableProviders:
-                    type: array
-                    items:
-                      type: string
-                  fallbackEnabled:
-                    type: boolean
+                $ref: '#/components/schemas/ProviderConfigResponse'
 
   /fax/webhook:
     post:
       summary: Webhook Receiver
-      description: Receives normalized webhooks from Sinch or Telnyx
-      tags:
-        - Webhooks
+      description: Receives normalized webhooks from Sinch or Telnyx.
+      tags: [Webhooks]
       requestBody:
         required: true
         content:
           application/json:
             schema:
-              type: object
+              $ref: '#/components/schemas/WebhookEvent'
       responses:
         '200':
-          description: Webhook received successfully
+          description: Webhook acknowledged
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/WebhookAckResponse'
+
+  /auth/login:
+    post:
+      summary: Login
+      description: Authenticate and receive a JWT.
+      tags: [Auth]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/LoginRequest'
+      responses:
+        '200':
+          description: Login successful
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/LoginResponse'
+        '401':
+          description: Invalid credentials
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /auth/register:
+    post:
+      summary: Register
+      description: Create a new user account.
+      tags: [Auth]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RegisterRequest'
+      responses:
+        '201':
+          description: User registered
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RegisterResponse'
+
+  /agents/audit-code:
+    post:
+      summary: Run Code Audit Agent
+      description: Submit code or metadata for automated analysis.
+      tags: [Agents]
+      security:
+        - ApiKeyAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AuditAgentRequest'
+      responses:
+        '200':
+          description: Audit results
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AuditAgentResponse'
+
+  /agents/route:
+    post:
+      summary: Run Routing Agent
+      description: Residency-aware, provider-aware routing decision engine.
+      tags: [Agents]
+      security:
+        - ApiKeyAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RoutingAgentRequest'
+      responses:
+        '200':
+          description: Routing decision
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RoutingAgentResponse'
+
+  /agents/troubleshoot:
+    post:
+      summary: Run Troubleshooting Agent
+      description: AI-powered troubleshooting for failed fax deliveries.
+      tags: [Agents]
+      security:
+        - ApiKeyAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/TroubleshootingAgentRequest'
+      responses:
+        '200':
+          description: Troubleshooting insights
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TroubleshootingAgentResponse'
 
 components:
   securitySchemes:
@@ -177,12 +314,211 @@ components:
       type: apiKey
       in: header
       name: x-api-key
-      description: Your FaxNova API Key
 
-tags:
-  - name: Fax
-    description: Fax sending and status operations
-  - name: Configuration
-    description: System configuration and provider info
-  - name: Webhooks
-    description: Inbound webhook handling
+  schemas:
+    SendFaxRequest:
+      type: object
+      required: [to, fileUrl]
+      properties:
+        to:
+          type: string
+          example: "+15551234567"
+        fileUrl:
+          type: string
+          format: uri
+        from:
+          type: string
+        provider:
+          type: string
+          enum: [sinch, telnyx]
+        metadata:
+          type: object
+        correlationId:
+          type: string
+
+    SendFaxResponse:
+      type: object
+      properties:
+        success:
+          type: boolean
+        faxId:
+          type: string
+        providerFaxId:
+          type: string
+        provider:
+          type: string
+        status:
+          type: string
+        correlationId:
+          type: string
+        residencyZone:
+          type: string
+        sovereignty:
+          type: string
+
+    FaxStatusResponse:
+      type: object
+      properties:
+        success:
+          type: boolean
+        faxId:
+          type: string
+        providerFaxId:
+          type: string
+        provider:
+          type: string
+        status:
+          type: string
+        details:
+          type: object
+        correlationId:
+          type: string
+        residencyZone:
+          type: string
+
+    FaxSummary:
+      type: object
+      properties:
+        faxId:
+          type: string
+        provider:
+          type: string
+        status:
+          type: string
+        createdAt:
+          type: string
+          format: date-time
+        correlationId:
+          type: string
+
+    FaxListResponse:
+      type: object
+      properties:
+        success:
+          type: boolean
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/FaxSummary'
+        total:
+          type: integer
+        limit:
+          type: integer
+        offset:
+          type: integer
+
+    DeleteFaxResponse:
+      type: object
+      properties:
+        success:
+          type: boolean
+        faxId:
+          type: string
+        status:
+          type: string
+
+    ProviderConfigResponse:
+      type: object
+      properties:
+        success:
+          type: boolean
+        defaultProvider:
+          type: string
+        availableProviders:
+          type: array
+          items:
+            type: string
+        fallbackEnabled:
+          type: boolean
+        residencyZones:
+          type: array
+          items:
+            type: object
+            properties:
+              zone:
+                type: string
+              description:
+                type: string
+              providers:
+                type: array
+                items:
+                  type: string
+
+    WebhookEvent:
+      type: object
+      properties:
+        provider:
+          type: string
+        eventType:
+          type: string
+        providerFaxId:
+          type: string
+        faxId:
+          type: string
+        status:
+          type: string
+        timestamp:
+          type: string
+          format: date-time
+        rawPayload:
+          type: object
+
+    WebhookAckResponse:
+      type: object
+      properties:
+        success:
+          type: boolean
+
+    LoginRequest:
+      type: object
+      required: [email, password]
+      properties:
+        email:
+          type: string
+        password:
+          type: string
+
+    LoginResponse:
+      type: object
+      properties:
+        success:
+          type: boolean
+        token:
+          type: string
+        userId:
+          type: string
+
+    RegisterRequest:
+      type: object
+      required: [email, password]
+      properties:
+        email:
+          type: string
+        password:
+          type: string
+        name:
+          type: string
+
+    RegisterResponse:
+      type: object
+      properties:
+        success:
+          type: boolean
+        userId:
+          type: string
+
+    AuditAgentRequest:
+      type: object
+      properties:
+        repoUrl:
+          type: string
+        branch:
+          type: string
+        context:
+          type: string
+
+    AuditAgentResponse:
+      type: object
+      properties:
+        success:
+          type
