@@ -1,22 +1,9 @@
-// src/services/sendFaxService.js
+const routingServiceV2 = require("./routingService.v2");
+const sinchAdapter = require("../providers/sinchAdapter");
+const telnyxAdapter = require("../providers/telnyxAdapter");
+const providerPerformanceService = require("./providerPerformanceService");
 
-import { routingServiceV2 } from "./routingService.v2.js";
-import { sinchAdapter } from "../providers/sinchAdapter.js";
-import { telnyxAdapter } from "../providers/telnyxAdapter.js";
-import { providerPerformanceService } from "./providerPerformanceService.js";
-
-export const sendFaxService = {
-  /**
-   * Send a fax using Routing Engine v2.
-   *
-   * payload:
-   * - residencyZone
-   * - tier
-   * - to
-   * - from
-   * - pages
-   * - documentUrl
-   */
+const sendFaxService = {
   async sendFax(payload) {
     const { residencyZone, tier, to, from, pages, documentUrl } = payload;
 
@@ -82,3 +69,5 @@ export const sendFaxService = {
     }
   }
 };
+
+module.exports = sendFaxService;
