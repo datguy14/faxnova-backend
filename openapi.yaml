@@ -139,6 +139,12 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/FaxListResponse'
+        '400':
+          description: Validation error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
 
   /fax/{id}:
     delete:
@@ -181,6 +187,12 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/ProviderConfigResponse'
+        '500':
+          description: Internal server error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
 
   /fax/webhook:
     post:
@@ -200,6 +212,12 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/WebhookAckResponse'
+        '400':
+          description: Validation error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
 
   /auth/login:
     post:
@@ -244,6 +262,12 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/RegisterResponse'
+        '400':
+          description: Validation error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
 
   /agents/audit-code:
     post:
@@ -265,6 +289,12 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/AuditAgentResponse'
+        '400':
+          description: Validation error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
 
   /agents/route:
     post:
@@ -286,6 +316,12 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/RoutingAgentResponse'
+        '400':
+          description: Validation error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
 
   /agents/troubleshoot:
     post:
@@ -307,6 +343,12 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/TroubleshootingAgentResponse'
+        '400':
+          description: Validation error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
 
 components:
   securitySchemes:
@@ -314,47 +356,66 @@ components:
       type: apiKey
       in: header
       name: x-api-key
+      description: Your FaxNova API Key
 
   schemas:
     SendFaxRequest:
       type: object
-      required: [to, fileUrl]
+      required:
+        - to
+        - fileUrl
       properties:
         to:
           type: string
           example: "+15551234567"
+          description: Destination phone number in E.164 format.
         fileUrl:
           type: string
           format: uri
+          example: "https://example.com/document.pdf"
+          description: Publicly accessible URL of the PDF/document.
         from:
           type: string
+          example: "+15557654321"
+          description: Optional sender fax number. Defaults to provider configuration.
         provider:
           type: string
           enum: [sinch, telnyx]
+          example: "telnyx"
+          description: Optional provider override. Defaults to configured default provider.
         metadata:
           type: object
+          additionalProperties: true
+          description: Optional metadata for correlation, billing, or tagging.
         correlationId:
           type: string
+          description: Optional client-provided correlation ID.
 
     SendFaxResponse:
       type: object
       properties:
         success:
           type: boolean
+          example: true
         faxId:
           type: string
+          format: uuid
         providerFaxId:
           type: string
         provider:
           type: string
+          enum: [sinch, telnyx]
         status:
           type: string
+          example: "queued"
         correlationId:
           type: string
         residencyZone:
           type: string
+          example: "us-east-tribal"
         sovereignty:
           type: string
+          example: "US-only"
 
     FaxStatusResponse:
       type: object
@@ -367,13 +428,18 @@ components:
           type: string
         provider:
           type: string
+          enum: [sinch, telnyx]
         status:
           type: string
+          enum: [queued, sending, delivered, failed]
         details:
           type: object
+          additionalProperties: true
         correlationId:
           type: string
         residencyZone:
+          type: string
+        sovereignty:
           type: string
 
     FaxSummary:
@@ -383,8 +449,10 @@ components:
           type: string
         provider:
           type: string
+          enum: [sinch, telnyx]
         status:
           type: string
+          enum: [queued, sending, delivered, failed]
         createdAt:
           type: string
           format: date-time
@@ -416,6 +484,7 @@ components:
           type: string
         status:
           type: string
+          example: "deleted"
 
     ProviderConfigResponse:
       type: object
@@ -424,10 +493,12 @@ components:
           type: boolean
         defaultProvider:
           type: string
+          enum: [sinch, telnyx]
         availableProviders:
           type: array
           items:
             type: string
+            enum: [sinch, telnyx]
         fallbackEnabled:
           type: boolean
         residencyZones:
@@ -446,37 +517,47 @@ components:
 
     WebhookEvent:
       type: object
+      description: Normalized webhook payload from Sinch or Telnyx.
       properties:
         provider:
           type: string
+          enum: [sinch, telnyx]
         eventType:
           type: string
+          example: "fax.delivered"
         providerFaxId:
           type: string
         faxId:
           type: string
         status:
           type: string
+          enum: [queued, sending, delivered, failed]
         timestamp:
           type: string
           format: date-time
         rawPayload:
           type: object
+          additionalProperties: true
 
     WebhookAckResponse:
       type: object
       properties:
         success:
           type: boolean
+          example: true
 
     LoginRequest:
       type: object
-      required: [email, password]
+      required:
+        - email
+        - password
       properties:
         email:
           type: string
+          format: email
         password:
           type: string
+          format: password
 
     LoginResponse:
       type: object
@@ -490,12 +571,16 @@ components:
 
     RegisterRequest:
       type: object
-      required: [email, password]
+      required:
+        - email
+        - password
       properties:
         email:
           type: string
+          format: email
         password:
           type: string
+          format: password
         name:
           type: string
 
@@ -512,6 +597,7 @@ components:
       properties:
         repoUrl:
           type: string
+          format: uri
         branch:
           type: string
         context:
@@ -521,4 +607,85 @@ components:
       type: object
       properties:
         success:
-          type
+          type: boolean
+        findings:
+          type: array
+          items:
+            type: object
+            properties:
+              severity:
+                type: string
+                enum: [info, warning, critical]
+              message:
+                type: string
+              file:
+                type: string
+              line:
+                type: integer
+
+    RoutingAgentRequest:
+      type: object
+      properties:
+        to:
+          type: string
+        countryCode:
+          type: string
+        tier:
+          type: string
+          enum: [basic, pro, enterprise]
+
+    RoutingAgentResponse:
+      type: object
+      properties:
+        success:
+          type: boolean
+        provider:
+          type: string
+          enum: [sinch, telnyx]
+        residencyZone:
+          type: string
+        sovereignty:
+          type: string
+        score:
+          type: number
+
+    TroubleshootingAgentRequest:
+      type: object
+      properties:
+        faxId:
+          type: string
+        provider:
+          type: string
+          enum: [sinch, telnyx]
+        errorCode:
+          type: string
+        context:
+          type: string
+
+    TroubleshootingAgentResponse:
+      type: object
+      properties:
+        success:
+          type: boolean
+        recommendations:
+          type: array
+          items:
+            type: string
+
+    ErrorResponse:
+      type: object
+      properties:
+        success:
+          type: boolean
+          example: false
+        error:
+          type: string
+          example: "Validation error"
+        code:
+          type: string
+          example: "BAD_REQUEST"
+        details:
+          type: object
+          additionalProperties: true
+        correlationId:
+          type: string
