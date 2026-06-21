@@ -1,6 +1,5 @@
-// src/services/providerPerformanceService.js
-import NodeCache from "node-cache";
-import { auditService } from "../audit/auditService.js";
+const NodeCache = require("node-cache");
+const audit = require("../audit/auditService");
 
 /**
  * Provider Performance Service
@@ -28,7 +27,7 @@ const performanceCache = new NodeCache({
 //   lastUpdated: timestamp
 // }
 
-export const providerPerformanceService = {
+const providerPerformanceService = {
   /**
    * Record latency for a provider.
    */
@@ -84,8 +83,9 @@ export const providerPerformanceService = {
 
     performanceCache.set(key, existing);
 
-    await auditService.log({
-      action: "PROVIDER_PERFORMANCE_FAILURE",
+    await audit.logEvent({
+      type: "provider",
+      action: "provider_performance_failure",
       provider,
       details: existing
     });
@@ -116,9 +116,9 @@ export const providerPerformanceService = {
       const successRate = total > 0 ? data.successes / total : 0.95;
 
       scores[provider] = {
-        latency: avgLatency,
+        avgLatencyMs: avgLatency,
         successRate,
-        cost: 1.0 // cost is overridden by providerRoutingRules
+        costScore: 1.0 // overridden by providerRoutingRules
       };
     }
 
@@ -157,3 +157,5 @@ export const providerPerformanceService = {
       });
   }
 };
+
+module.exports = providerPerformanceService;
