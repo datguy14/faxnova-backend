@@ -1,5 +1,3 @@
-// src/services/providerRoutingRules.js
-
 /**
  * Provider definitions for FaxNova v1.
  * Each provider has:
@@ -41,26 +39,18 @@ const PROVIDERS = [
   }
 ];
 
-export const providerRoutingRules = {
-  /**
-   * Return all providers.
-   */
+const providerRoutingRules = {
   getAllProviders() {
     return PROVIDERS;
   },
 
-  /**
-   * Return providers that support a specific residency zone.
-   */
   getProvidersForZone(zone) {
     return PROVIDERS.filter((p) => p.zones.includes(zone));
   },
 
-  /**
-   * Apply API key tier rules.
-   * Removes providers that the tier is not allowed to use.
-   */
   applyTierRules(providers, tier) {
     return providers.filter((p) => p.tiers.includes(tier));
   }
 };
+
+module.exports = providerRoutingRules;
