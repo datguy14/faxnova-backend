@@ -1,5 +1,9 @@
 const express = require("express");
-const { sendFax, getFaxStatus, retryFax } = require("../controllers/fax.controller.js");
+const {
+  sendFax,
+  getFaxStatus,
+  retryFax
+} = require("../controllers/faxController.js");
 const auth = require("../middleware/auth.js");
 const { faxLimiter } = require("../middleware/rateLimit.js");
 
