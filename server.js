@@ -1,74 +1,64 @@
-import express from "express";
-import dotenv from "dotenv";
-import cors from "cors";
-
-import connectDB from "./src/config/db.js";
-import faxRoutes from "./src/routes/faxRoutes.js";
-import webhookRoutes from "./src/routes/webhookRoutes.js";
-import auth from "./src/middleware/auth.js"; // ⭐ Add auth middleware
-
-dotenv.config();
+const express = require("express");
+const cors = require("cors");
+const helmet = require("helmet");
+const morgan = require("morgan");
+const rateLimit = require("express-rate-limit");
+const faxRoutes = require("./src/routes/faxRoutes.js");
+const providerRoutes = require("./src/routes/providerRoutes.js");
+const webhookRoutes = require("./src/routes/webhookRoutes.js");
+const authRoutes = require("./src/routes/authRoutes.js");
+const residencyGuard = require("./src/middleware/residencyGuard.js");
+const errorHandler = require("./src/middleware/errorHandler.js");
+const db = require("./src/db.js");
 
 const app = express();
 
-// ⭐ SECURE FAXNOVA CORS CONFIG
-const allowedOrigins = [
-  "https://dashboard.faxnova.com",
-  "https://admin.faxnova.com",
-  "http://localhost:5173" // dev
-];
+// -----------------------------
+// Global Middleware
+// -----------------------------
+app.use(helmet());
+app.use(cors());
+app.use(express.json({ limit: "10mb" }));
+app.use(morgan("dev"));
 
+// Basic rate limiter
 app.use(
-  cors({
-    origin: function (origin, callback) {
-      if (!origin || allowedOrigins.includes(origin)) {
-        return callback(null, true);
-      }
-      return callback(new Error("Not allowed by CORS"));
-    },
-    methods: ["GET", "POST", "PATCH", "DELETE"],
-    allowedHeaders: [
-      "Content-Type",
-      "Authorization",
-      "x-tribal-auth",
-      "x-faxnova-zone"
-    ],
-    exposedHeaders: [
-      "x-residency-zone",
-      "x-provider-route",
-      "x-sovereignty-status"
-    ],
-    credentials: true
+  rateLimit({
+    windowMs: 60 * 1000,
+    max: 100
   })
 );
 
-// ⭐ CORS ERROR HANDLER
-app.use((err, req, res, next) => {
-  if (err.message === "Not allowed by CORS") {
-    return res.status(403).json({ error: "CORS: Origin not allowed" });
-  }
-  next(err);
-});
+// Residency guard (Zero‑Trust Sovereignty)
+app.use(residencyGuard);
 
-// JSON parser
-app.use(express.json());
+// -----------------------------
+// Routes
+// -----------------------------
+app.use("/fax", faxRoutes);
+app.use("/providers", providerRoutes);
+app.use("/webhooks", webhookRoutes);
+app.use("/auth", authRoutes);
 
 // Health check
-app.get("/", (req, res) => {
-  res.status(200).json({ message: "FaxNova backend is running" });
+app.get("/health", (req, res) => {
+  res.json({ status: "ok", uptime: process.uptime() });
 });
 
-// ⭐ PROTECT FAX ROUTES WITH AUTH
-app.use("/fax", auth, faxRoutes);
+// -----------------------------
+// Error Handler
+// -----------------------------
+app.use(errorHandler);
 
-// ⭐ Webhooks stay public (providers must reach them)
-app.use("/webhook", webhookRoutes);
+// -----------------------------
+// Start Server
+// -----------------------------
+const PORT = process.env.PORT || 3000;
 
-// Database connection
-connectDB();
-
-// Server
-const PORT = process.env.PORT || 10000;
-app.listen(PORT, () => {
-  console.log(`🚀 FaxNova backend running on port ${PORT}`);
+db.connect().then(() => {
+  app.listen(PORT, () => {
+    console.log(`FaxNova backend running on port ${PORT}`);
+  });
 });
+
+module.exports = app;
