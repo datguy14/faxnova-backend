@@ -1,7 +1,7 @@
 {
   "name": "faxnova-backend",
   "version": "1.1.0",
-  "description": "FaxNova backend service — CommonJS, Express, MongoDB, provider routing, audit logs, and fax delivery engine.",
+  "description": "FaxNova backend service — Express, MongoDB, provider routing, audit logs, and fax delivery engine.",
   "main": "server.js",
   "scripts": {
     "start": "node server.js",
@@ -25,7 +25,7 @@
   "devDependencies": {
     "jest": "^29.7.0",
     "nodemon": "^3.1.0",
-    "supertest": "^6.4.2"
+    "supertest": "^6.3.3"
   },
   "engines": {
     "node": ">=20.0.0"
