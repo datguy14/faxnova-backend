@@ -53,3 +53,15 @@ app.use((err, req, res, next) => {
 });
 
 module.exports = app;
+// Global error handler (place at bottom of src/app.js)
+
+app.use((err, req, res, next) => {
+  console.error("FaxNova Error:", err);
+
+  res.status(500).json({
+    error: err.message,
+    provider: err.provider || null,
+    code: err.code || "UNKNOWN_ERROR",
+    details: err.details || null
+  });
+});
