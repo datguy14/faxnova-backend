@@ -1,13 +1,14 @@
 // src/services/providerRoutingRules.js
 
 /**
- * Provider definitions for FaxNova v1.
- * Each provider has:
+ * Provider Routing Rules (FaxNova v1)
+ *
+ * Each provider includes:
  * - name
- * - weight (routing priority)
- * - zones (residency zones it supports)
+ * - weight (routing priority baseline)
+ * - zones (residency zones supported)
  * - tiers (API key tiers allowed)
- * - cost (relative cost score)
+ * - costPerPage (billing engine base rate)
  */
 
 const PROVIDERS = [
@@ -16,14 +17,14 @@ const PROVIDERS = [
     weight: 0.9,
     zones: ["us", "ca", "latam"],
     tiers: ["basic", "pro", "enterprise"],
-    cost: 1.0
+    costPerPage: 0.035
   },
   {
     name: "telnyx",
-    weight: 0.7,
+    weight: 0.8,
     zones: ["us", "eu"],
     tiers: ["basic", "pro", "enterprise"],
-    cost: 0.9
+    costPerPage: 0.030
   }
 ];
 
@@ -36,43 +37,24 @@ module.exports = {
   },
 
   /**
-   * Return providers that support a specific residency zone.
+   * Return a single provider by name.
+   */
+  getProvider(name) {
+    return PROVIDERS.find((p) => p.name === name) || null;
+  },
+
+  /**
+   * Filter providers by residency zone.
    */
   getProvidersForZone(zone) {
     return PROVIDERS.filter((p) => p.zones.includes(zone));
   },
 
   /**
-   * Check if provider is allowed for a given country.
-   * Country → zone mapping handled upstream.
-   */
-  isAllowedForCountry(providerName, zone) {
-    const provider = PROVIDERS.find((p) => p.name === providerName);
-    if (!provider) return false;
-    return provider.zones.includes(zone);
-  },
-
-  /**
-   * Apply API key tier rules.
+   * Apply tier rules.
    * Removes providers that the tier is not allowed to use.
    */
   applyTierRules(providers, tier) {
     return providers.filter((p) => p.tiers.includes(tier));
-  },
-
-  /**
-   * Check if provider is allowed for a given tier.
-   */
-  isAllowedForTier(providerName, tier) {
-    const provider = PROVIDERS.find((p) => p.name === providerName);
-    if (!provider) return false;
-    return provider.tiers.includes(tier);
-  },
-
-  /**
-   * Get provider metadata by name.
-   */
-  getProvider(providerName) {
-    return PROVIDERS.find((p) => p.name === providerName) || null;
   }
 };
