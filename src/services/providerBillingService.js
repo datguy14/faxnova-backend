@@ -4,24 +4,26 @@ const providerRoutingRules = require("./providerRoutingRules");
 const FaxNovaError = require("../errors/FaxNovaError");
 
 /**
- * Billing model:
- * - Base cost per page varies by provider
- * - Residency zone adjusts cost (US cheaper, EU/INTL more expensive)
- * - Tier applies discount (pro/enterprise)
+ * Billing Engine v1
+ *
+ * Computes:
+ * - base cost per page (provider)
+ * - residency multipliers
+ * - tier discounts
+ * - effective cost per page
  */
-
-const ZONE_MULTIPLIERS = {
-  us: 1.0,
-  ca: 1.1,
-  eu: 1.2,
-  latam: 1.15,
-  intl: 1.3
-};
 
 const TIER_DISCOUNTS = {
   basic: 0,
-  pro: 0.05,
-  enterprise: 0.12
+  pro: 0.10,
+  enterprise: 0.20
+};
+
+const RESIDENCY_MULTIPLIERS = {
+  us: 1.0,
+  eu: 1.15,
+  apac: 1.25,
+  latam: 1.10
 };
 
 module.exports = {
@@ -29,81 +31,60 @@ module.exports = {
    * Compute cost for a single fax.
    */
   computeFaxCost({ provider, pages, residencyZone, tier }) {
-    const providerMeta = providerRoutingRules.getProvider(provider);
+    const rules = providerRoutingRules.getProvider(provider);
 
-    if (!providerMeta) {
-      throw new FaxNovaError("Unknown provider", {
+    if (!rules) {
+      throw new FaxNovaError("Unknown provider for billing", {
         code: "UNKNOWN_PROVIDER",
         provider
       });
     }
 
-    if (!ZONE_MULTIPLIERS[residencyZone]) {
-      throw new FaxNovaError("Invalid residency zone", {
-        code: "INVALID_ZONE",
-        details: { residencyZone }
-      });
-    }
+    const baseRate = rules.costPerPage;
+    const residencyMultiplier = RESIDENCY_MULTIPLIERS[residencyZone] ?? 1.0;
+    const tierDiscount = TIER_DISCOUNTS[tier] ?? 0;
 
-    if (!TIER_DISCOUNTS.hasOwnProperty(tier)) {
-      throw new FaxNovaError("Invalid tier", {
-        code: "INVALID_TIER",
-        details: { tier }
-      });
-    }
-
-    const baseCost = providerMeta.cost; // providerRoutingRules defines cost
-    const zoneMultiplier = ZONE_MULTIPLIERS[residencyZone];
-    const discount = TIER_DISCOUNTS[tier];
-
-    const rawCost = pages * baseCost * zoneMultiplier;
-    const finalCost = rawCost * (1 - discount);
+    const effectiveRate = baseRate * residencyMultiplier * (1 - tierDiscount);
+    const totalCost = Number((effectiveRate * pages).toFixed(4));
 
     return {
       provider,
       pages,
+      baseRate,
       residencyZone,
+      residencyMultiplier,
       tier,
-      baseCost,
-      zoneMultiplier,
-      discount,
-      total: Number(finalCost.toFixed(4))
+      tierDiscount,
+      effectiveRate: Number(effectiveRate.toFixed(4)),
+      totalCost
     };
   },
 
   /**
-   * Billing summary for dashboard.
+   * Billing summary for all providers (dashboard).
    */
   getBillingSummary(tier = "basic") {
     const providers = providerRoutingRules.getAllProviders();
 
-    if (!TIER_DISCOUNTS.hasOwnProperty(tier)) {
-      throw new FaxNovaError("Invalid tier for summary", {
-        code: "INVALID_TIER",
-        details: { tier }
+    if (!providers || providers.length === 0) {
+      throw new FaxNovaError("No providers available for billing summary", {
+        code: "NO_PROVIDERS"
       });
     }
 
-    return providers.map((p) => ({
-      provider: p.name,
-      baseCost: p.cost,
-      tiers: p.tiers,
-      discountApplied: TIER_DISCOUNTS[tier],
-      effectiveCost: Number((p.cost * (1 - TIER_DISCOUNTS[tier])).toFixed(4))
-    }));
-  },
+    const tierDiscount = TIER_DISCOUNTS[tier] ?? 0;
 
-  /**
-   * Legacy compatibility — returns all billing rates.
-   */
-  getBilling() {
-    const providers = providerRoutingRules.getAllProviders();
+    return providers.map((p) => {
+      const residencyMultiplier = 1.0; // summary is residency‑agnostic
+      const effectiveCost = p.costPerPage * residencyMultiplier * (1 - tierDiscount);
 
-    return providers.map((p) => ({
-      provider: p.name,
-      cost: p.cost,
-      zones: p.zones,
-      tiers: p.tiers
-    }));
+      return {
+        provider: p.name,
+        baseRate: p.costPerPage,
+        tier,
+        tierDiscount,
+        effectiveCost: Number(effectiveCost.toFixed(4))
+      };
+    });
   }
 };
