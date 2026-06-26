@@ -1,71 +1,61 @@
-/**
- * Residency Guard Middleware
- * Detects and enforces data residency zones on incoming requests
- */
+const request = require("supertest");
+const app = require("../server");
+const { getResidencyZone } = require("../src/residency/policy.js");
 
-import { getResidencyZone } from "../residency/policy.js";
+// Mock getResidencyZone so we can assert behavior
+jest.mock("../src/residency/policy.js", () => ({
+  getResidencyZone: jest.fn(() => "mock-zone")
+}));
 
-/**
- * Express middleware to attach residency zone to request
- * Reads country from x-country header (TODO: implement real geolocation)
- * @param {object} req - Express request
- * @param {object} res - Express response
- * @param {function} next - Express next
- */
-export function residencyGuard(req, res, next) {
-  try {
-    // Priority: explicit header > user profile > geolocation > default
-    const country = 
-      req.header("x-country") ||
-      req.user?.country ||
-      req.ip; // TODO: implement GeoIP lookup
-    
-    const zone = getResidencyZone(country);
-    
-    // Attach to request for downstream use
-    req.residencyZone = zone;
-    req.residencyCountry = country;
-    
-    // Log for audit trail
-    if (process.env.DEBUG_RESIDENCY === "true") {
-      console.log(`[Residency] Country: ${country} -> Zone: ${zone}`);
-    }
-    
-    next();
-  } catch (error) {
-    console.error("[Residency Guard] Error:", error.message);
-    res.status(500).json({ error: "Residency detection failed" });
-  }
-}
+describe("Residency Guard Middleware", () => {
+  test("Attaches residencyZone and residencyCountry from x-country header", async () => {
+    const res = await request(app)
+      .get("/health")
+      .set("x-country", "US");
 
-/**
- * Optional: Enforce a specific zone requirement
- * @param {string} allowedZone - The zone that must match
- * @returns {function} - Middleware function
- */
-export function requireZone(allowedZone) {
-  return (req, res, next) => {
-    if (req.residencyZone !== allowedZone) {
-      return res.status(403).json({
-        error: `Access denied. This endpoint requires ${allowedZone} zone, but request is in ${req.residencyZone} zone.`
-      });
-    }
-    next();
-  };
-}
+    expect(res.status).toBe(200);
 
-/**
- * Optional: Enforce multiple allowed zones
- * @param {string[]} allowedZones - Array of allowed zones
- * @returns {function} - Middleware function
- */
-export function requireZones(...allowedZones) {
-  return (req, res, next) => {
-    if (!allowedZones.includes(req.residencyZone)) {
-      return res.status(403).json({
-        error: `Access denied. Allowed zones: ${allowedZones.join(", ")}. Current zone: ${req.residencyZone}.`
-      });
-    }
-    next();
-  };
-}
+    // Residency guard doesn't expose values in response,
+    // so we verify the function was called correctly.
+    expect(getResidencyZone).toHaveBeenCalledWith("US");
+  });
+
+  test("Falls back to req.user.country when x-country is missing", async () => {
+    // Inject fake user via middleware override
+    const fakeUserApp = require("express")();
+    fakeUserApp.use((req, res, next) => {
+      req.user = { country: "DE" };
+      next();
+    });
+    fakeUserApp.use(require("../src/middleware/residencyGuard.js").residencyGuard);
+    fakeUserApp.get("/test", (req, res) => res.json({ zone: req.residencyZone }));
+
+    const res = await request(fakeUserApp).get("/test");
+
+    expect(getResidencyZone).toHaveBeenCalledWith("DE");
+    expect(res.body.zone).toBe("mock-zone");
+  });
+
+  test("Falls back to req.ip when no headers or user country exist", async () => {
+    const res = await request(app).get("/health");
+
+    // req.ip will be something like "::ffff:127.0.0.1"
+    const ip = expect.any(String);
+
+    expect(getResidencyZone).toHaveBeenCalledWith(ip);
+    expect(res.status).toBe(200);
+  });
+
+  test("Returns 500 if residency detection throws", async () => {
+    getResidencyZone.mockImplementationOnce(() => {
+      throw new Error("Boom");
+    });
+
+    const res = await request(app)
+      .get("/health")
+      .set("x-country", "US");
+
+    expect(res.status).toBe(500);
+    expect(res.body.error).toBe("Residency detection failed");
+  });
+});
