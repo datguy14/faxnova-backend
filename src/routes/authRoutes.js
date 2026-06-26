@@ -1,42 +1,38 @@
+// src/routes/authRoutes.js
+
 const express = require("express");
+const bcrypt = require("bcryptjs");
 const jwt = require("jsonwebtoken");
 
+const AdminUser = require("../models/AdminUser");
+const FaxNovaError = require("../errors/FaxNovaError");
+
 const router = express.Router();
-const JWT_ADMIN_SECRET = process.env.JWT_ADMIN_SECRET;
 
-function requireAdmin(req, res, next) {
-  const auth = req.headers.authorization;
-  if (!auth?.startsWith("Bearer ")) {
-    return res.status(401).json({ error: "Missing admin token" });
-  }
-
+router.post("/admin/login", async (req, res, next) => {
   try {
-    const token = auth.slice(7);
-    const payload = jwt.verify(token, JWT_ADMIN_SECRET);
-    if (payload.role !== "admin") return res.status(403).json({ error: "Forbidden" });
-    req.admin = payload;
-    next();
-  } catch {
-    return res.status(401).json({ error: "Invalid token" });
+    const { email, password } = req.body;
+
+    const admin = await AdminUser.findOne({ email });
+    if (!admin) {
+      throw new FaxNovaError("Invalid credentials", { code: "INVALID_LOGIN" });
+    }
+
+    const valid = await bcrypt.compare(password, admin.passwordHash);
+    if (!valid) {
+      throw new FaxNovaError("Invalid credentials", { code: "INVALID_LOGIN" });
+    }
+
+    const token = jwt.sign(
+      { adminId: admin._id, role: "admin" },
+      process.env.JWT_SECRET,
+      { expiresIn: "12h" }
+    );
+
+    res.json({ token });
+  } catch (err) {
+    next(err);
   }
-}
-
-router.post("/admin/login", express.json(), (req, res) => {
-  const { username, password } = req.body;
-
-  // Replace with real user store
-  if (username === "root" && password === "changeme") {
-    const token = jwt.sign({ role: "admin", username }, JWT_ADMIN_SECRET, {
-      expiresIn: "1h"
-    });
-    return res.json({ token });
-  }
-
-  res.status(401).json({ error: "Invalid credentials" });
-});
-
-router.get("/admin/me", requireAdmin, (req, res) => {
-  res.json({ admin: req.admin });
 });
 
 module.exports = router;
