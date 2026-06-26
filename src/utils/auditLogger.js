@@ -2,7 +2,7 @@
 
 /**
  * Production‑grade audit logger for FaxNova.
- * 
+ *
  * Requirements:
  * - No file writes (Render ephemeral FS)
  * - JSON‑structured logs
@@ -14,7 +14,7 @@
 module.exports = {
   /**
    * Emit a structured audit event.
-   * 
+   *
    * @param {string} action - Event name (e.g., "fax_sent", "provider_outage_triggered")
    * @param {object} meta - Additional metadata
    */
