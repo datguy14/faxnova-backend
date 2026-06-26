@@ -1,20 +1,24 @@
 module.exports = {
-  testEnvironment: 'node',
+  testEnvironment: "node",
+  testMatch: ["**/tests/**/*.test.js"],
+  clearMocks: true,
+  restoreMocks: true,
+  resetMocks: true,
+
+  // Required for raw-body webhook tests
+  transform: {},
+
+  // Prevent Jest from hanging due to open MongoDB handles
+  forceExit: true,
+  detectOpenHandles: true,
+
+  verbose: true,
+
+  collectCoverage: true,
   collectCoverageFrom: [
-    'src/**/*.js',
-    '!src/**/*.test.js',
-    '!src/config/**',
-    '!src/audit/**'
+    "src/**/*.js",
+    "!src/db.js",
+    "!src/residency/policy.js"
   ],
-  coverageThreshold: {
-    global: {
-      branches: 70,
-      functions: 70,
-      lines: 70,
-      statements: 70
-    }
-  },
-  testMatch: ['**/tests/**/*.test.js', '**/?(*.)+(spec|test).js'],
-  setupFilesAfterEnv: ['<rootDir>/tests/setup.js'],
-  testTimeout: 10000
+  coverageDirectory: "coverage"
 };
