@@ -1,3 +1,5 @@
+// src/services/providerRoutingRules.js
+
 /**
  * Provider definitions for FaxNova v1.
  * Each provider has:
@@ -17,40 +19,60 @@ const PROVIDERS = [
     cost: 1.0
   },
   {
-    name: "interfax",
-    weight: 0.8,
-    zones: ["us", "eu", "global"],
-    tiers: ["pro", "enterprise"],
-    cost: 1.2
-  },
-  {
     name: "telnyx",
     weight: 0.7,
     zones: ["us", "eu"],
     tiers: ["basic", "pro", "enterprise"],
     cost: 0.9
-  },
-  {
-    name: "twilio",
-    weight: 0.6,
-    zones: ["global"],
-    tiers: ["enterprise"],
-    cost: 1.5
   }
 ];
 
-const providerRoutingRules = {
+module.exports = {
+  /**
+   * Return all providers.
+   */
   getAllProviders() {
     return PROVIDERS;
   },
 
+  /**
+   * Return providers that support a specific residency zone.
+   */
   getProvidersForZone(zone) {
     return PROVIDERS.filter((p) => p.zones.includes(zone));
   },
 
+  /**
+   * Check if provider is allowed for a given country.
+   * Country → zone mapping handled upstream.
+   */
+  isAllowedForCountry(providerName, zone) {
+    const provider = PROVIDERS.find((p) => p.name === providerName);
+    if (!provider) return false;
+    return provider.zones.includes(zone);
+  },
+
+  /**
+   * Apply API key tier rules.
+   * Removes providers that the tier is not allowed to use.
+   */
   applyTierRules(providers, tier) {
     return providers.filter((p) => p.tiers.includes(tier));
+  },
+
+  /**
+   * Check if provider is allowed for a given tier.
+   */
+  isAllowedForTier(providerName, tier) {
+    const provider = PROVIDERS.find((p) => p.name === providerName);
+    if (!provider) return false;
+    return provider.tiers.includes(tier);
+  },
+
+  /**
+   * Get provider metadata by name.
+   */
+  getProvider(providerName) {
+    return PROVIDERS.find((p) => p.name === providerName) || null;
   }
 };
-
-module.exports = providerRoutingRules;
