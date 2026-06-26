@@ -3,92 +3,85 @@
 const inboundFaxService = require("../services/inboundFaxService");
 const FaxNovaError = require("../errors/FaxNovaError");
 const audit = require("../utils/auditLogger");
+const tenantService = require("../services/tenantService"); // resolves tenant by inbound number
 
 module.exports = {
   /**
-   * POST /webhooks/inbound/:provider
-   * Handles inbound fax webhooks from Sinch, Telnyx, etc.
+   * POST /fax/inbound/:provider
+   *
+   * Handles inbound fax webhooks from:
+   * - Sinch
+   * - Telnyx
+   *
+   * Steps:
+   * 1. Validate provider
+   * 2. Resolve tenant by inbound number
+   * 3. Process inbound fax
+   * 4. Return 200 OK to provider
    */
   async receiveInboundFax(req, res, next) {
     try {
       const provider = req.params.provider?.toLowerCase();
 
-      if (!provider) {
-        throw new FaxNovaError("Provider is required for inbound fax", {
-          code: "INBOUND_PROVIDER_REQUIRED"
+      if (!provider || !["sinch", "telnyx"].includes(provider)) {
+        throw new FaxNovaError("Unsupported inbound provider", {
+          code: "UNSUPPORTED_INBOUND_PROVIDER",
+          provider
         });
       }
 
       const payload = req.body;
 
-      const record = await inboundFaxService.processInboundFax(provider, payload);
+      // -----------------------------
+      // 1. Extract inbound number
+      // -----------------------------
+      const inboundNumber =
+        payload?.to ||
+        payload?.data?.payload?.to ||
+        null;
 
-      audit.log("inbound_fax_webhook_processed", {
+      if (!inboundNumber) {
+        throw new FaxNovaError("Inbound fax missing destination number", {
+          code: "INBOUND_NUMBER_MISSING",
+          provider,
+          payload
+        });
+      }
+
+      // -----------------------------
+      // 2. Resolve tenant by inbound number
+      // -----------------------------
+      const tenantId = await tenantService.resolveTenantByNumber(inboundNumber);
+
+      if (!tenantId) {
+        audit.error("inbound_fax_unassigned_number", {
+          provider,
+          inboundNumber
+        });
+
+        throw new FaxNovaError("No tenant assigned to inbound number", {
+          code: "TENANT_NOT_FOUND_FOR_INBOUND_NUMBER",
+          inboundNumber
+        });
+      }
+
+      // -----------------------------
+      // 3. Process inbound fax
+      // -----------------------------
+      const record = await inboundFaxService.processInboundFax(
         provider,
-        faxId: record.faxId,
-        tenantId: record.tenantId
-      });
+        payload,
+        tenantId
+      );
 
+      // -----------------------------
+      // 4. Provider requires 200 OK
+      // -----------------------------
       res.status(200).json({
         message: "Inbound fax processed",
-        provider,
-        faxId: record.faxId
+        faxId: record.faxId,
+        tenantId
       });
-    } catch (err) {
-      next(err);
-    }
-  },
-
-  /**
-   * GET /inbound/:id
-   * Fetch a single inbound fax record (tenant‑scoped)
-   */
-  async getInboundFax(req, res, next) {
-    try {
-      const { id } = req.params;
-      const tenantId = req.user?.tenantId;
-
-      if (!tenantId) {
-        throw new FaxNovaError("Tenant ID required", {
-          code: "TENANT_ID_REQUIRED"
-        });
-      }
-
-      const record = await inboundFaxService.getInboundFaxById(id, tenantId);
-
-      if (!record) {
-        throw new FaxNovaError("Inbound fax not found", {
-          code: "INBOUND_NOT_FOUND",
-          faxId: id
-        });
-      }
-
-      res.status(200).json(record);
-    } catch (err) {
-      next(err);
-    }
-  },
-
-  /**
-   * GET /inbound
-   * Paginated inbound fax list (tenant‑scoped)
-   */
-  async listInboundFaxes(req, res, next) {
-    try {
-      const tenantId = req.user?.tenantId;
-
-      if (!tenantId) {
-        throw new FaxNovaError("Tenant ID required", {
-          code: "TENANT_ID_REQUIRED"
-        });
-      }
-
-      const page = Number(req.query.page || 1);
-      const limit = Number(req.query.limit || 20);
-
-      const result = await inboundFaxService.listInboundFaxes(tenantId, page, limit);
-
-      res.status(200).json(result);
     } catch (err) {
       next(err);
     }
