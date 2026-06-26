@@ -1,73 +1,32 @@
-const routingServiceV2 = require("./routingService.v2");
-const sinchAdapter = require("../providers/sinchAdapter");
-const telnyxAdapter = require("../providers/telnyxAdapter");
-const providerPerformanceService = require("./providerPerformanceService");
+// src/services/sendFaxService.js
 
-const sendFaxService = {
+const sinch = require("../integrations/providers/sinchProvider");
+const telnyx = require("../integrations/providers/telnyxProvider");
+const FaxNovaError = require("../errors/FaxNovaError");
+
+module.exports = {
   async sendFax(payload) {
-    const { residencyZone, tier, to, from, pages, documentUrl } = payload;
+    let primaryErr = null;
 
-    // 1. Ask routing engine for primary + failover
-    const { primary, failover } = await routingServiceV2.selectProvider({
-      residencyZone,
-      tier
-    });
-
-    // Helper to pick adapter
-    const getAdapter = (provider) =>
-      provider === "sinch" ? sinchAdapter : telnyxAdapter;
-
-    // 2. Try primary provider
-    const startPrimary = Date.now();
+    // Try Sinch first
     try {
-      const adapter = getAdapter(primary.provider);
-      const result = await adapter.sendFax({ to, from, pages, documentUrl });
-
-      const latencyMs = Date.now() - startPrimary;
-      await providerPerformanceService.recordLatency(primary.provider, latencyMs);
-      await providerPerformanceService.recordSuccess(primary.provider);
-
-      return {
-        provider: primary.provider,
-        failoverProvider: failover?.provider ?? null,
-        routingScore: primary.score,
-        jobId: result.jobId,
-        latencyMs
-      };
+      return await sinch.sendFax(payload);
     } catch (err) {
-      await providerPerformanceService.recordFailure(primary.provider);
+      primaryErr = err;
+    }
 
-      // 3. If no failover, bubble error
-      if (!failover) {
-        throw new Error("All providers unavailable");
-      }
-
-      // 4. Try failover provider
-      const startFailover = Date.now();
-      try {
-        const adapter = getAdapter(failover.provider);
-        const result = await adapter.sendFax({ to, from, pages, documentUrl });
-
-        const latencyMs = Date.now() - startFailover;
-        await providerPerformanceService.recordLatency(
-          failover.provider,
-          latencyMs
-        );
-        await providerPerformanceService.recordSuccess(failover.provider);
-
-        return {
-          provider: failover.provider,
-          failoverFrom: primary.provider,
-          routingScore: failover.score,
-          jobId: result.jobId,
-          latencyMs
-        };
-      } catch (err2) {
-        await providerPerformanceService.recordFailure(failover.provider);
-        throw new Error("Primary and failover providers failed");
-      }
+    // Failover to Telnyx
+    try {
+      return await telnyx.sendFax(payload);
+    } catch (failoverErr) {
+      throw new FaxNovaError("All providers unavailable", {
+        provider: "multi",
+        code: "ALL_PROVIDERS_FAILED",
+        details: {
+          sinch: primaryErr?.details,
+          telnyx: failoverErr?.details
+        }
+      });
     }
   }
 };
-
-module.exports = sendFaxService;
