@@ -7,8 +7,8 @@ const faxController = require("../controllers/faxController");
 const inboundFaxController = require("../controllers/inboundFaxController");
 
 const auth = require("../middleware/auth");
+const faxLimiter = require("../middleware/faxLimiter");
 const residencyGuard = require("../middleware/residencyGuard");
-const { faxLimiter } = require("../middleware/rateLimit");
 
 // -----------------------------
 // Outbound Fax Routes
@@ -17,9 +17,9 @@ const { faxLimiter } = require("../middleware/rateLimit");
 // POST /fax/send
 router.post(
   "/send",
-  auth,
-  faxLimiter,
-  residencyGuard(),
+  auth,               // tenant auth
+  faxLimiter,         // rate limiting
+  residencyGuard,     // residency + sovereignty enforcement
   faxController.sendFax
 );
 
@@ -27,31 +27,21 @@ router.post(
 router.get(
   "/:id",
   auth,
-  residencyGuard(),
-  faxController.getFax
+  faxController.getFaxById
 );
 
 // GET /fax
 router.get(
   "/",
   auth,
-  residencyGuard(),
   faxController.listFaxes
 );
 
 // -----------------------------
-// Inbound Fax Routes
+// Inbound Fax Webhooks
 // -----------------------------
 
-// GET /fax/inbound
-router.get(
-  "/inbound",
-  auth,
-  residencyGuard(),
-  faxController.listInbound
-);
-
-// POST /fax/inbound/:provider (webhooks)
+// POST /fax/inbound/:provider
 router.post(
   "/inbound/:provider",
   inboundFaxController.receiveInboundFax
