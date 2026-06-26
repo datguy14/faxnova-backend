@@ -1,3 +1,5 @@
+// src/errors/FaxNovaError.js
+
 class FaxNovaError extends Error {
   constructor(message, { provider = null, code = null, details = null } = {}) {
     super(message);
