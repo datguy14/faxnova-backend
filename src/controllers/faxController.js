@@ -1,41 +1,43 @@
 // src/controllers/faxController.js
 
 const sendFaxService = require("../services/sendFaxService");
-const inboundFaxQueryService = require("../services/inboundFaxQueryService");
 const Fax = require("../models/Fax");
-
 const FaxNovaError = require("../errors/FaxNovaError");
 const audit = require("../utils/auditLogger");
+const { sendFaxSchema } = require("../validation/faxSchemas"); // Zod schema
 
 module.exports = {
   /**
    * POST /fax/send
-   * Send outbound fax using Routing Engine v2.
+   *
+   * Steps:
+   * 1. Validate request body (Zod)
+   * 2. Extract tenantId from auth middleware
+   * 3. Call sendFaxService
+   * 4. Save fax record
+   * 5. Return response
    */
   async sendFax(req, res, next) {
     try {
-      const tenantId = req.user?.tenantId;
+      // -----------------------------
+      // 1. Validate request body
+      // -----------------------------
+      const parsed = sendFaxSchema.parse(req.body);
 
-      if (!tenantId) {
-        throw new FaxNovaError("Tenant ID required", {
-          code: "TENANT_ID_REQUIRED"
-        });
-      }
-
-      const { to, from, pages, documentUrl } = req.body;
-
-      if (!to || !from || !pages || !documentUrl) {
-        throw new FaxNovaError("Missing required fax fields", {
-          code: "FAX_FIELDS_REQUIRED",
-          details: req.body
-        });
-      }
-
-      const residencyZone = req.residencyZone || "us";
-      const tier = req.user?.tier || "basic";
+      const { to, from, pages, documentUrl, residencyZone, tier } = parsed;
 
       // -----------------------------
-      // 1. Send fax via routing engine
+      // 2. Tenant ID from auth middleware
+      // -----------------------------
+      const tenantId = req.tenantId;
+      if (!tenantId) {
+        throw new FaxNovaError("Missing tenant context", {
+          code: "TENANT_CONTEXT_MISSING"
+        });
+      }
+
+      // -----------------------------
+      // 3. Send fax via Routing Engine v2
       // -----------------------------
       const result = await sendFaxService.sendFax({
         residencyZone,
@@ -47,12 +49,12 @@ module.exports = {
       });
 
       // -----------------------------
-      // 2. Store outbound fax record
+      // 4. Save fax record
       // -----------------------------
-      const record = await Fax.create({
+      const faxRecord = await Fax.create({
         tenantId,
         provider: result.provider,
-        failoverProvider: result.failoverProvider || null,
+        failoverProvider: result.failoverProvider,
         routingScore: result.routingScore,
         to,
         from,
@@ -62,23 +64,31 @@ module.exports = {
         residencyZone,
         tier,
         status: "sent",
-        latencyMs: result.latencyMs,
-        createdAt: new Date()
+        latencyMs: result.latencyMs
       });
 
+      // -----------------------------
+      // 5. Audit event
+      // -----------------------------
       audit.log("fax_sent", {
         tenantId,
         provider: result.provider,
         failoverProvider: result.failoverProvider,
-        jobId: result.jobId
+        jobId: result.jobId,
+        residencyZone,
+        tier
       });
 
+      // -----------------------------
+      // 6. Response
+      // -----------------------------
       res.status(200).json({
         message: "Fax sent successfully",
-        faxId: record._id,
+        faxId: faxRecord._id,
         provider: result.provider,
-        failoverProvider: result.failoverProvider || null,
-        jobId: result.jobId
+        failoverProvider: result.failoverProvider,
+        jobId: result.jobId,
+        latencyMs: result.latencyMs
       });
     } catch (err) {
       next(err);
@@ -87,29 +97,24 @@ module.exports = {
 
   /**
    * GET /fax/:id
-   * Fetch outbound fax record (tenant‑scoped)
+   *
+   * Fetch a fax record for the authenticated tenant.
    */
-  async getFax(req, res, next) {
+  async getFaxById(req, res, next) {
     try {
-      const tenantId = req.user?.tenantId;
-      const { id } = req.params;
+      const tenantId = req.tenantId;
+      const faxId = req.params.id;
 
-      if (!tenantId) {
-        throw new FaxNovaError("Tenant ID required", {
-          code: "TENANT_ID_REQUIRED"
-        });
-      }
+      const fax = await Fax.findOne({ _id: faxId, tenantId });
 
-      const record = await Fax.findOne({ _id: id, tenantId });
-
-      if (!record) {
+      if (!fax) {
         throw new FaxNovaError("Fax not found", {
           code: "FAX_NOT_FOUND",
-          faxId: id
+          faxId
         });
       }
 
-      res.status(200).json(record);
+      res.status(200).json(fax);
     } catch (err) {
       next(err);
     }
@@ -117,66 +122,29 @@ module.exports = {
 
   /**
    * GET /fax
-   * Paginated outbound fax list (tenant‑scoped)
+   *
+   * Paginated fax list for tenant.
    */
   async listFaxes(req, res, next) {
     try {
-      const tenantId = req.user?.tenantId;
-
-      if (!tenantId) {
-        throw new FaxNovaError("Tenant ID required", {
-          code: "TENANT_ID_REQUIRED"
-        });
-      }
+      const tenantId = req.tenantId;
 
       const page = Number(req.query.page || 1);
       const limit = Number(req.query.limit || 20);
 
-      const query = { tenantId };
-
-      const total = await Fax.countDocuments(query);
-
-      const items = await Fax.find(query)
+      const faxes = await Fax.find({ tenantId })
         .sort({ createdAt: -1 })
         .skip((page - 1) * limit)
         .limit(limit);
+
+      const total = await Fax.countDocuments({ tenantId });
 
       res.status(200).json({
         page,
         limit,
         total,
-        pages: Math.ceil(total / limit),
-        items
+        faxes
       });
-    } catch (err) {
-      next(err);
-    }
-  },
-
-  /**
-   * GET /fax/inbound
-   * Paginated inbound fax list (tenant‑scoped)
-   */
-  async listInbound(req, res, next) {
-    try {
-      const tenantId = req.user?.tenantId;
-
-      if (!tenantId) {
-        throw new FaxNovaError("Tenant ID required", {
-          code: "TENANT_ID_REQUIRED"
-        });
-      }
-
-      const page = Number(req.query.page || 1);
-      const limit = Number(req.query.limit || 20);
-
-      const result = await inboundFaxQueryService.listInboundFaxes({
-        tenantId,
-        page,
-        limit
-      });
-
-      res.status(200).json(result);
     } catch (err) {
       next(err);
     }
