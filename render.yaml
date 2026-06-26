@@ -1,0 +1,35 @@
+services:
+  - type: web
+    name: faxnova-backend
+    env: node
+    plan: free
+    region: oregon
+    rootDir: .
+    buildCommand: npm install
+    startCommand: node server.js
+
+    runtime:
+      nodeVersion: 20
+
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: MONGO_URI
+        sync: false
+      - key: JWT_ADMIN_SECRET
+        sync: false
+      - key: WEBHOOK_SECRET_2026_05
+        sync: false
+
+    build:
+      noCache: true
+
+    autoDeploy: true
+
+    buildFilter:
+      paths:
+        - src/**
+        - package.json
+        - package-lock.json
+        - server.js
+        - render.yaml
