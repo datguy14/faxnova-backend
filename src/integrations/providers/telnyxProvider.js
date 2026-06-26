@@ -1,89 +1,34 @@
 // src/integrations/providers/telnyxProvider.js
-const FaxProvider = require('./providerInterface');
-const telnyxSDK = require('telnyx');
-const logger = require('../../utils/logger');
 
-class TelnyxProvider extends FaxProvider {
-  constructor() {
-    super();
-    this.telnyx = telnyxSDK(process.env.TELNYX_API_KEY);
-  }
+const axios = require("axios");
+const FaxNovaError = require("../../errors/FaxNovaError");
 
-  /**
-   * Send fax via Telnyx
-   */
-  async sendFax({ to, fileUrl, from, metadata = {} }) {
-    if (!to || !fileUrl) {
-      throw new Error('to and fileUrl are required for Telnyx');
-    }
-
+module.exports = {
+  async sendFax(payload) {
     try {
-      const fax = await this.telnyx.faxes.create({
-        connection_id: process.env.TELNYX_CONNECTION_ID,
-        to,
-        from: from || process.env.TELNYX_FROM_NUMBER,
-        media_url: fileUrl,
-        ...metadata
-      });
-
-      logger.info('Telnyx fax queued', { providerFaxId: fax.data.id });
+      const response = await axios.post(
+        "https://api.telnyx.com/v2/faxes",
+        payload,
+        {
+          headers: {
+            Authorization: `Bearer ${process.env.TELNYX_API_KEY}`,
+            "Content-Type": "application/json"
+          }
+        }
+      );
 
       return {
-        id: fax.data.id,
-        status: 'queued',
-        provider: 'telnyx',
-        ...fax.data
+        provider: "telnyx",
+        providerId: response.data.data.id,
+        status: response.data.data.status
       };
-    } catch (error) {
-      logger.error('Telnyx sendFax failed', { error: error.message });
-      throw error;
+
+    } catch (err) {
+      throw new FaxNovaError("Telnyx provider failed", {
+        provider: "telnyx",
+        code: err.code || "TELNYX_ERROR",
+        details: err.response?.data || err.message
+      });
     }
   }
-
-  /**
-   * Get fax status from Telnyx
-   */
-  async getStatus(providerFaxId) {
-    if (!providerFaxId) throw new Error('providerFaxId required');
-
-    const fax = await this.telnyx.faxes.retrieve(providerFaxId);
-    
-    return {
-      status: this.mapStatus(fax.data.status),
-      pages: fax.data.page_count,
-      ...fax.data
-    };
-  }
-
-  /**
-   * Normalize Telnyx webhook payload
-   */
-  handleWebhook(req) {
-    const event = req.body.data || req.body;
-    const payload = event.payload || event;
-
-    return {
-      provider: 'telnyx',
-      providerFaxId: payload.fax_id || payload.id,
-      status: this.mapStatus(payload.status),
-      pages: payload.page_count,
-      from: payload.from,
-      to: payload.to,
-      raw: event
-    };
-  }
-
-  mapStatus(status) {
-    const map = {
-      'queued': 'queued',
-      'media.processed': 'processing',
-      'sending': 'sending',
-      'delivered': 'delivered',
-      'failed': 'failed',
-      'receiving': 'receiving',
-    };
-    return map[status?.toLowerCase()] || status?.toLowerCase() || 'unknown';
-  }
-}
-
-module.exports = new TelnyxProvider();
+};
