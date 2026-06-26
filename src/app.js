@@ -1,30 +1,49 @@
 // src/app.js
+
 const express = require("express");
 const cors = require("cors");
 
-const analyticsRoutes = require("./routes/analyticsRoutes.js");
-const faxRoutes = require("./routes/faxRoutes.js");
-const providerRoutes = require("./routes/providerRoutes.js");
-const adminAnalyticsRoutes = require("./routes/adminAnalytics.js");
+// Routes
+const faxRoutes = require("./routes/faxRoutes");
+const analyticsRoutes = require("./routes/analyticsRoutes");
+const providerRoutes = require("./routes/providerRoutes");
+const adminAnalyticsRoutes = require("./routes/adminAnalytics");
 
+// Middleware
+const auth = require("./middleware/auth");
+
+// App init
 const app = express();
 
 app.use(cors());
 app.use(express.json());
 
-app.use("/analytics", analyticsRoutes);
+// Health check
+app.get("/health", (req, res) => {
+  res.status(200).json({ status: "ok" });
+});
+
+// Routes
 app.use("/fax", faxRoutes);
+app.use("/analytics", analyticsRoutes);
 app.use("/provider", providerRoutes);
-app.use("/admin/analytics", adminAnalyticsRoutes);
+app.use("/admin/analytics", auth, adminAnalyticsRoutes);
 
-app.get("/health", (req, res) => res.status(200).json({ status: "ok" }));
-
-module.exports = app;
-// Global error handler (place at bottom of src/app.js)
-
+// ---------------------------
+// Global Error Handler
+// ---------------------------
 app.use((err, req, res, next) => {
   console.error("FaxNova Error:", err);
 
+  // Zod validation errors
+  if (err.name === "ZodError") {
+    return res.status(400).json({
+      error: "Invalid request payload",
+      issues: err.errors
+    });
+  }
+
+  // Normalized FaxNovaError
   res.status(500).json({
     error: err.message,
     provider: err.provider || null,
@@ -32,3 +51,5 @@ app.use((err, req, res, next) => {
     details: err.details || null
   });
 });
+
+module.exports = app;
