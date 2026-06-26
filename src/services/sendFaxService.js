@@ -5,19 +5,18 @@ const telnyx = require("../integrations/providers/telnyxProvider");
 const FaxNovaError = require("../errors/FaxNovaError");
 
 module.exports = {
-  async sendFax(payload) {
+  async sendFax(validatedInput) {
+    // validatedInput is guaranteed safe by Zod
     let primaryErr = null;
 
-    // Try Sinch first
     try {
-      return await sinch.sendFax(payload);
+      return await sinch.sendFax(validatedInput);
     } catch (err) {
       primaryErr = err;
     }
 
-    // Failover to Telnyx
     try {
-      return await telnyx.sendFax(payload);
+      return await telnyx.sendFax(validatedInput);
     } catch (failoverErr) {
       throw new FaxNovaError("All providers unavailable", {
         provider: "multi",
