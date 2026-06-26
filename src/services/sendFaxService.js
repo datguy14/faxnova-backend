@@ -1,156 +1,155 @@
 // src/services/sendFaxService.js
 
-const routingServiceV2 = require("./routingService.v2");
+const routingService = require("./routingService.v2");
+const providerPerformance = require("./providerPerformanceService");
+const providerOutage = require("./providerOutageService");
+
 const sinchAdapter = require("../providers/sinchAdapter");
 const telnyxAdapter = require("../providers/telnyxAdapter");
-
-const providerPerformanceService = require("./providerPerformanceService");
-const providerOutageService = require("./providerOutageService");
 
 const FaxNovaError = require("../errors/FaxNovaError");
 const audit = require("../utils/auditLogger");
 
-/**
- * Provider adapter selector
- */
-function getAdapter(provider) {
-  switch (provider) {
-    case "sinch":
-      return sinchAdapter;
-    case "telnyx":
-      return telnyxAdapter;
-    default:
-      throw new FaxNovaError("Unknown provider", {
-        code: "UNKNOWN_PROVIDER",
-        provider
-      });
+const PROVIDER_MAP = {
+  sinch: sinchAdapter,
+  telnyx: telnyxAdapter
+};
+
+async function sendThroughProvider(provider, payload) {
+  const adapter = PROVIDER_MAP[provider];
+
+  if (!adapter) {
+    throw new FaxNovaError("Unknown provider adapter", {
+      code: "UNKNOWN_PROVIDER",
+      provider
+    });
+  }
+
+  const start = Date.now();
+
+  try {
+    const result = await adapter.sendFax(payload);
+
+    const latency = Date.now() - start;
+    await providerPerformance.recordLatency(provider, latency);
+    await providerPerformance.recordSuccess(provider);
+
+    audit.log("fax_provider_success", {
+      provider,
+      latencyMs: latency
+    });
+
+    return {
+      jobId: result.jobId,
+      latencyMs: latency
+    };
+  } catch (err) {
+    const latency = Date.now() - start;
+    await providerPerformance.recordLatency(provider, latency);
+    await providerPerformance.recordFailure(provider);
+    await providerOutage.recordFailure(provider);
+
+    audit.error("fax_provider_failure", {
+      provider,
+      latencyMs: latency,
+      error: err.message
+    });
+
+    throw new FaxNovaError("Provider failed to send fax", {
+      code: "PROVIDER_SEND_FAILURE",
+      provider,
+      details: err.message
+    });
   }
 }
 
 module.exports = {
   /**
-   * Send a fax using Routing Engine v2.
+   * Main outbound fax pipeline.
    *
-   * payload:
-   * - residencyZone
-   * - tier
-   * - to
-   * - from
-   * - pages
-   * - documentUrl
+   * Steps:
+   * 1. Routing Engine v2 selects primary + failover
+   * 2. Attempt primary provider
+   * 3. On failure → attempt failover provider
+   * 4. Return final result
    */
-  async sendFax(payload) {
-    const { residencyZone, tier, to, from, pages, documentUrl } = payload;
-
-    // -----------------------------
-    // 1. Ask routing engine for primary + failover
-    // -----------------------------
-    const { primary, failover } = await routingServiceV2.selectProvider({
-      residencyZone,
-      tier
-    });
-
-    // -----------------------------
-    // 2. Try primary provider
-    // -----------------------------
-    const startPrimary = Date.now();
-
+  async sendFax({ residencyZone, tier, to, from, pages, documentUrl }) {
     try {
-      const adapter = getAdapter(primary.provider);
-
-      const result = await adapter.sendFax({
-        to,
-        from,
-        pages,
-        documentUrl
+      // -----------------------------
+      // 1. Routing Engine v2
+      // -----------------------------
+      const routing = await routingService.selectProvider({
+        residencyZone,
+        tier
       });
 
-      const latencyMs = Date.now() - startPrimary;
+      const primary = routing.primary.provider;
+      const failover = routing.failover?.provider || null;
 
-      await providerPerformanceService.recordLatency(primary.provider, latencyMs);
-      await providerPerformanceService.recordSuccess(primary.provider);
-
-      audit.log("fax_sent_primary", {
-        provider: primary.provider,
-        failoverProvider: failover?.provider || null,
-        routingScore: primary.score,
-        latencyMs
+      audit.log("fax_routing_decision", {
+        residencyZone,
+        tier,
+        primary,
+        failover,
+        scored: routing.scored
       });
 
-      return {
-        provider: primary.provider,
-        failoverProvider: failover?.provider || null,
-        routingScore: primary.score,
-        jobId: result.jobId,
-        latencyMs
-      };
-    } catch (err) {
-      await providerPerformanceService.recordFailure(primary.provider);
-      await providerOutageService.recordFailure(primary.provider);
+      const payload = { to, from, pages, documentUrl };
 
-      audit.error("fax_primary_failed", {
-        provider: primary.provider,
-        error: err.message
-      });
+      // -----------------------------
+      // 2. Try primary provider
+      // -----------------------------
+      try {
+        const result = await sendThroughProvider(primary, payload);
 
-      // No failover available
-      if (!failover) {
-        throw new FaxNovaError("Primary provider failed and no failover available", {
-          code: "PRIMARY_ONLY_FAILURE",
-          provider: primary.provider,
-          details: err.message
+        return {
+          provider: primary,
+          failoverProvider: null,
+          jobId: result.jobId,
+          latencyMs: result.latencyMs,
+          routingScore: routing.primary.score
+        };
+      } catch (primaryErr) {
+        if (!failover) throw primaryErr;
+
+        audit.error("fax_primary_failed_attempting_failover", {
+          primary,
+          failover,
+          error: primaryErr.message
         });
       }
-    }
 
-    // -----------------------------
-    // 3. Try failover provider
-    // -----------------------------
-    const startFailover = Date.now();
+      // -----------------------------
+      // 3. Try failover provider
+      // -----------------------------
+      try {
+        const result = await sendThroughProvider(failover, payload);
 
-    try {
-      const adapter = getAdapter(failover.provider);
+        return {
+          provider: primary,
+          failoverProvider: failover,
+          jobId: result.jobId,
+          latencyMs: result.latencyMs,
+          routingScore: routing.failover.score
+        };
+      } catch (failoverErr) {
+        audit.error("fax_failover_failed", {
+          primary,
+          failover,
+          error: failoverErr.message
+        });
 
-      const result = await adapter.sendFax({
-        to,
-        from,
-        pages,
-        documentUrl
-      });
-
-      const latencyMs = Date.now() - startFailover;
-
-      await providerPerformanceService.recordLatency(failover.provider, latencyMs);
-      await providerPerformanceService.recordSuccess(failover.provider);
-
-      audit.log("fax_sent_failover", {
-        provider: failover.provider,
-        failoverFrom: primary.provider,
-        routingScore: failover.score,
-        latencyMs
-      });
-
-      return {
-        provider: failover.provider,
-        failoverFrom: primary.provider,
-        routingScore: failover.score,
-        jobId: result.jobId,
-        latencyMs
-      };
-    } catch (err2) {
-      await providerPerformanceService.recordFailure(failover.provider);
-      await providerOutageService.recordFailure(failover.provider);
-
-      audit.error("fax_failover_failed", {
-        provider: failover.provider,
-        error: err2.message
-      });
-
-      throw new FaxNovaError("Primary and failover providers failed", {
-        code: "PRIMARY_AND_FAILOVER_FAILURE",
-        primary: primary.provider,
-        failover: failover.provider,
-        details: err2.message
+        throw new FaxNovaError("Both primary and failover providers failed", {
+          code: "ALL_PROVIDERS_FAILED",
+          primary,
+          failover,
+          details: failoverErr.message
+        });
+      }
+    } catch (err) {
+      throw new FaxNovaError("Failed to send fax", {
+        code: "SEND_FAX_ERROR",
+        details: err.message
       });
     }
   }
