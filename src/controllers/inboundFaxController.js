@@ -1,144 +1,96 @@
 // src/controllers/inboundFaxController.js
 
-const Fax = require('../models/Fax');
-const audit = require('../audit/auditService');
-const { writeResidencyLog } = require('../storage/residencyStorage');
-const { getResidencyZone } = require('../residency/policy');
+const inboundFaxService = require("../services/inboundFaxService");
+const FaxNovaError = require("../errors/FaxNovaError");
+const audit = require("../utils/auditLogger");
 
-exports.handleInboundFax = async (req, res) => {
-  try {
-    const payload = req.body;
-    const residencyZone = req.residencyZone || 'global';
-
-    const {
-      id: providerFaxId,
-      from,
-      to,
-      fileUrl,
-      pages,
-      status,
-      metadata
-    } = payload;
-
-    // Determine tenant by inbound fax number
-    const tenantId = await Fax.resolveTenantByInboundNumber(to);
-
-    // Extract country from inbound number if possible
-    const countryCode = metadata?.countryCode || null;
-    const faxZone = countryCode ? getResidencyZone(countryCode) : residencyZone;
-
-    // Audit: inbound fax received
-    audit.logEvent({
-      tenantId,
-      type: 'fax',
-      action: 'inbound_received',
-      correlationId: metadata?.correlationId || null,
-      ip: req.ip,
-      path: req.originalUrl,
-      method: req.method,
-      tier: 'system',
-      details: {
-        providerFaxId,
-        from,
-        to,
-        pages,
-        status,
-        residencyZone: faxZone
-      }
-    });
-
-    // Save inbound fax record with residency metadata
-    const faxRecord = await Fax.create({
-      tenantId,
-      direction: 'inbound',
-      from,
-      to,
-      fileUrl,
-      pages,
-      status,
-      faxId: providerFaxId,
-      residencyZone: faxZone,
-      provider: 'inbound', // Mark as inbound fax
-      metadata: {
-        correlationId: metadata?.correlationId || null,
-        countryCode
-      }
-    });
-
-    // Log to residency storage
-    await writeResidencyLog(
-      faxZone,
-      'inbound-received.log',
-      JSON.stringify({
-        timestamp: new Date().toISOString(),
-        faxId: faxRecord._id,
-        providerFaxId,
-        from,
-        to,
-        pages,
-        status,
-        residencyZone: faxZone
-      })
-    );
-
-    // Audit: inbound fax stored
-    audit.logEvent({
-      tenantId,
-      type: 'fax',
-      action: 'inbound_stored',
-      correlationId: metadata?.correlationId || null,
-      ip: req.ip,
-      path: req.originalUrl,
-      method: req.method,
-      tier: 'system',
-      details: {
-        faxId: faxRecord._id,
-        providerFaxId,
-        residencyZone: faxZone
-      }
-    });
-
-    res.json({ 
-      success: true,
-      faxId: faxRecord._id,
-      residencyZone: faxZone
-    });
-
-  } catch (err) {
-    console.error('Inbound fax error:', err.message);
-    const residencyZone = req.residencyZone || 'global';
-
-    // Log error to residency storage
+module.exports = {
+  /**
+   * POST /webhooks/inbound/:provider
+   * Handles inbound fax webhooks from Sinch, Telnyx, etc.
+   */
+  async receiveInboundFax(req, res, next) {
     try {
-      await writeResidencyLog(
-        residencyZone,
-        'inbound-errors.log',
-        JSON.stringify({
-          timestamp: new Date().toISOString(),
-          error: err.message,
-          residencyZone
-        })
-      );
-    } catch (logError) {
-      console.error('Failed to log error to residency storage:', logError);
+      const provider = req.params.provider?.toLowerCase();
+
+      if (!provider) {
+        throw new FaxNovaError("Provider is required for inbound fax", {
+          code: "INBOUND_PROVIDER_REQUIRED"
+        });
+      }
+
+      const payload = req.body;
+
+      const record = await inboundFaxService.processInboundFax(provider, payload);
+
+      audit.log("inbound_fax_webhook_processed", {
+        provider,
+        faxId: record.faxId,
+        tenantId: record.tenantId
+      });
+
+      res.status(200).json({
+        message: "Inbound fax processed",
+        provider,
+        faxId: record.faxId
+      });
+    } catch (err) {
+      next(err);
     }
+  },
 
-    audit.logEvent({
-      tenantId: null,
-      type: 'fax',
-      action: 'inbound_failed',
-      correlationId: null,
-      ip: req.ip,
-      path: req.originalUrl,
-      method: req.method,
-      tier: 'system',
-      details: { error: err.message, residencyZone }
-    });
+  /**
+   * GET /inbound/:id
+   * Fetch a single inbound fax record (tenant‑scoped)
+   */
+  async getInboundFax(req, res, next) {
+    try {
+      const { id } = req.params;
+      const tenantId = req.user?.tenantId;
 
-    res.status(500).json({
-      success: false,
-      error: 'Inbound fax processing failed',
-      residencyZone
-    });
+      if (!tenantId) {
+        throw new FaxNovaError("Tenant ID required", {
+          code: "TENANT_ID_REQUIRED"
+        });
+      }
+
+      const record = await inboundFaxService.getInboundFaxById(id, tenantId);
+
+      if (!record) {
+        throw new FaxNovaError("Inbound fax not found", {
+          code: "INBOUND_NOT_FOUND",
+          faxId: id
+        });
+      }
+
+      res.status(200).json(record);
+    } catch (err) {
+      next(err);
+    }
+  },
+
+  /**
+   * GET /inbound
+   * Paginated inbound fax list (tenant‑scoped)
+   */
+  async listInboundFaxes(req, res, next) {
+    try {
+      const tenantId = req.user?.tenantId;
+
+      if (!tenantId) {
+        throw new FaxNovaError("Tenant ID required", {
+          code: "TENANT_ID_REQUIRED"
+        });
+      }
+
+      const page = Number(req.query.page || 1);
+      const limit = Number(req.query.limit || 20);
+
+      const result = await inboundFaxService.listInboundFaxes(tenantId, page, limit);
+
+      res.status(200).json(result);
+    } catch (err) {
+      next(err);
+    }
   }
 };
