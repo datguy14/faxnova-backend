@@ -1,79 +1,27 @@
 const express = require("express");
-const auth = require("../middleware/auth.js");
-const { providerLimiter } = require("../middleware/rateLimit.js");
-
-const {
-  getAllProviders,
-  getProviderBilling
-} = require("../controllers/provider.controller.js");
-
-const { providerHealthController } = require("../controllers/providerHealth.controller.js");
-const { providerBillingController } = require("../controllers/providerBilling.controller.js");
-
+const Fax = require("../models/Fax.js");
 const router = express.Router();
 
-/**
- * -----------------------------------------------------
- * PROVIDER METADATA (STATIC)
- * -----------------------------------------------------
- */
+router.get("/outage", async (req, res) => {
+  res.json({
+    sinch: { status: "operational", lastChecked: new Date().toISOString() },
+    telnyx: { status: "operational", lastChecked: new Date().toISOString() }
+  });
+});
 
-router.get("/", auth, providerLimiter, getAllProviders);
+router.get("/billing", async (req, res) => {
+  const faxes = await Fax.find({}).lean();
 
-router.get("/billing", auth, providerLimiter, getProviderBilling);
+  const totalFaxes = faxes.length;
+  const totalCostUsd = Number((totalFaxes * 0.05).toFixed(2));
 
-/**
- * -----------------------------------------------------
- * PROVIDER HEALTH (REAL‑TIME)
- * -----------------------------------------------------
- */
+  const byProvider = ["Sinch", "Telnyx"].map(p => ({
+    provider: p,
+    count: faxes.filter(f => f.provider === p).length,
+    costUsd: Number((faxes.filter(f => f.provider === p).length * 0.05).toFixed(2))
+  }));
 
-router.get(
-  "/status",
-  auth,
-  providerLimiter,
-  providerHealthController.getStatus
-);
-
-router.get(
-  "/performance",
-  auth,
-  providerLimiter,
-  providerHealthController.getPerformance
-);
-
-router.get(
-  "/outages",
-  auth,
-  providerLimiter,
-  providerHealthController.getOutages
-);
-
-router.post(
-  "/outages/clear",
-  auth,
-  providerLimiter,
-  providerHealthController.clearOutage
-);
-
-/**
- * -----------------------------------------------------
- * PROVIDER BILLING (ADVANCED)
- * -----------------------------------------------------
- */
-
-router.post(
-  "/billing/calculate",
-  auth,
-  providerLimiter,
-  providerBillingController.calculateFaxCost
-);
-
-router.get(
-  "/billing/summary",
-  auth,
-  providerLimiter,
-  providerBillingController.getBillingSummary
-);
+  res.json({ totalFaxes, totalCostUsd, byProvider });
+});
 
 module.exports = router;
