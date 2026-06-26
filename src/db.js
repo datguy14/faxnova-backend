@@ -1,17 +1,20 @@
-import mongoose from 'mongoose';
-import logger from '../src/utils/logger.js';
+// src/db.js
+const mongoose = require("mongoose");
 
-const connectDB = async () => {
-  try {
-    const conn = await mongoose.connect(process.env.MONGODB_URI, {
-      serverSelectionTimeoutMS: 5000
-    });
-
-    logger.info(`MongoDB connected: ${conn.connection.host}`);
-  } catch (error) {
-    logger.error('MongoDB connection error:', error);
-    process.exit(1);
+async function connectDB() {
+  const uri = process.env.MONGO_URI;
+  if (!uri) {
+    throw new Error("MONGO_URI is not set");
   }
-};
 
-export default connectDB;
+  await mongoose.connect(uri, {
+    autoIndex: false
+  });
+
+  console.log("MongoDB connected");
+}
+
+module.exports = {
+  mongoose,
+  connectDB
+};
