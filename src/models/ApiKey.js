@@ -1,16 +1,10 @@
-const { mongoose } = require('../db');
+// src/models/ApiKey.js
+const mongoose = require("mongoose");
 
-const apiKeySchema = new mongoose.Schema({
-  tenantId: { type: String, index: true },
-  keyHash: { type: String, unique: true, index: true },
-  label: String,
-  tier: { type: String, enum: ['free', 'pro', 'business'], default: 'free' },
-  status: { type: String, enum: ['active', 'revoked'], default: 'active' },
-  limits: {
-    maxPerMinute: Number,
-    maxPerDay: Number
-  },
-  lastUsedAt: Date
-}, { timestamps: true });
+const ApiKeySchema = new mongoose.Schema({
+  key: { type: String, required: true, unique: true },
+  label: { type: String },
+  createdAt: { type: Date, default: Date.now }
+});
 
-module.exports = mongoose.model('ApiKey', apiKeySchema);
+module.exports = mongoose.model("ApiKey", ApiKeySchema);
