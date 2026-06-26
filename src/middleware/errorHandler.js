@@ -1,61 +1,99 @@
 // src/middleware/errorHandler.js
 
+const FaxNovaError = require("../errors/FaxNovaError");
+const audit = require("../utils/auditLogger");
+
 /**
- * Centralized error handler.
- * - Normalizes all errors into a consistent JSON shape
- * - Includes correlationId
- * - Logs structured JSON
- * - Prevents leaking internal stack traces
+ * Global Error Handler (Production‑grade)
+ *
+ * Handles:
+ * - Zod validation errors
+ * - FaxNovaError (custom structured errors)
+ * - Axios provider errors
+ * - Unexpected exceptions
+ *
+ * Always returns JSON.
  */
 
 module.exports = function errorHandler(err, req, res, next) {
-  const correlationId = req.correlationId;
+  try {
+    // -----------------------------
+    // 1. Zod Validation Error
+    // -----------------------------
+    if (err.name === "ZodError") {
+      const formatted = err.errors.map((e) => ({
+        path: e.path.join("."),
+        message: e.message
+      }));
 
-  // Default normalized error
-  const normalized = {
-    message: "An unexpected error occurred.",
-    status: 500,
-    type: "InternalError",
-    details: null
-  };
+      audit.error("validation_error", {
+        user: req.user?.id,
+        path: req.originalUrl,
+        errors: formatted
+      });
 
-  // If the error already has a status, use it
-  if (err.status) normalized.status = err.status;
+      return res.status(400).json({
+        error: "Validation failed",
+        details: formatted
+      });
+    }
 
-  // If the error already has a message, use it
-  if (err.message) normalized.message = err.message;
+    // -----------------------------
+    // 2. FaxNovaError (Custom)
+    // -----------------------------
+    if (err instanceof FaxNovaError) {
+      audit.error("faxnova_error", {
+        user: req.user?.id,
+        code: err.code,
+        details: err.details,
+        path: req.originalUrl
+      });
 
-  // If the error has a type, use it
-  if (err.type) normalized.type = err.type;
+      return res.status(err.status || 500).json({
+        error: err.message,
+        code: err.code,
+        details: err.details || null
+      });
+    }
 
-  // Axios/Sinch error normalization
-  if (err.response && err.response.data) {
-    normalized.status = err.response.status || 500;
-    normalized.type = "UpstreamServiceError";
-    normalized.details = err.response.data;
+    // -----------------------------
+    // 3. Axios Provider Errors
+    // -----------------------------
+    if (err.isAxiosError) {
+      audit.error("provider_http_error", {
+        provider: err.config?.provider,
+        status: err.response?.status,
+        message: err.message,
+        url: err.config?.url
+      });
+
+      return res.status(502).json({
+        error: "Provider communication failed",
+        provider: err.config?.provider || "unknown",
+        status: err.response?.status || null,
+        details: err.response?.data || err.message
+      });
+    }
+
+    // -----------------------------
+    // 4. Unexpected Errors
+    // -----------------------------
+    audit.error("unhandled_exception", {
+      message: err.message,
+      stack: err.stack,
+      path: req.originalUrl
+    });
+
+    return res.status(500).json({
+      error: "Internal server error",
+      message: err.message
+    });
+  } catch (fatal) {
+    // Failsafe: never let the error handler crash
+    console.error("FATAL ERROR IN ERROR HANDLER:", fatal);
+
+    return res.status(500).json({
+      error: "Critical error in error handler"
+    });
   }
-
-  // Log structured JSON
-  console.error(
-    JSON.stringify({
-      level: "error",
-      message: "Unhandled Error",
-      correlationId,
-      error: {
-        message: normalized.message,
-        type: normalized.type,
-        status: normalized.status,
-        details: normalized.details
-      }
-    })
-  );
-
-  // Send safe JSON response
-  res.status(normalized.status).json({
-    success: false,
-    error: normalized.message,
-    type: normalized.type,
-    details: normalized.details,
-    correlationId
-  });
 };
