@@ -1,18 +1,34 @@
-// src/middleware/auth.js
 const jwt = require("jsonwebtoken");
+const FaxNovaError = require("../errors/FaxNovaError");
 
-module.exports = function auth(req, res, next) {
-  const header = req.headers.authorization;
-  if (!header || !header.startsWith("Bearer ")) {
-    return res.status(401).json({ error: "Missing auth token" });
-  }
-
-  const token = header.slice(7);
+module.exports = async (req, res, next) => {
   try {
-    const payload = jwt.verify(token, process.env.JWT_ADMIN_SECRET);
-    req.user = payload;
+    const token = req.headers.authorization?.split(" ")[1];
+    if (!token) {
+      throw new FaxNovaError("Missing authentication token", {
+        code: "AUTH_TOKEN_MISSING"
+      });
+    }
+
+    const decoded = jwt.verify(token, process.env.JWT_SECRET);
+
+    // Attach user context
+    req.user = {
+      id: decoded.userId,
+      tenantId: decoded.tenantId,
+      role: decoded.role
+    };
+
+    // Critical fix: attach tenantId directly
+    req.tenantId = decoded.tenantId;
+
     next();
   } catch (err) {
-    return res.status(401).json({ error: "Invalid token" });
+    next(
+      new FaxNovaError("Invalid or expired token", {
+        code: "AUTH_INVALID",
+        details: err.message
+      })
+    );
   }
 };
