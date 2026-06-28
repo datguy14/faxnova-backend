@@ -1,142 +1,96 @@
 // src/services/providerPerformanceService.js
 
-/**
- * Provider Performance Service (FaxNova v1)
- *
- * Responsibilities:
- * - Track provider latency
- * - Track success/failure counts
- * - Compute rolling performance score
- * - Feed Routing Engine v2
- */
-
 const FaxNovaError = require("../errors/FaxNovaError");
-// If you later track per‑provider metrics in Mongo, you can wire that model here:
-// const ProviderPerformance = require("../models/ProviderPerformance");
 
-/**
- * Get health score (0–100) for a provider.
- *
- * For now, this is a simple static/scaled implementation.
- * Later you can replace it with real metrics:
- * - success rate
- * - average latency
- * - error rate
- * - SLA breaches
- */
-async function getHealthScore(providerName) {
-  // Basic guard
-  if (!["sinch", "telnyx"].includes(providerName)) {
-    throw new FaxNovaError("Invalid provider for health score", {
-      code: "PERFORMANCE_PROVIDER_INVALID",
-      providerName
-    });
-  }
-
-  // TODO: Replace with real metrics from DB or monitoring
-  // Example shape if you add a ProviderPerformance model:
-  //
-  // const perf = await ProviderPerformance.findOne({ provider: providerName });
-  // if (!perf) return 70; // default
-  // return perf.healthScore; // 0–100
-
-  // For now, simple defaults:
-  switch (providerName) {
-    case "sinch":
-      return 90; // assume strong performance
-    case "telnyx":
-      return 88; // slightly lower but still strong
-    default:
-      return 70;
-  }
-}
-
-module.exports = {
-  getHealthScore
-
-// In-memory performance store (Redis-ready structure)
-const performanceStore = {
+// In‑memory metrics (can later be moved to Redis)
+const metrics = {
   sinch: {
     successes: 0,
     failures: 0,
-    avgLatency: 0
+    totalLatencyMs: 0
   },
   telnyx: {
     successes: 0,
     failures: 0,
-    avgLatency: 0
+    totalLatencyMs: 0
   }
 };
 
 /**
- * Update latency (rolling average)
- */
-function updateLatency(provider, latencyMs) {
-  const p = performanceStore[provider];
-  if (!p) return;
-
-  if (p.avgLatency === 0) {
-    p.avgLatency = latencyMs;
-  } else {
-    p.avgLatency = Math.round((p.avgLatency + latencyMs) / 2);
-  }
-}
-
-/**
- * Record success
+ * Record a successful send with latency
  */
 function recordSuccess(provider, latencyMs) {
-  const p = performanceStore[provider];
-  if (!p) return;
+  if (!metrics[provider]) {
+    throw new FaxNovaError("Unknown provider for performance tracking", {
+      code: "PERF_PROVIDER_UNKNOWN",
+      provider
+    });
+  }
 
-  p.successes += 1;
-  updateLatency(provider, latencyMs);
+  metrics[provider].successes += 1;
+  metrics[provider].totalLatencyMs += latencyMs || 0;
 }
 
 /**
- * Record failure
+ * Record a failed send
  */
 function recordFailure(provider) {
-  const p = performanceStore[provider];
-  if (!p) return;
+  if (!metrics[provider]) {
+    throw new FaxNovaError("Unknown provider for performance tracking", {
+      code: "PERF_PROVIDER_UNKNOWN",
+      provider
+    });
+  }
 
-  p.failures += 1;
+  metrics[provider].failures += 1;
 }
 
 /**
- * Compute performance score
- *
- * Formula:
- *   base = successes * 2
- *   penalty = failures * 3
- *   latencyPenalty = avgLatency / 50
- *
- *   finalScore = base - penalty - latencyPenalty
+ * Compute a simple health score per provider
+ * (0–100, based on success rate + latency)
  */
-function computeScore(provider) {
-  const p = performanceStore[provider];
-  if (!p) return 0;
+function getHealthScore(provider) {
+  const m = metrics[provider];
+  if (!m) {
+    throw new FaxNovaError("Unknown provider for health score", {
+      code: "PERF_PROVIDER_UNKNOWN",
+      provider
+    });
+  }
 
-  const base = p.successes * 2;
-  const penalty = p.failures * 3;
-  const latencyPenalty = Math.round(p.avgLatency / 50);
+  const total = m.successes + m.failures;
+  if (total === 0) return 100; // no data yet → assume healthy
 
-  return Math.max(0, base - penalty - latencyPenalty);
+  const successRate = m.successes / total; // 0–1
+  const avgLatency =
+    m.successes > 0 ? m.totalLatencyMs / m.successes : 1000; // ms
+
+  // Very simple scoring: success rate weighted against latency
+  let score = successRate * 100;
+
+  if (avgLatency > 3000) score -= 30;
+  else if (avgLatency > 2000) score -= 20;
+  else if (avgLatency > 1000) score -= 10;
+
+  if (score < 0) score = 0;
+  if (score > 100) score = 100;
+
+  return Math.round(score);
 }
 
 /**
- * Get all provider scores
+ * Get scores for all providers (used by providerScoreCache + routingService.v2)
  */
-async function getScores() {
+function getScores() {
   return {
-    sinch: computeScore("sinch"),
-    telnyx: computeScore("telnyx")
+    sinch: getHealthScore("sinch"),
+    telnyx: getHealthScore("telnyx")
   };
 }
 
 module.exports = {
   recordSuccess,
   recordFailure,
-  getScores,
-  computeScore
+  getHealthScore,
+  getScores
 };
