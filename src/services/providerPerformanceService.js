@@ -46,8 +46,7 @@ function recordFailure(provider) {
 }
 
 /**
- * Compute a simple health score per provider
- * (0–100, based on success rate + latency)
+ * Compute a simple health score per provider (0–100)
  */
 function getHealthScore(provider) {
   const m = metrics[provider];
@@ -65,7 +64,7 @@ function getHealthScore(provider) {
   const avgLatency =
     m.successes > 0 ? m.totalLatencyMs / m.successes : 1000; // ms
 
-  // Very simple scoring: success rate weighted against latency
+  // Simple scoring: success rate weighted against latency
   let score = successRate * 100;
 
   if (avgLatency > 3000) score -= 30;
