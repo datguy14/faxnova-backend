@@ -4,13 +4,14 @@
  * Provider Billing Service (FaxNova v1)
  *
  * Responsibilities:
- * - Compute per‑fax cost
- * - Provide billing summary by tier
+ * - Compute per‑fax cost using unified OutboundFax model
  * - Residency + provider + tier aware
+ * - Deterministic pricing for analytics + invoices
  */
 
 const FaxNovaError = require("../errors/FaxNovaError");
 
+// Unified provider base rates
 const baseRates = {
   sinch: {
     us: 0.04,
@@ -23,6 +24,7 @@ const baseRates = {
   }
 };
 
+// Unified tier multipliers
 const tierMultipliers = {
   basic: 1.0,
   pro: 0.9,
@@ -30,12 +32,27 @@ const tierMultipliers = {
 };
 
 /**
- * Compute cost for a single fax
+ * Compute cost for a single outbound fax
  */
-function computeFaxCost({ provider, pages, residencyZone, tier }) {
+function computeFaxCost(outboundFax) {
+  if (!outboundFax) {
+    throw new FaxNovaError("Missing outbound fax record", {
+      code: "BILLING_FAX_MISSING"
+    });
+  }
+
+  const {
+    provider,
+    pages,
+    residencyZone,
+    tier,
+    faxId
+  } = outboundFax;
+
   if (!provider || !pages || !residencyZone || !tier) {
-    throw new FaxNovaError("Missing billing fields", {
-      code: "BILLING_FIELDS_MISSING"
+    throw new FaxNovaError("Outbound fax missing billing fields", {
+      code: "BILLING_FIELDS_MISSING",
+      faxId
     });
   }
 
@@ -43,7 +60,8 @@ function computeFaxCost({ provider, pages, residencyZone, tier }) {
   if (!providerRates) {
     throw new FaxNovaError("Invalid provider for billing", {
       code: "BILLING_PROVIDER_INVALID",
-      provider
+      provider,
+      faxId
     });
   }
 
@@ -53,6 +71,7 @@ function computeFaxCost({ provider, pages, residencyZone, tier }) {
   const cost = +(pages * rate * multiplier).toFixed(4);
 
   return {
+    faxId,
     provider,
     pages,
     residencyZone,
