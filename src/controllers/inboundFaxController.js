@@ -1,87 +1,150 @@
 // src/controllers/inboundFaxController.js
 
 const inboundFaxService = require("../services/inboundFaxService");
+const InboundFax = require("../models/InboundFax");
 const FaxNovaError = require("../errors/FaxNovaError");
-const audit = require("../utils/auditLogger");
-const tenantService = require("../services/tenantService"); // resolves tenant by inbound number
+const audit = require("../audit/auditService");
 
 module.exports = {
   /**
-   * POST /fax/inbound/:provider
+   * POST /inbound/:provider
    *
-   * Handles inbound fax webhooks from:
-   * - Sinch
-   * - Telnyx
-   *
-   * Steps:
-   * 1. Validate provider
-   * 2. Resolve tenant by inbound number
-   * 3. Process inbound fax
-   * 4. Return 200 OK to provider
+   * Handles inbound fax webhooks from Sinch or Telnyx.
    */
   async receiveInboundFax(req, res, next) {
     try {
-      const provider = req.params.provider?.toLowerCase();
-
-      if (!provider || !["sinch", "telnyx"].includes(provider)) {
-        throw new FaxNovaError("Unsupported inbound provider", {
-          code: "UNSUPPORTED_INBOUND_PROVIDER",
-          provider
-        });
-      }
-
-      const payload = req.body;
+      const provider = req.params.provider;
 
       // -----------------------------
-      // 1. Extract inbound number
+      // Tenant context
       // -----------------------------
-      const inboundNumber =
-        payload?.to ||
-        payload?.data?.payload?.to ||
-        null;
-
-      if (!inboundNumber) {
-        throw new FaxNovaError("Inbound fax missing destination number", {
-          code: "INBOUND_NUMBER_MISSING",
-          provider,
-          payload
-        });
-      }
-
-      // -----------------------------
-      // 2. Resolve tenant by inbound number
-      // -----------------------------
-      const tenantId = await tenantService.resolveTenantByNumber(inboundNumber);
-
+      const tenantId = req.tenantId || req.user?.tenantId;
       if (!tenantId) {
-        audit.error("inbound_fax_unassigned_number", {
-          provider,
-          inboundNumber
-        });
-
-        throw new FaxNovaError("No tenant assigned to inbound number", {
-          code: "TENANT_NOT_FOUND_FOR_INBOUND_NUMBER",
-          inboundNumber
+        throw new FaxNovaError("Missing tenant context", {
+          code: "TENANT_CONTEXT_MISSING"
         });
       }
 
       // -----------------------------
-      // 3. Process inbound fax
+      // Process inbound fax via provider adapter
       // -----------------------------
-      const record = await inboundFaxService.processInboundFax(
-        provider,
-        payload,
-        tenantId
-      );
+      const inboundResult = await inboundFaxService.handleInbound(provider, req.body);
 
       // -----------------------------
-      // 4. Provider requires 200 OK
+      // Save inbound fax record
       // -----------------------------
-      res.status(200).json({
-        message: "Inbound fax processed",
-        faxId: record.faxId,
-        tenantId
+      const faxRecord = await InboundFax.create({
+        tenantId,
+        provider,
+        from: inboundResult.from,
+        to: inboundResult.to,
+        pages: inboundResult.pages,
+        mediaUrl: inboundResult.mediaUrl,
+        residencyZone: inboundResult.residencyZone,
+        sovereignty: inboundResult.sovereignty,
+        jobId: inboundResult.jobId,
+        receivedAt: inboundResult.receivedAt || new Date()
       });
+
+      // -----------------------------
+      // Audit event
+      // -----------------------------
+      audit.logEvent({
+        tenantId,
+        type: "inbound_fax",
+        action: "received",
+        correlationId: req.correlationId,
+        ip: req.ip,
+        path: req.originalUrl,
+        method: req.method,
+        tier: req.apiTier,
+        details: {
+          provider,
+          jobId: inboundResult.jobId,
+          from: inboundResult.from,
+          to: inboundResult.to
+        }
+      });
+
+      res.status(200).json({
+        success: true,
+        message: "Inbound fax processed",
+        faxId: faxRecord._id,
+        provider,
+        jobId: inboundResult.jobId
+      });
+    } catch (err) {
+      audit.logEvent({
+        tenantId: req.tenantId || req.user?.tenantId,
+        type: "inbound_fax",
+        action: "receive_failed",
+        correlationId: req.correlationId,
+        ip: req.ip,
+        path: req.originalUrl,
+        method: req.method,
+        tier: req.apiTier,
+        details: { error: err.message }
+      });
+
+      next(err);
+    }
+  },
+
+  /**
+   * GET /inbound
+   *
+   * Paginated inbound fax list for tenant.
+   */
+  async listInboundFaxes(req, res, next) {
+    try {
+      const tenantId = req.tenantId || req.user?.tenantId;
+      if (!tenantId) {
+        throw new FaxNovaError("Missing tenant context", {
+          code: "TENANT_CONTEXT_MISSING"
+        });
+      }
+
+      const page = Number(req.query.page || 1);
+      const limit = Number(req.query.limit || 20);
+
+      const faxes = await InboundFax.find({ tenantId })
+        .sort({ receivedAt: -1 })
+        .skip((page - 1) * limit)
+        .limit(limit);
+
+      const total = await InboundFax.countDocuments({ tenantId });
+
+      res.status(200).json({
+        page,
+        limit,
+        total,
+        faxes
+      });
+    } catch (err) {
+      next(err);
+    }
+  },
+
+  /**
+   * GET /inbound/:id
+   *
+   * Fetch a single inbound fax record for the tenant.
+   */
+  async getInboundFaxById(req, res, next) {
+    try {
+      const tenantId = req.tenantId || req.user?.tenantId;
+      const faxId = req.params.id;
+
+      const fax = await InboundFax.findOne({ _id: faxId, tenantId });
+
+      if (!fax) {
+        throw new FaxNovaError("Inbound fax not found", {
+          code: "INBOUND_FAX_NOT_FOUND",
+          faxId
+        });
+      }
+
+      res.status(200).json(fax);
     } catch (err) {
       next(err);
     }
