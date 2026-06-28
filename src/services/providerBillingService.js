@@ -1,90 +1,104 @@
 // src/services/providerBillingService.js
 
-const providerRoutingRules = require("./providerRoutingRules");
 const FaxNovaError = require("../errors/FaxNovaError");
 
 /**
- * Billing Engine v1
+ * Billing Engine v2
  *
- * Computes:
- * - base cost per page (provider)
- * - residency multipliers
- * - tier discounts
- * - effective cost per page
+ * Produces:
+ * - cost per fax
+ * - billing score (0–100) for Routing Engine v2
+ *
+ * Billing score is inverted cost:
+ * - cheaper provider → higher score
+ * - expensive provider → lower score
+ *
+ * Score formula:
+ *   score = 100 - (normalizedCost * 100)
+ *
+ * Normalized cost = cost / MAX_COST
  */
 
-const TIER_DISCOUNTS = {
-  basic: 0,
-  pro: 0.10,
-  enterprise: 0.20
+const MAX_COST = 0.25; // highest possible cost per fax (for normalization)
+
+// Base provider rates (per page)
+const providerRates = {
+  sinch: 0.04,
+  telnyx: 0.05
 };
 
-const RESIDENCY_MULTIPLIERS = {
+// Residency zone multipliers
+const residencyMultipliers = {
   us: 1.0,
   eu: 1.15,
-  apac: 1.25,
-  latam: 1.10
+  global: 1.25
 };
 
-module.exports = {
-  /**
-   * Compute cost for a single fax.
-   */
-  computeFaxCost({ provider, pages, residencyZone, tier }) {
-    const rules = providerRoutingRules.getProvider(provider);
+// Tier multipliers
+const tierMultipliers = {
+  basic: 1.0,
+  pro: 0.9,
+  enterprise: 0.8
+};
 
-    if (!rules) {
-      throw new FaxNovaError("Unknown provider for billing", {
-        code: "UNKNOWN_PROVIDER",
-        provider
-      });
-    }
-
-    const baseRate = rules.costPerPage;
-    const residencyMultiplier = RESIDENCY_MULTIPLIERS[residencyZone] ?? 1.0;
-    const tierDiscount = TIER_DISCOUNTS[tier] ?? 0;
-
-    const effectiveRate = baseRate * residencyMultiplier * (1 - tierDiscount);
-    const totalCost = Number((effectiveRate * pages).toFixed(4));
-
-    return {
-      provider,
-      pages,
-      baseRate,
-      residencyZone,
-      residencyMultiplier,
-      tier,
-      tierDiscount,
-      effectiveRate: Number(effectiveRate.toFixed(4)),
-      totalCost
-    };
-  },
-
-  /**
-   * Billing summary for all providers (dashboard).
-   */
-  getBillingSummary(tier = "basic") {
-    const providers = providerRoutingRules.getAllProviders();
-
-    if (!providers || providers.length === 0) {
-      throw new FaxNovaError("No providers available for billing summary", {
-        code: "NO_PROVIDERS"
-      });
-    }
-
-    const tierDiscount = TIER_DISCOUNTS[tier] ?? 0;
-
-    return providers.map((p) => {
-      const residencyMultiplier = 1.0; // summary is residency‑agnostic
-      const effectiveCost = p.costPerPage * residencyMultiplier * (1 - tierDiscount);
-
-      return {
-        provider: p.name,
-        baseRate: p.costPerPage,
-        tier,
-        tierDiscount,
-        effectiveCost: Number(effectiveCost.toFixed(4))
-      };
+/**
+ * Compute cost for a fax
+ */
+function computeFaxCost({ provider, pages, residencyZone, tier }) {
+  if (!providerRates[provider]) {
+    throw new FaxNovaError("Invalid provider for billing", {
+      code: "BILLING_PROVIDER_INVALID",
+      provider
     });
   }
+
+  const baseRate = providerRates[provider];
+  const residencyMultiplier = residencyMultipliers[residencyZone] || 1.0;
+  const tierMultiplier = tierMultipliers[tier] || 1.0;
+
+  const cost = baseRate * pages * residencyMultiplier * tierMultiplier;
+
+  return {
+    provider,
+    pages,
+    residencyZone,
+    tier,
+    cost: Number(cost.toFixed(4))
+  };
+}
+
+/**
+ * Billing score (0–100)
+ *
+ * Lower cost → higher score
+ */
+function getBillingScore(provider) {
+  if (!providerRates[provider]) {
+    throw new FaxNovaError("Invalid provider for billing score", {
+      code: "BILLING_PROVIDER_INVALID",
+      provider
+    });
+  }
+
+  // Assume average fax:
+  const avgPages = 3;
+  const residencyZone = "us";
+  const tier = "basic";
+
+  const { cost } = computeFaxCost({
+    provider,
+    pages: avgPages,
+    residencyZone,
+    tier
+  });
+
+  const normalized = Math.min(cost / MAX_COST, 1);
+  const score = Math.round(100 * (1 - normalized));
+
+  return score;
+}
+
+module.exports = {
+  computeFaxCost,
+  getBillingScore
 };
