@@ -1,110 +1,81 @@
 // src/services/inboundFaxService.js
 
-const InboundFax = require("../models/InboundFax");
-
-const sinchInbound = require("../providers/sinchInboundAdapter");
-const telnyxInbound = require("../providers/telnyxInboundAdapter");
-
-const residencyEngine = require("./residencyEngine");
 const FaxNovaError = require("../errors/FaxNovaError");
-const audit = require("../utils/auditLogger");
 
-const PROVIDER_MAP = {
-  sinch: sinchInbound,
-  telnyx: telnyxInbound
+// Unified provider adapters
+const sinch = require("../providers/sinchAdapter");
+const telnyx = require("../providers/telnyxAdapter");
+
+// Provider map
+const inboundMap = {
+  sinch,
+  telnyx
 };
 
-module.exports = {
-  /**
-   * Normalize inbound payload and create inbound fax record.
-   *
-   * Steps:
-   * 1. Normalize provider payload
-   * 2. Detect residency + sovereignty
-   * 3. Resolve tenant (via toNumber)
-   * 4. Store inbound fax record
-   * 5. Emit audit event
-   */
-  async processInboundFax(provider, payload, tenantId) {
-    try {
-      const adapter = PROVIDER_MAP[provider];
+/**
+ * Normalize inbound fax payload from provider adapters.
+ * Each adapter MUST return:
+ * {
+ *   from,
+ *   to,
+ *   pages,
+ *   mediaUrl,
+ *   residencyZone,
+ *   sovereignty,
+ *   jobId,
+ *   receivedAt
+ * }
+ */
+function normalizeInbound(providerName, payload) {
+  const provider = inboundMap[providerName];
 
-      if (!adapter) {
-        throw new FaxNovaError("Unknown inbound provider", {
-          code: "UNKNOWN_INBOUND_PROVIDER",
-          provider
-        });
-      }
-
-      // -----------------------------
-      // 1. Normalize provider payload
-      // -----------------------------
-      const normalized = adapter.normalize(payload);
-
-      if (!normalized?.faxId || !normalized?.mediaUrl) {
-        throw new FaxNovaError("Invalid inbound fax payload", {
-          code: "INVALID_INBOUND_PAYLOAD",
-          provider,
-          payload
-        });
-      }
-
-      // -----------------------------
-      // 2. Residency + sovereignty
-      // -----------------------------
-      const residencyZone = residencyEngine.detectZone(normalized.to);
-      const sovereignty = residencyEngine.getSovereignty(residencyZone);
-
-      // -----------------------------
-      // 3. Tenant resolution
-      // (Already resolved in controller)
-      // -----------------------------
-      if (!tenantId) {
-        throw new FaxNovaError("Tenant resolution failed", {
-          code: "TENANT_RESOLUTION_FAILED",
-          to: normalized.to
-        });
-      }
-
-      // -----------------------------
-      // 4. Create inbound fax record
-      // -----------------------------
-      const record = await InboundFax.create({
-        faxId: normalized.faxId,
-        provider,
-        fromNumber: normalized.from,
-        toNumber: normalized.to,
-        pages: normalized.pages || 1,
-        mediaUrl: normalized.mediaUrl,
-        residencyZone,
-        sovereignty,
-        tenantId,
-        receivedAt: new Date()
-      });
-
-      // -----------------------------
-      // 5. Audit event
-      // -----------------------------
-      audit.log("inbound_fax_received", {
-        provider,
-        tenantId,
-        faxId: normalized.faxId,
-        residencyZone,
-        sovereignty
-      });
-
-      return record;
-    } catch (err) {
-      audit.error("inbound_fax_error", {
-        provider,
-        error: err.message
-      });
-
-      throw new FaxNovaError("Failed to process inbound fax", {
-        code: "INBOUND_FAX_ERROR",
-        provider,
-        details: err.message
-      });
-    }
+  if (!provider) {
+    throw new FaxNovaError("Invalid inbound provider", {
+      code: "INBOUND_PROVIDER_INVALID",
+      providerName
+    });
   }
+
+  const normalized = provider.normalizeInbound(payload);
+
+  if (!normalized || !normalized.from || !normalized.to) {
+    throw new FaxNovaError("Inbound fax normalization failed", {
+      code: "INBOUND_NORMALIZATION_FAILED",
+      providerName,
+      payload
+    });
+  }
+
+  return normalized;
+}
+
+/**
+ * Handle inbound fax webhook
+ */
+async function handleInbound(providerName, payload) {
+  try {
+    // Normalize inbound fax
+    const inbound = normalizeInbound(providerName, payload);
+
+    return {
+      from: inbound.from,
+      to: inbound.to,
+      pages: inbound.pages,
+      mediaUrl: inbound.mediaUrl,
+      residencyZone: inbound.residencyZone,
+      sovereignty: inbound.sovereignty,
+      jobId: inbound.jobId,
+      receivedAt: inbound.receivedAt || new Date()
+    };
+  } catch (err) {
+    throw new FaxNovaError("Inbound fax processing failed", {
+      code: "INBOUND_PROCESSING_FAILED",
+      providerName,
+      details: err.message
+    });
+  }
+}
+
+module.exports = {
+  handleInbound
 };
