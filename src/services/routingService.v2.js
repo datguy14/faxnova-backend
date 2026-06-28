@@ -1,103 +1,138 @@
 // src/services/routingService.v2.js
 
 const FaxNovaError = require("../errors/FaxNovaError");
-const providerRoutingRules = require("../providers/providerRoutingRules");
+const residencyEngine = require("./residencyEngine");
+const providerRouter = require("../providers/providerRouter");
 const providerPerformanceService = require("./providerPerformanceService");
 const providerOutageService = require("./providerOutageService");
-const providerBillingService = require("./providerBillingService");
+
+const sinch = require("../providers/sinchAdapter");
+const telnyx = require("../providers/telnyxAdapter");
+
+const audit = require("../audit/auditService");
+
+const providerMap = {
+  sinch,
+  telnyx
+};
 
 /**
- * Routing Engine v2
+ * Routing Service v2 (FaxNova v1)
  *
- * Inputs:
- * - tenantId
- * - residencyZone
- * - tier
- *
- * Outputs:
- * {
- *   provider: "sinch" | "telnyx",
- *   failoverProvider: "sinch" | "telnyx" | null,
- *   score: Number
- * }
+ * Responsibilities:
+ * - Resolve residency + sovereignty
+ * - Select best provider using Routing Engine v2
+ * - Send fax via selected provider
+ * - Track latency + performance
+ * - Track outages
+ * - Audit log routing + send events
  */
 
-async function selectProvider({ tenantId, residencyZone, tier }) {
-  if (!tenantId) {
-    throw new FaxNovaError("Missing tenant context", {
-      code: "TENANT_CONTEXT_MISSING"
-    });
-  }
+async function routeAndSendFax({
+  tenantId,
+  to,
+  from,
+  pages,
+  documentUrl,
+  tier
+}) {
+  try {
+    // ---------------------------------------------
+    // 1. Residency Resolution
+    // ---------------------------------------------
+    const residency = residencyEngine.resolveOutboundResidency({ to });
 
-  // -----------------------------
-  // 1. Load routing rules
-  // -----------------------------
-  const rules = providerRoutingRules.getRules({
-    residencyZone,
-    tier
-  });
+    const { zone: residencyZone, sovereignty } = residency;
 
-  if (!rules || !rules.providers) {
-    throw new FaxNovaError("Routing rules missing for zone/tier", {
-      code: "ROUTING_RULES_MISSING",
+    // ---------------------------------------------
+    // 2. Routing Engine v2 → Provider Selection
+    // ---------------------------------------------
+    const route = await providerRouter.routeProvider({
       residencyZone,
       tier
     });
-  }
 
-  const candidates = rules.providers; // ["sinch", "telnyx"]
+    const providerName = route.provider;
+    const provider = providerMap[providerName];
 
-  // -----------------------------
-  // 2. Score each provider
-  // -----------------------------
-  const scoredProviders = [];
+    if (!provider) {
+      throw new FaxNovaError("Invalid provider selected by routing engine", {
+        code: "ROUTING_PROVIDER_INVALID",
+        provider: providerName
+      });
+    }
 
-  for (const providerName of candidates) {
-    // Health score (0–100)
-    const healthScore = await providerPerformanceService.getHealthScore(providerName);
+    // ---------------------------------------------
+    // 3. Send Fax via Provider
+    // ---------------------------------------------
+    const start = Date.now();
 
-    // Outage score (0–100)
-    const outageScore = await providerOutageService.getOutageScore(providerName);
+    let result;
+    try {
+      result = await provider.sendFax({
+        to,
+        from,
+        pages,
+        documentUrl,
+        residencyZone,
+        tier
+      });
+    } catch (err) {
+      // Track outage
+      await providerOutageService.recordFailure(providerName);
 
-    // Billing score (0–100)
-    const billingScore = await providerBillingService.getBillingScore(providerName);
+      throw new FaxNovaError("Provider sendFax failed", {
+        code: "PROVIDER_SEND_FAILED",
+        provider: providerName,
+        details: err.message
+      });
+    }
 
-    // Weighted score
-    const weightedScore =
-      healthScore * rules.weights.health +
-      outageScore * rules.weights.outage +
-      billingScore * rules.weights.billing;
+    const latencyMs = Date.now() - start;
 
-    scoredProviders.push({
+    // ---------------------------------------------
+    // 4. Track Performance
+    // ---------------------------------------------
+    providerPerformanceService.recordSuccess(providerName, latencyMs);
+
+    // ---------------------------------------------
+    // 5. Audit Log
+    // ---------------------------------------------
+    audit.logEvent({
+      tenantId,
+      type: "fax_outbound",
+      action: "sent",
+      details: {
+        provider: providerName,
+        jobId: result.jobId,
+        residencyZone,
+        sovereignty,
+        tier,
+        latencyMs,
+        routingScore: route.score
+      }
+    });
+
+    // ---------------------------------------------
+    // 6. Return Routing + Provider Result
+    // ---------------------------------------------
+    return {
       provider: providerName,
-      healthScore,
-      outageScore,
-      billingScore,
-      weightedScore
+      jobId: result.jobId,
+      residencyZone,
+      sovereignty,
+      tier,
+      latencyMs,
+      routingScore: route.score
+    };
+  } catch (err) {
+    throw new FaxNovaError("RoutingService.v2 failed", {
+      code: "ROUTING_V2_FAILED",
+      details: err.message
     });
   }
-
-  // -----------------------------
-  // 3. Sort by weighted score
-  // -----------------------------
-  scoredProviders.sort((a, b) => b.weightedScore - a.weightedScore);
-
-  const primary = scoredProviders[0];
-  const failover = scoredProviders[1] || null;
-
-  if (!primary) {
-    throw new FaxNovaError("No valid provider available", {
-      code: "NO_PROVIDER_AVAILABLE"
-    });
-  }
-
-  return {
-    provider: primary.provider,
-    failoverProvider: failover ? failover.provider : null,
-    score: primary.weightedScore
-  };
 }
 
 module.exports = {
-  selectProvider
+  routeAndSendFax
 };
