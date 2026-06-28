@@ -1,133 +1,166 @@
 // src/services/outboundFaxService.js
-import OutboundFax from "../models/OutboundFax.js";
-import { providerRouter } from "./providerRouter.js";
-import { storageService } from "../storage/storageService.js";
-import { faxStatusService } from "./faxStatusService.js";
-import { auditService } from "../audit/auditService.js";
-import { residencyEngine } from "../residency/residencyEngine.js";
 
-export const outboundFaxService = {
-  /**
-   * Send a fax through the best provider.
-   * Handles routing, storage, metadata, and initial status.
-   */
-  async sendFax({ fileBuffer, fileName, toNumber, fromNumber, tenantId, apiKey }) {
-    // 1. Determine residency + sovereignty
-    const residency = residencyEngine.resolveOutbound({ toNumber });
+const FaxNovaError = require("../errors/FaxNovaError");
+const routingService = require("./routingService.v2");
+const sinch = require("../providers/sinchAdapter");
+const telnyx = require("../providers/telnyxAdapter");
+const audit = require("../audit/auditService");
 
-    // 2. Store media in correct residency zone
-    const storedMedia = await storageService.storeOutboundFax({
-      fileBuffer,
-      fileName,
-      residency
-    });
-
-    // 3. Select provider
-    const route = await providerRouter.routeFax({
-      toNumber,
-      tenantId,
-      apiKey
-    });
-
-    // 4. Create initial fax record
-    const faxRecord = await OutboundFax.create({
-      faxId: crypto.randomUUID(),
-      tenantId,
-      provider: route.provider,
-      toNumber,
-      fromNumber,
-      mediaUrl: storedMedia.url,
-      pages: 1,
-      status: "queued",
-      residencyZone: route.residencyZone,
-      sovereignty: route.sovereignty,
-      providerMetadata: route.providerMetadata,
-      sentAt: null,
-      deliveredAt: null
-    });
-
-    // 5. Send fax via provider integration
-    const providerClient = await loadProviderClient(route.provider);
-
-    const sendResult = await providerClient.sendFax({
-      faxId: faxRecord.faxId,
-      toNumber,
-      fromNumber,
-      mediaUrl: storedMedia.url
-    });
-
-    // 6. Update status to "sending"
-    await faxStatusService.markSending(faxRecord.faxId, sendResult);
-
-    // 7. Audit log
-    await auditService.log({
-      action: "OUTBOUND_FAX_SENT",
-      faxId: faxRecord.faxId,
-      tenantId,
-      provider: route.provider,
-      details: sendResult
-    });
-
-    return {
-      faxId: faxRecord.faxId,
-      provider: route.provider,
-      residencyZone: route.residencyZone,
-      sovereignty: route.sovereignty,
-      status: "sending"
-    };
-  },
-
-  /**
-   * Retry a failed fax with next-best provider.
-   */
-  async retryFax(faxId, apiKey) {
-    const fax = await OutboundFax.findOne({ faxId });
-    if (!fax) throw new Error("Fax not found");
-
-    // 1. Select next-best provider
-    const route = await providerRouter.routeFax({
-      toNumber: fax.toNumber,
-      tenantId: fax.tenantId,
-      apiKey
-    });
-
-    // 2. Send again
-    const providerClient = await loadProviderClient(route.provider);
-
-    const sendResult = await providerClient.sendFax({
-      faxId,
-      toNumber: fax.toNumber,
-      fromNumber: fax.fromNumber,
-      mediaUrl: fax.mediaUrl
-    });
-
-    // 3. Update fax record
-    fax.provider = route.provider;
-    fax.retries += 1;
-    fax.status = "retrying";
-    fax.providerMetadata = route.providerMetadata;
-    await fax.save();
-
-    // 4. Audit log
-    await auditService.log({
-      action: "OUTBOUND_FAX_RETRY",
-      faxId,
-      provider: route.provider,
-      details: sendResult
-    });
-
-    return {
-      faxId,
-      provider: route.provider,
-      status: "retrying"
-    };
-  }
+// Unified provider map
+const providerMap = {
+  sinch,
+  telnyx
 };
 
 /**
- * Dynamically load provider integration client.
+ * Send fax using Routing Engine v2
  */
-async function loadProviderClient(providerName) {
-  const module = await import(`../integrations/${providerName}Client.js`);
-  return module.default;
+async function sendFax({ tenantId, to, from, pages, documentUrl, residencyZone, tier }) {
+  try {
+    if (!tenantId) {
+      throw new FaxNovaError("Missing tenant context", {
+        code: "TENANT_CONTEXT_MISSING"
+      });
+    }
+
+    // -----------------------------
+    // 1. Routing Engine v2 selects provider
+    // -----------------------------
+    const route = await routingService.selectProvider({
+      tenantId,
+      residencyZone,
+      tier
+    });
+
+    const primaryProviderName = route.provider;
+    const failoverProviderName = route.failoverProvider;
+
+    const primaryProvider = providerMap[primaryProviderName];
+    const failoverProvider = providerMap[failoverProviderName];
+
+    if (!primaryProvider) {
+      throw new FaxNovaError("Invalid primary provider", {
+        code: "PRIMARY_PROVIDER_INVALID",
+        provider: primaryProviderName
+      });
+    }
+
+    // -----------------------------
+    // 2. Attempt primary provider
+    // -----------------------------
+    const start = Date.now();
+
+    try {
+      const result = await primaryProvider.sendFax({
+        to,
+        from,
+        pages,
+        documentUrl,
+        residencyZone,
+        tier
+      });
+
+      const latencyMs = Date.now() - start;
+
+      audit.logEvent({
+        tenantId,
+        type: "outbound_fax",
+        action: "sent_primary",
+        details: {
+          provider: primaryProviderName,
+          jobId: result.jobId,
+          latencyMs
+        }
+      });
+
+      return {
+        provider: primaryProviderName,
+        failoverProvider: null,
+        routingScore: route.score,
+        jobId: result.jobId,
+        latencyMs
+      };
+    } catch (err) {
+      // Primary failed — log it
+      audit.logEvent({
+        tenantId,
+        type: "outbound_fax",
+        action: "primary_failed",
+        details: {
+          provider: primaryProviderName,
+          error: err.message
+        }
+      });
+
+      // -----------------------------
+      // 3. Failover provider attempt
+      // -----------------------------
+      if (!failoverProvider) {
+        throw new FaxNovaError("Primary provider failed and no failover available", {
+          code: "NO_FAILOVER_AVAILABLE",
+          provider: primaryProviderName
+        });
+      }
+
+      const failoverStart = Date.now();
+
+      try {
+        const result = await failoverProvider.sendFax({
+          to,
+          from,
+          pages,
+          documentUrl,
+          residencyZone,
+          tier
+        });
+
+        const latencyMs = Date.now() - failoverStart;
+
+        audit.logEvent({
+          tenantId,
+          type: "outbound_fax",
+          action: "sent_failover",
+          details: {
+            provider: failoverProviderName,
+            jobId: result.jobId,
+            latencyMs
+          }
+        });
+
+        return {
+          provider: primaryProviderName,
+          failoverProvider: failoverProviderName,
+          routingScore: route.score,
+          jobId: result.jobId,
+          latencyMs
+        };
+      } catch (failoverErr) {
+        audit.logEvent({
+          tenantId,
+          type: "outbound_fax",
+          action: "failover_failed",
+          details: {
+            provider: failoverProviderName,
+            error: failoverErr.message
+          }
+        });
+
+        throw new FaxNovaError("Both primary and failover providers failed", {
+          code: "OUTBOUND_SEND_FAILED",
+          primaryProvider: primaryProviderName,
+          failoverProvider: failoverProviderName,
+          details: failoverErr.message
+        });
+      }
+    }
+  } catch (err) {
+    throw new FaxNovaError("Outbound fax processing failed", {
+      code: "OUTBOUND_PROCESSING_FAILED",
+      details: err.message
+    });
+  }
 }
+
+module.exports = {
+  sendFax
+};
