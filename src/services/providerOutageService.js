@@ -1,114 +1,107 @@
 // src/services/providerOutageService.js
 
-const NodeCache = require("node-cache");
-const audit = require("../audit/auditService");
+/**
+ * Provider Outage / Circuit Breaker Service (FaxNova v1)
+ *
+ * States:
+ * - CLOSED: provider healthy
+ * - OPEN: provider blocked (too many failures)
+ * - HALF_OPEN: probation mode after cooldown
+ */
+
 const FaxNovaError = require("../errors/FaxNovaError");
 
+// In-memory outage state (Redis-ready)
+const outages = {
+  sinch: {
+    state: "closed",
+    failures: 0,
+    lastFailureAt: null,
+    openedAt: null
+  },
+  telnyx: {
+    state: "closed",
+    failures: 0,
+    lastFailureAt: null,
+    openedAt: null
+  }
+};
+
+// Configurable thresholds
+const FAILURE_THRESHOLD = 3;          // failures before OPEN
+const COOLDOWN_MS = 15 * 60 * 1000;   // 15 minutes
+
 /**
- * Provider Outage Service (FaxNova v1)
- *
- * Responsibilities:
- * - Track provider failures
- * - Mark provider as "in outage" after threshold
- * - Auto-clear outage after cooldown
- * - Provide outage list for Routing Engine v2
- */
-
-const FAILURE_THRESHOLD = 3;       // failures before outage
-const COOLDOWN_MINUTES = 15;       // outage auto-clears after this time
-
-// Cache structure:
-// outage:{provider} = { failures, lastFailure }
-const outageCache = new NodeCache({
-  stdTTL: COOLDOWN_MINUTES * 60,
-  checkperiod: 60
-});
-
-/**
- * Record a provider failure.
- * If failures exceed threshold → mark outage.
+ * Record provider failure
  */
 async function recordFailure(provider) {
-  try {
-    const key = `outage:${provider}`;
-    const existing = outageCache.get(key) || { failures: 0, lastFailure: null };
-
-    const updated = {
-      failures: existing.failures + 1,
-      lastFailure: new Date()
-    };
-
-    outageCache.set(key, updated);
-
-    // Threshold exceeded → outage triggered
-    if (updated.failures >= FAILURE_THRESHOLD) {
-      await audit.logEvent({
-        type: "provider_outage",
-        action: "triggered",
-        details: {
-          provider,
-          failures: updated.failures,
-          lastFailure: updated.lastFailure
-        }
-      });
-    }
-
-    return updated;
-  } catch (err) {
-    throw new FaxNovaError("Failed to record provider failure", {
-      code: "OUTAGE_RECORD_FAILED",
-      details: err.message
+  const p = outages[provider];
+  if (!p) {
+    throw new FaxNovaError("Unknown provider for outage tracking", {
+      code: "OUTAGE_PROVIDER_UNKNOWN",
+      provider
     });
+  }
+
+  p.failures += 1;
+  p.lastFailureAt = new Date();
+
+  // OPEN circuit if threshold exceeded
+  if (p.failures >= FAILURE_THRESHOLD && p.state !== "open") {
+    p.state = "open";
+    p.openedAt = new Date();
   }
 }
 
 /**
- * Returns list of providers currently in outage.
+ * Auto-transition OPEN → HALF_OPEN after cooldown
  */
-async function getActiveOutages() {
-  const keys = outageCache.keys();
+function evaluateState(provider) {
+  const p = outages[provider];
+  if (!p || p.state !== "open") return;
 
-  return keys
-    .filter((k) => k.startsWith("outage:"))
-    .map((k) => {
-      const provider = k.replace("outage:", "");
-      const data = outageCache.get(k);
+  const now = Date.now();
+  const opened = p.openedAt?.getTime() || 0;
 
-      return {
-        provider,
-        failures: data.failures,
-        lastFailure: data.lastFailure,
-        expiresInSeconds: outageCache.getTtl(k)
-          ? Math.floor((outageCache.getTtl(k) - Date.now()) / 1000)
-          : 0
-      };
-    });
+  if (now - opened >= COOLDOWN_MS) {
+    p.state = "half-open";
+    p.failures = 0; // reset failure counter for probation
+  }
 }
 
 /**
- * Clear outage for a provider (manual reset).
+ * Record provider success
+ * - If HALF_OPEN → CLOSED
  */
-async function clearOutage(provider) {
-  try {
-    outageCache.del(`outage:${provider}`);
-
-    await audit.logEvent({
-      type: "provider_outage",
-      action: "cleared",
-      details: { provider }
-    });
-
-    return true;
-  } catch (err) {
-    throw new FaxNovaError("Failed to clear provider outage", {
-      code: "OUTAGE_CLEAR_FAILED",
-      details: err.message
+async function recordSuccess(provider) {
+  const p = outages[provider];
+  if (!p) {
+    throw new FaxNovaError("Unknown provider for outage tracking", {
+      code: "OUTAGE_PROVIDER_UNKNOWN",
+      provider
     });
   }
+
+  // HALF_OPEN → CLOSED (provider recovered)
+  if (p.state === "half-open") {
+    p.state = "closed";
+    p.failures = 0;
+    p.openedAt = null;
+  }
+}
+
+/**
+ * Get outage states (with auto-evaluation)
+ */
+async function getOutageStates() {
+  evaluateState("sinch");
+  evaluateState("telnyx");
+
+  return outages;
 }
 
 module.exports = {
   recordFailure,
-  getActiveOutages,
-  clearOutage
+  recordSuccess,
+  getOutageStates
 };
