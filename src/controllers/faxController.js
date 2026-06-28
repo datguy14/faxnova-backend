@@ -15,30 +15,24 @@ module.exports = {
    * 2. Extract tenantId from auth middleware
    * 3. Call sendFaxService
    * 4. Save fax record
-   * 5. Return response
+   * 5. Audit event
+   * 6. Return response
    */
   async sendFax(req, res, next) {
     try {
-      // -----------------------------
       // 1. Validate request body
-      // -----------------------------
       const parsed = sendFaxSchema.parse(req.body);
-
       const { to, from, pages, documentUrl, residencyZone, tier } = parsed;
 
-      // -----------------------------
       // 2. Tenant ID from auth middleware
-      // -----------------------------
-      const tenantId = req.tenantId;
+      const tenantId = req.tenantId || req.user?.tenantId;
       if (!tenantId) {
         throw new FaxNovaError("Missing tenant context", {
           code: "TENANT_CONTEXT_MISSING"
         });
       }
 
-      // -----------------------------
       // 3. Send fax via Routing Engine v2
-      // -----------------------------
       const result = await sendFaxService.sendFax({
         residencyZone,
         tier,
@@ -48,9 +42,7 @@ module.exports = {
         documentUrl
       });
 
-      // -----------------------------
       // 4. Save fax record
-      // -----------------------------
       const faxRecord = await Fax.create({
         tenantId,
         provider: result.provider,
@@ -67,9 +59,7 @@ module.exports = {
         latencyMs: result.latencyMs
       });
 
-      // -----------------------------
       // 5. Audit event
-      // -----------------------------
       audit.log("fax_sent", {
         tenantId,
         provider: result.provider,
@@ -79,9 +69,7 @@ module.exports = {
         tier
       });
 
-      // -----------------------------
       // 6. Response
-      // -----------------------------
       res.status(200).json({
         message: "Fax sent successfully",
         faxId: faxRecord._id,
@@ -102,7 +90,7 @@ module.exports = {
    */
   async getFaxById(req, res, next) {
     try {
-      const tenantId = req.tenantId;
+      const tenantId = req.tenantId || req.user?.tenantId;
       const faxId = req.params.id;
 
       const fax = await Fax.findOne({ _id: faxId, tenantId });
@@ -127,7 +115,7 @@ module.exports = {
    */
   async listFaxes(req, res, next) {
     try {
-      const tenantId = req.tenantId;
+      const tenantId = req.tenantId || req.user?.tenantId;
 
       const page = Number(req.query.page || 1);
       const limit = Number(req.query.limit || 20);
