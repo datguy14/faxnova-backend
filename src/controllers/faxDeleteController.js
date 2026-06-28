@@ -1,23 +1,30 @@
 // src/controllers/faxDeleteController.js
 
-const Fax = require('../models/Fax');
-const audit = require('../audit/auditService');
+const Fax = require("../models/Fax");
+const audit = require("../audit/auditService");
+const FaxNovaError = require("../errors/FaxNovaError");
 
-exports.deleteFaxController = async (req, res) => {
+exports.deleteFaxController = async (req, res, next) => {
   try {
+    const tenantId = req.tenantId || req.user?.tenantId;
+    if (!tenantId) {
+      throw new FaxNovaError("Missing tenant context", {
+        code: "TENANT_CONTEXT_MISSING"
+      });
+    }
+
     const { faxId } = req.params;
 
-    // Lookup fax
-    const fax = await Fax.findOne({
-      _id: faxId,
-      tenantId: req.tenantId
-    });
+    // -----------------------------
+    // Lookup fax (tenant‑scoped)
+    // -----------------------------
+    const fax = await Fax.findOne({ _id: faxId, tenantId });
 
     if (!fax) {
       audit.logEvent({
-        tenantId: req.tenantId,
-        type: 'fax',
-        action: 'delete_failed_not_found',
+        tenantId,
+        type: "fax",
+        action: "delete_failed_not_found",
         correlationId: req.correlationId,
         ip: req.ip,
         path: req.originalUrl,
@@ -28,19 +35,23 @@ exports.deleteFaxController = async (req, res) => {
 
       return res.status(404).json({
         success: false,
-        error: 'Fax not found',
+        error: "Fax not found",
         correlationId: req.correlationId
       });
     }
 
+    // -----------------------------
     // Delete fax
-    await Fax.deleteOne({ _id: faxId });
+    // -----------------------------
+    await Fax.deleteOne({ _id: faxId, tenantId });
 
+    // -----------------------------
     // Audit: delete success
+    // -----------------------------
     audit.logEvent({
-      tenantId: req.tenantId,
-      type: 'fax',
-      action: 'delete_success',
+      tenantId,
+      type: "fax",
+      action: "delete_success",
       correlationId: req.correlationId,
       ip: req.ip,
       path: req.originalUrl,
@@ -52,20 +63,23 @@ exports.deleteFaxController = async (req, res) => {
       }
     });
 
+    // -----------------------------
+    // Response
+    // -----------------------------
     res.json({
       success: true,
-      message: 'Fax deleted successfully',
+      message: "Fax deleted successfully",
       faxId,
       correlationId: req.correlationId
     });
 
   } catch (err) {
-    console.error('Fax delete error:', err.message);
+    console.error("Fax delete error:", err.message);
 
     audit.logEvent({
-      tenantId: req.tenantId,
-      type: 'fax',
-      action: 'delete_failed',
+      tenantId: req.tenantId || req.user?.tenantId,
+      type: "fax",
+      action: "delete_failed",
       correlationId: req.correlationId,
       ip: req.ip,
       path: req.originalUrl,
@@ -74,10 +88,11 @@ exports.deleteFaxController = async (req, res) => {
       details: { error: err.message }
     });
 
-    res.status(500).json({
-      success: false,
-      error: 'Failed to delete fax',
-      correlationId: req.correlationId
-    });
+    next(
+      new FaxNovaError("Failed to delete fax", {
+        code: "FAX_DELETE_FAILED",
+        details: err.message
+      })
+    );
   }
 };
