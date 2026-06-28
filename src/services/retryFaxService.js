@@ -2,136 +2,87 @@
 
 const FaxNovaError = require("../errors/FaxNovaError");
 const OutboundFax = require("../models/OutboundFax");
-const providerRouter = require("../providers/providerRouter");
+const { routeAndSendFax } = require("./routingService.v2");
 const providerOutageService = require("./providerOutageService");
-const sinch = require("../providers/sinchAdapter");
-const telnyx = require("../providers/telnyxAdapter");
 const audit = require("../audit/auditService");
 
-const providerMap = {
-  sinch,
-  telnyx
-};
-
-/**
- * Retry Fax Service (FaxNova v1)
- *
- * Responsibilities:
- * - Validate fax exists + belongs to tenant
- * - Re-route using Routing Engine v2
- * - Attempt retry with new provider
- * - Track provider outages
- * - Update fax record
- * - Audit log retry event
- */
-
-async function retryFax({ tenantId, faxId }) {
+async function retryFax(faxId) {
   try {
-    // -----------------------------
-    // 1. Load fax record
-    // -----------------------------
-    const fax = await OutboundFax.findOne({ _id: faxId, tenantId });
+    if (!faxId) {
+      throw new FaxNovaError("Missing faxId for retry", {
+        code: "RETRY_FAXID_MISSING"
+      });
+    }
 
+    // Unified outbound fax lookup
+    const fax = await OutboundFax.findOne({ faxId });
     if (!fax) {
-      throw new FaxNovaError("Fax not found for retry", {
-        code: "FAX_NOT_FOUND",
+      throw new FaxNovaError("Outbound fax not found", {
+        code: "OUTBOUND_FAX_NOT_FOUND",
         faxId
       });
     }
 
-    // -----------------------------
-    // 2. Routing Engine v2 (fresh route)
-    // -----------------------------
-    const route = await providerRouter.routeProvider({
-      residencyZone: fax.residencyZone,
-      tier: fax.tier
+    // Prevent retrying delivered faxes
+    if (fax.status === "delivered") {
+      throw new FaxNovaError("Cannot retry delivered fax", {
+        code: "RETRY_DELIVERED_FAX",
+        faxId
+      });
+    }
+
+    // Mark provider failure for outage tracking
+    await providerOutageService.recordFailure(fax.provider);
+
+    // Route + Send via Routing Engine v2 (failover aware)
+    const result = await routeAndSendFax({
+      tenantId: fax.tenantId,
+      to: fax.to,
+      from: fax.from,
+      pages: fax.pages,
+      documentUrl: fax.documentUrl,
+      tier: fax.tier,
+      faxId: fax.faxId, // unified FaxNova ID
+      retry: true
     });
 
-    const newProviderName = route.provider;
-    const newProvider = providerMap[newProviderName];
-
-    if (!newProvider) {
-      throw new FaxNovaError("Invalid provider for retry", {
-        code: "RETRY_PROVIDER_INVALID",
-        provider: newProviderName
-      });
-    }
-
-    // -----------------------------
-    // 3. Attempt retry
-    // -----------------------------
-    let jobId;
-    const start = Date.now();
-
-    try {
-      const result = await newProvider.sendFax({
-        to: fax.to,
-        from: fax.from,
-        pages: fax.pages,
-        documentUrl: fax.documentUrl,
-        residencyZone: fax.residencyZone,
-        tier: fax.tier
-      });
-
-      jobId = result.jobId;
-    } catch (err) {
-      // Track outage for provider
-      await providerOutageService.recordFailure(newProviderName);
-
-      throw new FaxNovaError("Retry attempt failed", {
-        code: "RETRY_FAILED",
-        provider: newProviderName,
-        details: err.message
-      });
-    }
-
-    const latencyMs = Date.now() - start;
-
-    // -----------------------------
-    // 4. Update fax record
-    // -----------------------------
-    fax.provider = newProviderName;
-    fax.failoverProvider = null;
-    fax.jobId = jobId;
+    // Update fax record with failover provider + new jobId
+    fax.failoverProvider = result.provider;
+    fax.jobId = result.jobId;
     fax.status = "sending";
-    fax.latencyMs = latencyMs;
-    fax.routingScore = route.score;
-    fax.errorCode = null;
-    fax.errorMessage = null;
+    fax.latencyMs = result.latencyMs;
+    fax.routingScore = result.routingScore;
 
     await fax.save();
 
-    // -----------------------------
-    // 5. Audit log
-    // -----------------------------
+    // Audit
     audit.logEvent({
-      tenantId,
-      type: "fax_retry",
-      action: "retry_success",
+      tenantId: fax.tenantId,
+      type: "fax_outbound",
+      action: "retry",
       details: {
-        faxId,
-        provider: newProviderName,
-        jobId,
-        latencyMs,
-        routingScore: route.score
+        faxId: fax.faxId,
+        originalProvider: fax.provider,
+        failoverProvider: result.provider,
+        jobId: result.jobId,
+        latencyMs: result.latencyMs,
+        routingScore: result.routingScore
       }
     });
 
     return {
-      faxId,
-      provider: newProviderName,
-      jobId,
-      latencyMs,
-      routingScore: route.score
+      faxId: fax.faxId,
+      provider: result.provider,
+      jobId: result.jobId,
+      latencyMs: result.latencyMs,
+      routingScore: result.routingScore
     };
   } catch (err) {
-    throw new FaxNovaError("Fax retry processing failed", {
-      code: "FAX_RETRY_FAILED",
+    throw new FaxNovaError("RetryFaxService failed", {
+      code: "RETRY_FAX_FAILED",
       details: err.message
     });
   }
 }
 
-module.exports = {
-  retryFax
-};
+module.exports = { retryFax };
