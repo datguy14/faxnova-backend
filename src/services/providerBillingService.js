@@ -1,40 +1,28 @@
 // src/services/providerBillingService.js
 
-const FaxNovaError = require("../errors/FaxNovaError");
-
 /**
- * Billing Engine v2
+ * Provider Billing Service (FaxNova v1)
  *
- * Produces:
- * - cost per fax
- * - billing score (0–100) for Routing Engine v2
- *
- * Billing score is inverted cost:
- * - cheaper provider → higher score
- * - expensive provider → lower score
- *
- * Score formula:
- *   score = 100 - (normalizedCost * 100)
- *
- * Normalized cost = cost / MAX_COST
+ * Responsibilities:
+ * - Compute per‑fax cost
+ * - Provide billing summary by tier
+ * - Residency + provider + tier aware
  */
 
-const MAX_COST = 0.25; // highest possible cost per fax (for normalization)
+const FaxNovaError = require("../errors/FaxNovaError");
 
-// Base provider rates (per page)
-const providerRates = {
-  sinch: 0.04,
-  telnyx: 0.05
+const baseRates = {
+  sinch: {
+    us: 0.04,
+    global: 0.05
+  },
+  telnyx: {
+    us: 0.03,
+    eu: 0.035,
+    global: 0.045
+  }
 };
 
-// Residency zone multipliers
-const residencyMultipliers = {
-  us: 1.0,
-  eu: 1.15,
-  global: 1.25
-};
-
-// Tier multipliers
 const tierMultipliers = {
   basic: 1.0,
   pro: 0.9,
@@ -42,63 +30,64 @@ const tierMultipliers = {
 };
 
 /**
- * Compute cost for a fax
+ * Compute cost for a single fax
  */
 function computeFaxCost({ provider, pages, residencyZone, tier }) {
-  if (!providerRates[provider]) {
+  if (!provider || !pages || !residencyZone || !tier) {
+    throw new FaxNovaError("Missing billing fields", {
+      code: "BILLING_FIELDS_MISSING"
+    });
+  }
+
+  const providerRates = baseRates[provider];
+  if (!providerRates) {
     throw new FaxNovaError("Invalid provider for billing", {
       code: "BILLING_PROVIDER_INVALID",
       provider
     });
   }
 
-  const baseRate = providerRates[provider];
-  const residencyMultiplier = residencyMultipliers[residencyZone] || 1.0;
-  const tierMultiplier = tierMultipliers[tier] || 1.0;
+  const rate = providerRates[residencyZone] || providerRates.global;
+  const multiplier = tierMultipliers[tier] || tierMultipliers.basic;
 
-  const cost = baseRate * pages * residencyMultiplier * tierMultiplier;
+  const cost = +(pages * rate * multiplier).toFixed(4);
 
   return {
     provider,
     pages,
     residencyZone,
     tier,
-    cost: Number(cost.toFixed(4))
+    rate,
+    multiplier,
+    cost
   };
 }
 
 /**
- * Billing score (0–100)
- *
- * Lower cost → higher score
+ * Billing summary for dashboard
  */
-function getBillingScore(provider) {
-  if (!providerRates[provider]) {
-    throw new FaxNovaError("Invalid provider for billing score", {
-      code: "BILLING_PROVIDER_INVALID",
-      provider
-    });
-  }
+function getBillingSummary(tier = "basic") {
+  const multiplier = tierMultipliers[tier] || tierMultipliers.basic;
 
-  // Assume average fax:
-  const avgPages = 3;
-  const residencyZone = "us";
-  const tier = "basic";
+  const summary = Object.entries(baseRates).map(([provider, zones]) => {
+    const zoneRates = Object.entries(zones).map(([zone, rate]) => ({
+      zone,
+      rate,
+      effectiveRate: +(rate * multiplier).toFixed(4)
+    }));
 
-  const { cost } = computeFaxCost({
-    provider,
-    pages: avgPages,
-    residencyZone,
-    tier
+    return {
+      provider,
+      tier,
+      multiplier,
+      zones: zoneRates
+    };
   });
 
-  const normalized = Math.min(cost / MAX_COST, 1);
-  const score = Math.round(100 * (1 - normalized));
-
-  return score;
+  return summary;
 }
 
 module.exports = {
   computeFaxCost,
-  getBillingScore
+  getBillingSummary
 };
