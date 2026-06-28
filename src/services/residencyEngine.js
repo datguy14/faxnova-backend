@@ -1,119 +1,144 @@
 // src/services/residencyEngine.js
 
 /**
- * Residency Engine v1
+ * Residency Engine (FaxNova v1)
  *
  * Responsibilities:
- * - Map phone numbers to residency zones (us, eu, apac, latam, ca)
- * - Map zones to sovereignty labels
+ * - Map phone numbers → country → residency zone
+ * - Apply sovereignty rules
+ * - Normalize inbound + outbound residency metadata
  *
- * This is intentionally simple and deterministic for FaxNova v1.
+ * Zones:
+ * - us
+ * - eu
+ * - global
+ *
+ * Sovereignty:
+ * - domestic
+ * - foreign
  */
 
-const ZONES = {
-  us: {
-    sovereignty: "us",
-    countries: ["US", "PR"]
-  },
-  ca: {
-    sovereignty: "ca",
-    countries: ["CA"]
-  },
-  eu: {
-    sovereignty: "eu",
-    countries: [
-      "GB",
-      "DE",
-      "FR",
-      "ES",
-      "IT",
-      "NL",
-      "SE",
-      "NO",
-      "DK",
-      "FI",
-      "IE",
-      "BE",
-      "AT",
-      "PT",
-      "PL"
-    ]
-  },
-  apac: {
-    sovereignty: "apac",
-    countries: ["AU", "NZ", "JP", "SG", "HK"]
-  },
-  latam: {
-    sovereignty: "latam",
-    countries: ["MX", "BR", "AR", "CL", "CO", "PE"]
-  }
+const FaxNovaError = require("../errors/FaxNovaError");
+
+// Country → residency zone mapping
+const COUNTRY_TO_ZONE = {
+  US: "us",
+  CA: "global",
+  MX: "global",
+
+  // EU countries
+  DE: "eu",
+  FR: "eu",
+  NL: "eu",
+  IT: "eu",
+  ES: "eu",
+  SE: "eu",
+  PL: "eu",
+  BE: "eu",
+  AT: "eu",
+  DK: "eu",
+  FI: "eu",
+  GR: "eu",
+  IE: "eu",
+  LU: "eu",
+  PT: "eu",
+
+  // Everything else
+  DEFAULT: "global"
 };
 
 /**
- * Very simple E.164 country detection:
- * - +1 → US/CA (we treat non‑CA as US)
- * - +44 → GB (EU)
- * - +33 → FR (EU)
- * - +49 → DE (EU)
- * - +61 → AU (APAC)
- * - +81 → JP (APAC)
- * - +55 → BR (LATAM)
- * - +52 → MX (LATAM)
- *
- * For FaxNova v1 this is enough; later you can swap in a full library.
+ * Extract country code from E.164 number
  */
-function detectCountryFromNumber(number) {
-  if (!number) return null;
+function extractCountryCode(number) {
+  if (!number || typeof number !== "string") return null;
 
-  const n = number.replace(/\s+/g, "");
+  // Remove + and non-digits
+  const cleaned = number.replace(/[^\d]/g, "");
 
-  if (n.startsWith("+1")) {
-    // crude split: assume CA if explicitly flagged later; default US
-    return "US";
-  }
-  if (n.startsWith("+44")) return "GB";
-  if (n.startsWith("+33")) return "FR";
-  if (n.startsWith("+49")) return "DE";
-  if (n.startsWith("+61")) return "AU";
-  if (n.startsWith("+81")) return "JP";
-  if (n.startsWith("+55")) return "BR";
-  if (n.startsWith("+52")) return "MX";
+  // Basic E.164 country detection
+  if (cleaned.startsWith("1")) return "US"; // NANP
+  if (cleaned.startsWith("33")) return "FR";
+  if (cleaned.startsWith("49")) return "DE";
+  if (cleaned.startsWith("34")) return "ES";
+  if (cleaned.startsWith("31")) return "NL";
+  if (cleaned.startsWith("39")) return "IT";
+  if (cleaned.startsWith("46")) return "SE";
+  if (cleaned.startsWith("48")) return "PL";
+  if (cleaned.startsWith("32")) return "BE";
+  if (cleaned.startsWith("43")) return "AT";
+  if (cleaned.startsWith("45")) return "DK";
+  if (cleaned.startsWith("358")) return "FI";
+  if (cleaned.startsWith("30")) return "GR";
+  if (cleaned.startsWith("353")) return "IE";
+  if (cleaned.startsWith("352")) return "LU";
+  if (cleaned.startsWith("351")) return "PT";
 
   return null;
 }
 
-function zoneForCountry(country) {
-  if (!country) return "us"; // safe default
+/**
+ * Map country → residency zone
+ */
+function resolveZoneFromCountry(countryCode) {
+  if (!countryCode) return COUNTRY_TO_ZONE.DEFAULT;
+  return COUNTRY_TO_ZONE[countryCode] || COUNTRY_TO_ZONE.DEFAULT;
+}
 
-  for (const [zone, cfg] of Object.entries(ZONES)) {
-    if (cfg.countries.includes(country)) return zone;
+/**
+ * Resolve sovereignty
+ */
+function resolveSovereignty(zone) {
+  return zone === "us" ? "domestic" : "foreign";
+}
+
+/**
+ * Outbound residency resolution
+ */
+function resolveOutboundResidency({ to }) {
+  if (!to) {
+    throw new FaxNovaError("Missing outbound number", {
+      code: "OUTBOUND_RESIDENCY_MISSING"
+    });
   }
 
-  return "us"; // fallback
+  const country = extractCountryCode(to);
+  const zone = resolveZoneFromCountry(country);
+  const sovereignty = resolveSovereignty(zone);
+
+  return {
+    zone,
+    sovereignty
+  };
+}
+
+/**
+ * Inbound residency resolution
+ */
+function resolveInboundResidency({ from, residencyZone, sovereignty }) {
+  // Provider adapters already supply residencyZone + sovereignty
+  if (residencyZone && sovereignty) {
+    return {
+      zone: residencyZone,
+      sovereignty
+    };
+  }
+
+  // Fallback: detect from inbound caller
+  const country = extractCountryCode(from);
+  const zone = resolveZoneFromCountry(country);
+  const sov = resolveSovereignty(zone);
+
+  return {
+    zone,
+    sovereignty: sov
+  };
 }
 
 module.exports = {
-  /**
-   * Detect residency zone from a phone number.
-   *
-   * Returns one of: "us", "ca", "eu", "apac", "latam"
-   */
-  detectZone(number) {
-    const country = detectCountryFromNumber(number);
-    return zoneForCountry(country);
-  },
-
-  /**
-   * Get sovereignty label from residency zone.
-   *
-   * Example:
-   *  - "us"   → "us"
-   *  - "eu"   → "eu"
-   *  - "apac" → "apac"
-   */
-  getSovereignty(zone) {
-    const cfg = ZONES[zone];
-    if (!cfg) return "us";
-    return cfg.sovereignty;
-  }
+  extractCountryCode,
+  resolveZoneFromCountry,
+  resolveSovereignty,
+  resolveOutboundResidency,
+  resolveInboundResidency
 };

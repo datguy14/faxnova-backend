@@ -1,123 +1,103 @@
 // src/services/routingService.v2.js
 
-const providerHealthService = require("./providerHealthService");
-const providerBillingService = require("./providerBillingService");
-const providerRoutingRules = require("./providerRoutingRules");
-
 const FaxNovaError = require("../errors/FaxNovaError");
+const providerRoutingRules = require("../providers/providerRoutingRules");
+const providerPerformanceService = require("./providerPerformanceService");
+const providerOutageService = require("./providerOutageService");
+const providerBillingService = require("./providerBillingService");
 
 /**
  * Routing Engine v2
  *
- * Scoring Weights:
- * - latency:   25%
- * - success:   30%
- * - cost:      20%
- * - residency: 15%
- * - outage:    10%
+ * Inputs:
+ * - tenantId
+ * - residencyZone
+ * - tier
+ *
+ * Outputs:
+ * {
+ *   provider: "sinch" | "telnyx",
+ *   failoverProvider: "sinch" | "telnyx" | null,
+ *   score: Number
+ * }
  */
 
-const WEIGHTS = {
-  latency: 0.25,
-  success: 0.30,
-  cost: 0.20,
-  residency: 0.15,
-  outage: 0.10
-};
+async function selectProvider({ tenantId, residencyZone, tier }) {
+  if (!tenantId) {
+    throw new FaxNovaError("Missing tenant context", {
+      code: "TENANT_CONTEXT_MISSING"
+    });
+  }
 
-/**
- * Normalize latency score (0–1)
- */
-function normalizeLatency(ms) {
-  if (!ms) return 0.5;
-  if (ms <= 200) return 1.0;
-  if (ms <= 800) return 0.5;
-  return 0.2;
-}
+  // -----------------------------
+  // 1. Load routing rules
+  // -----------------------------
+  const rules = providerRoutingRules.getRules({
+    residencyZone,
+    tier
+  });
 
-/**
- * Normalize cost score (0–1)
- */
-function normalizeCost(ratePerPage) {
-  if (!ratePerPage) return 0.5;
-  if (ratePerPage <= 0.03) return 1.0;
-  if (ratePerPage <= 0.06) return 0.6;
-  return 0.3;
+  if (!rules || !rules.providers) {
+    throw new FaxNovaError("Routing rules missing for zone/tier", {
+      code: "ROUTING_RULES_MISSING",
+      residencyZone,
+      tier
+    });
+  }
+
+  const candidates = rules.providers; // ["sinch", "telnyx"]
+
+  // -----------------------------
+  // 2. Score each provider
+  // -----------------------------
+  const scoredProviders = [];
+
+  for (const providerName of candidates) {
+    // Health score (0–100)
+    const healthScore = await providerPerformanceService.getHealthScore(providerName);
+
+    // Outage score (0–100)
+    const outageScore = await providerOutageService.getOutageScore(providerName);
+
+    // Billing score (0–100)
+    const billingScore = await providerBillingService.getBillingScore(providerName);
+
+    // Weighted score
+    const weightedScore =
+      healthScore * rules.weights.health +
+      outageScore * rules.weights.outage +
+      billingScore * rules.weights.billing;
+
+    scoredProviders.push({
+      provider: providerName,
+      healthScore,
+      outageScore,
+      billingScore,
+      weightedScore
+    });
+  }
+
+  // -----------------------------
+  // 3. Sort by weighted score
+  // -----------------------------
+  scoredProviders.sort((a, b) => b.weightedScore - a.weightedScore);
+
+  const primary = scoredProviders[0];
+  const failover = scoredProviders[1] || null;
+
+  if (!primary) {
+    throw new FaxNovaError("No valid provider available", {
+      code: "NO_PROVIDER_AVAILABLE"
+    });
+  }
+
+  return {
+    provider: primary.provider,
+    failoverProvider: failover ? failover.provider : null,
+    score: primary.weightedScore
+  };
 }
 
 module.exports = {
-  /**
-   * Select best provider + failover using Routing Engine v2.
-   */
-  async selectProvider({ residencyZone, tier }) {
-    // -----------------------------
-    // 1. Load provider metadata
-    // -----------------------------
-    const providers = providerRoutingRules.getAllProviders();
-
-    if (!providers || providers.length === 0) {
-      throw new FaxNovaError("No providers available", {
-        code: "NO_PROVIDERS"
-      });
-    }
-
-    // -----------------------------
-    // 2. Load health + billing data
-    // -----------------------------
-    const health = await providerHealthService.getCurrentHealth();
-    const billing = await providerBillingService.getBillingSummary(tier);
-
-    // -----------------------------
-    // 3. Score each provider
-    // -----------------------------
-    const scored = providers.map((p) => {
-      const h = health[p.name];
-      const b = billing.find((x) => x.provider === p.name);
-
-      const latencyScore = normalizeLatency(h?.avgLatencyMs);
-      const successScore = h?.successRate ?? 0;
-      const costScore = normalizeCost(b?.effectiveCost);
-      const residencyScore = p.zones.includes(residencyZone) ? 1 : 0;
-      const outageScore = h?.activeOutage ? 0 : 1;
-
-      const score =
-        WEIGHTS.latency * latencyScore +
-        WEIGHTS.success * successScore +
-        WEIGHTS.cost * costScore +
-        WEIGHTS.residency * residencyScore +
-        WEIGHTS.outage * outageScore;
-
-      return {
-        provider: p.name,
-        score,
-        metrics: {
-          latencyScore,
-          successScore,
-          costScore,
-          residencyScore,
-          outageScore
-        }
-      };
-    });
-
-    // -----------------------------
-    // 4. Sort by score (descending)
-    // -----------------------------
-    scored.sort((a, b) => b.score - a.score);
-
-    const primary = scored[0];
-    const failover = scored[1] || null;
-
-    if (!primary) {
-      throw new FaxNovaError("Routing engine failed to select provider", {
-        code: "ROUTING_FAILURE"
-      });
-    }
-
-    return {
-      primary,
-      failover,
-      scored
-    };
-  }
+  selectProvider
 };

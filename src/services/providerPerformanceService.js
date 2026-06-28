@@ -1,117 +1,46 @@
 // src/services/providerPerformanceService.js
 
 const FaxNovaError = require("../errors/FaxNovaError");
+// If you later track per‑provider metrics in Mongo, you can wire that model here:
+// const ProviderPerformance = require("../models/ProviderPerformance");
 
-// In-memory performance store (can be replaced with Redis later)
-const metrics = {
-  sinch: {
-    successes: 0,
-    failures: 0,
-    latencySamples: []
-  },
-  telnyx: {
-    successes: 0,
-    failures: 0,
-    latencySamples: []
+/**
+ * Get health score (0–100) for a provider.
+ *
+ * For now, this is a simple static/scaled implementation.
+ * Later you can replace it with real metrics:
+ * - success rate
+ * - average latency
+ * - error rate
+ * - SLA breaches
+ */
+async function getHealthScore(providerName) {
+  // Basic guard
+  if (!["sinch", "telnyx"].includes(providerName)) {
+    throw new FaxNovaError("Invalid provider for health score", {
+      code: "PERFORMANCE_PROVIDER_INVALID",
+      providerName
+    });
   }
-};
 
-function recordLatencySample(provider, ms) {
-  const arr = metrics[provider].latencySamples;
-  arr.push(ms);
+  // TODO: Replace with real metrics from DB or monitoring
+  // Example shape if you add a ProviderPerformance model:
+  //
+  // const perf = await ProviderPerformance.findOne({ provider: providerName });
+  // if (!perf) return 70; // default
+  // return perf.healthScore; // 0–100
 
-  // Keep last 50 samples for rolling average
-  if (arr.length > 50) arr.shift();
-}
-
-function computeAvgLatency(provider) {
-  const arr = metrics[provider].latencySamples;
-  if (!arr.length) return 500; // default fallback
-  const sum = arr.reduce((a, b) => a + b, 0);
-  return Math.round(sum / arr.length);
-}
-
-function computeSuccessRate(provider) {
-  const { successes, failures } = metrics[provider];
-  const total = successes + failures;
-  if (total === 0) return 0.95; // default fallback
-  return Number((successes / total).toFixed(3));
+  // For now, simple defaults:
+  switch (providerName) {
+    case "sinch":
+      return 90; // assume strong performance
+    case "telnyx":
+      return 88; // slightly lower but still strong
+    default:
+      return 70;
+  }
 }
 
 module.exports = {
-  /**
-   * Record latency for a provider.
-   */
-  async recordLatency(provider, ms) {
-    if (!metrics[provider]) {
-      throw new FaxNovaError("Unknown provider for latency tracking", {
-        code: "UNKNOWN_PROVIDER",
-        provider
-      });
-    }
-
-    recordLatencySample(provider, ms);
-  },
-
-  /**
-   * Record a successful fax send.
-   */
-  async recordSuccess(provider) {
-    if (!metrics[provider]) {
-      throw new FaxNovaError("Unknown provider for success tracking", {
-        code: "UNKNOWN_PROVIDER",
-        provider
-      });
-    }
-
-    metrics[provider].successes += 1;
-  },
-
-  /**
-   * Record a failed fax send.
-   */
-  async recordFailure(provider) {
-    if (!metrics[provider]) {
-      throw new FaxNovaError("Unknown provider for failure tracking", {
-        code: "UNKNOWN_PROVIDER",
-        provider
-      });
-    }
-
-    metrics[provider].failures += 1;
-  },
-
-  /**
-   * Return normalized performance scores for Routing Engine v2.
-   *
-   * {
-   *   sinch: {
-   *     latency: 320,
-   *     successRate: 0.97
-   *   },
-   *   telnyx: {
-   *     latency: 410,
-   *     successRate: 0.92
-   *   }
-   * }
-   */
-  async getPerformanceScores() {
-    try {
-      return {
-        sinch: {
-          latency: computeAvgLatency("sinch"),
-          successRate: computeSuccessRate("sinch")
-        },
-        telnyx: {
-          latency: computeAvgLatency("telnyx"),
-          successRate: computeSuccessRate("telnyx")
-        }
-      };
-    } catch (err) {
-      throw new FaxNovaError("Failed to compute provider performance", {
-        code: "PERFORMANCE_COMPUTE_ERROR",
-        details: err.message
-      });
-    }
-  }
+  getHealthScore
 };
