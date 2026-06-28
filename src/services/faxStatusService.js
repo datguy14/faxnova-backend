@@ -1,73 +1,34 @@
+// src/services/faxStatusService.js
+
+const FaxNovaError = require("../errors/FaxNovaError");
 const OutboundFax = require("../models/OutboundFax");
-const audit = require("../audit/auditService");
 const providerOutageService = require("./providerOutageService");
+const audit = require("../audit/auditService");
 
-const faxStatusService = {
-  async markSending(faxId, providerResponse) {
-    const fax = await OutboundFax.findOne({ faxId });
-    if (!fax) throw new Error("Fax not found");
+/**
+ * Fax Status Service (FaxNova v1)
+ *
+ * Responsibilities:
+ * - Normalize provider webhook events
+ * - Update outbound fax status
+ * - Track provider outages
+ * - Audit log status changes
+ */
 
-    fax.status = "sending";
-    fax.sentAt = new Date();
-    fax.providerMetadata = {
-      ...fax.providerMetadata,
-      providerJobId: providerResponse.jobId || providerResponse.id
-    };
-
-    await fax.save();
-
-    await audit.logEvent({
-      type: "fax",
-      action: "fax_status_sending",
-      faxId,
-      provider: fax.provider,
-      details: providerResponse
+function normalizeProviderEvent(provider, event) {
+  if (!event) {
+    throw new FaxNovaError("Missing provider event payload", {
+      code: "STATUS_EVENT_MISSING"
     });
-
-    return fax;
-  },
-
-  async updateFromProvider(event) {
-    const normalized = normalizeProviderEvent(event);
-
-    const fax = await OutboundFax.findOne({ faxId: normalized.faxId });
-    if (!fax) throw new Error("Fax not found");
-
-    fax.status = normalized.status;
-
-    if (normalized.status === "delivered") {
-      fax.deliveredAt = new Date();
-    }
-
-    if (normalized.status === "failed") {
-      fax.errorCode = normalized.errorCode;
-      fax.errorMessage = normalized.errorMessage;
-
-      if (normalized.errorCode) {
-        await providerOutageService.recordFailure(fax.provider);
-      }
-    }
-
-    await fax.save();
-
-    await audit.logEvent({
-      type: "fax",
-      action: "fax_status_update",
-      faxId: fax.faxId,
-      provider: fax.provider,
-      details: normalized
-    });
-
-    return fax;
   }
-};
 
-function normalizeProviderEvent(event) {
+  // Unified normalization for Sinch + Telnyx
   return {
-    faxId: event.faxId || event.id,
+    faxId: event.faxId || event.id || event.jobId,
     status: mapProviderStatus(event.status),
-    errorCode: event.errorCode || null,
-    errorMessage: event.errorMessage || null
+    errorCode: event.errorCode || event.error || null,
+    errorMessage: event.errorMessage || event.message || null,
+    raw: event
   };
 }
 
@@ -85,4 +46,61 @@ function mapProviderStatus(status) {
   return map[status] || "failed";
 }
 
-module.exports = faxStatusService;
+async function updateFromProvider(provider, event) {
+  try {
+    const normalized = normalizeProviderEvent(provider, event);
+
+    const fax = await OutboundFax.findOne({ jobId: normalized.faxId });
+
+    if (!fax) {
+      throw new FaxNovaError("Outbound fax not found for status update", {
+        code: "FAX_NOT_FOUND",
+        faxId: normalized.faxId
+      });
+    }
+
+    // Update status
+    fax.status = normalized.status;
+
+    if (normalized.status === "delivered") {
+      fax.deliveredAt = new Date();
+    }
+
+    if (normalized.status === "failed") {
+      fax.errorCode = normalized.errorCode;
+      fax.errorMessage = normalized.errorMessage;
+
+      // Track provider outage
+      if (normalized.errorCode) {
+        await providerOutageService.recordFailure(provider);
+      }
+    }
+
+    await fax.save();
+
+    // Audit log
+    audit.logEvent({
+      tenantId: fax.tenantId,
+      type: "fax_status",
+      action: "update",
+      details: {
+        provider,
+        faxId: fax.jobId,
+        status: fax.status,
+        errorCode: fax.errorCode,
+        errorMessage: fax.errorMessage
+      }
+    });
+
+    return fax;
+  } catch (err) {
+    throw new FaxNovaError("Fax status update failed", {
+      code: "FAX_STATUS_FAILED",
+      details: err.message
+    });
+  }
+}
+
+module.exports = {
+  updateFromProvider
+};
