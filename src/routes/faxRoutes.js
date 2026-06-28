@@ -2,49 +2,32 @@
 
 const express = require("express");
 const router = express.Router();
+const faxQueue = require("../queue/faxQueue");
 
-const faxController = require("../controllers/faxController");
-const inboundFaxController = require("../controllers/inboundFaxController");
+router.post("/send", async (req, res) => {
+  try {
+    const { tenantId, to, from, pages, documentUrl, tier } = req.body;
 
-const auth = require("../middleware/auth");
-const faxLimiter = require("../middleware/faxLimiter");
-const residencyGuard = require("../middleware/residencyGuard");
+    const job = await faxQueue.add("sendFax", {
+      tenantId,
+      to,
+      from,
+      pages,
+      documentUrl,
+      tier
+    });
 
-// -----------------------------
-// Outbound Fax Routes
-// -----------------------------
-
-// POST /fax/send
-router.post(
-  "/send",
-  auth,               // tenant auth
-  faxLimiter,         // rate limiting
-  residencyGuard,     // residency + sovereignty enforcement
-  faxController.sendFax
-);
-
-// GET /fax/:id
-router.get(
-  "/:id",
-  auth,
-  faxController.getFaxById
-);
-
-// GET /fax
-router.get(
-  "/",
-  auth,
-  faxController.listFaxes
-);
-
-// -----------------------------
-// Inbound Fax Webhooks
-// -----------------------------
-
-// POST /fax/inbound/:provider
-router.post(
-  "/inbound/:provider",
-  inboundFaxController.receiveInboundFax
-);
+    return res.json({
+      success: true,
+      queued: true,
+      jobId: job.id
+    });
+  } catch (err) {
+    return res.status(400).json({
+      success: false,
+      error: err.message
+    });
+  }
+});
 
 module.exports = router;
