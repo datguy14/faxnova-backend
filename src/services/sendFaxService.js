@@ -5,35 +5,16 @@ const OutboundFax = require("../models/OutboundFax");
 const { routeAndSendFax } = require("./routingService.v2");
 const audit = require("../audit/auditService");
 
-/**
- * Send Fax Service (FaxNova v1)
- *
- * Responsibilities:
- * - Validate payload
- * - Call Routing Service v2
- * - Persist OutboundFax record
- * - Audit log send event
- */
-
 async function sendFax({ tenantId, to, from, pages, documentUrl, tier }) {
   try {
-    if (!tenantId) {
-      throw new FaxNovaError("Missing tenantId", {
-        code: "TENANT_ID_MISSING"
+    if (!tenantId || !to || !from || !documentUrl) {
+      throw new FaxNovaError("Missing required fax fields", {
+        code: "FAX_FIELDS_MISSING"
       });
     }
 
-    if (!to || !from || !documentUrl) {
-      throw new FaxNovaError("Missing fax fields", {
-        code: "FAX_FIELDS_MISSING",
-        details: { to, from, documentUrl }
-      });
-    }
-
-    // ---------------------------------------------
-    // 1. Route + Send via RoutingService.v2
-    // ---------------------------------------------
-    const routingResult = await routeAndSendFax({
+    // 1. Route + Send via Routing Engine v2
+    const result = await routeAndSendFax({
       tenantId,
       to,
       from,
@@ -42,66 +23,43 @@ async function sendFax({ tenantId, to, from, pages, documentUrl, tier }) {
       tier
     });
 
-    const {
-      provider,
-      jobId,
-      residencyZone,
-      sovereignty,
-      latencyMs,
-      routingScore
-    } = routingResult;
-
-    // ---------------------------------------------
-    // 2. Persist OutboundFax record
-    // ---------------------------------------------
-    const outboundFax = await OutboundFax.create({
+    const fax = await OutboundFax.create({
       tenantId,
-      provider,
+      provider: result.provider,
       failoverProvider: null,
       to,
       from,
       pages,
       documentUrl,
-      residencyZone,
-      sovereignty,
+      residencyZone: result.residencyZone,
+      sovereignty: result.sovereignty,
       tier,
-      jobId,
+      jobId: result.jobId,
       status: "sending",
-      latencyMs,
-      routingScore
+      latencyMs: result.latencyMs,
+      routingScore: result.routingScore
     });
 
-    // ---------------------------------------------
-    // 3. Audit log
-    // ---------------------------------------------
+    // 3. Audit
     audit.logEvent({
       tenantId,
       type: "fax_outbound",
       action: "created",
       details: {
-        faxId: outboundFax._id,
-        provider,
-        jobId,
-        residencyZone,
-        sovereignty,
+        faxId: fax._id,
+        provider: result.provider,
+        jobId: result.jobId,
+        residencyZone: result.residencyZone,
+        sovereignty: result.sovereignty,
         tier,
-        latencyMs,
-        routingScore
+        latencyMs: result.latencyMs,
+        routingScore: result.routingScore
       }
     });
 
-    // ---------------------------------------------
-    // 4. Return result
-    // ---------------------------------------------
     return {
-      faxId: outboundFax._id,
-      provider,
-      jobId,
-      residencyZone,
-      sovereignty,
-      tier,
-      latencyMs,
-      routingScore
+      faxId: fax._id,
+      ...result
     };
   } catch (err) {
     throw new FaxNovaError("SendFaxService failed", {
@@ -111,6 +69,4 @@ async function sendFax({ tenantId, to, from, pages, documentUrl, tier }) {
   }
 }
 
-module.exports = {
-  sendFax
-};
+module.exports = { sendFax };
