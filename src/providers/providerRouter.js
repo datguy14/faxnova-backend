@@ -1,84 +1,105 @@
 // src/providers/providerRouter.js
 
-const FaxNovaError = require("../errors/FaxNovaError");
-const {
-  selectBestProvider,
-  scoreProvider,
-  providers
-} = require("./providerRoutingRules");
-
-const providerPerformanceService = require("../services/providerPerformanceService");
-const providerOutageService = require("../services/providerOutageService");
-
 /**
- * Provider Router (FaxNova v1, Routing Engine v2)
+ * Provider Router (FaxNova v1)
  *
  * Responsibilities:
- * - Filter providers by residency + tier
- * - Apply outage rules
- * - Apply performance scoring
- * - Apply cost scoring
- * - Select best provider deterministically
+ * - Select best provider using:
+ *   - residency zone
+ *   - sovereignty
+ *   - outage states
+ *   - real performance scores (0–100)
+ *   - retry-aware failover logic
  */
 
-async function routeProvider({ residencyZone, tier }) {
-  try {
-    // ---------------------------------------------
-    // 1. Get base provider candidate from rules
-    // ---------------------------------------------
-    const base = selectBestProvider({ residencyZone, tier });
+const FaxNovaError = require("../errors/FaxNovaError");
+const sinchAdapter = require("./sinchAdapter");
+const telnyxAdapter = require("./telnyxAdapter");
 
-    // ---------------------------------------------
-    // 2. Outage filtering
-    // ---------------------------------------------
-    const outages = await providerOutageService.getActiveOutages();
-    const outageProviders = outages.map((o) => o.provider);
+/**
+ * Provider adapters
+ */
+const adapters = {
+  sinch: sinchAdapter,
+  telnyx: telnyxAdapter
+};
 
-    const availableProviders = Object.values(providers).filter(
-      (p) => !outageProviders.includes(p.name)
-    );
+/**
+ * Residency → provider preference map
+ */
+const residencyPreference = {
+  us: ["sinch", "telnyx"],
+  eu: ["telnyx", "sinch"],
+  global: ["telnyx", "sinch"]
+};
 
-    if (!availableProviders.length) {
-      throw new FaxNovaError("All providers are currently in outage", {
-        code: "ALL_PROVIDERS_OUTAGE"
-      });
-    }
-
-    // ---------------------------------------------
-    // 3. Performance scoring
-    // ---------------------------------------------
-    const performanceScores = await providerPerformanceService.getScores();
-
-    // ---------------------------------------------
-    // 4. Build final scoring table
-    // ---------------------------------------------
-    const scored = availableProviders.map((provider) => {
-      const baseScore = scoreProvider(provider, residencyZone, tier);
-
-      const perfScore = performanceScores[provider.name] || 0;
-
-      const finalScore = Math.round(baseScore + perfScore);
-
-      return {
-        provider: provider.name,
-        score: finalScore
-      };
-    });
-
-    // ---------------------------------------------
-    // 5. Select highest scoring provider
-    // ---------------------------------------------
-    scored.sort((a, b) => b.score - a.score);
-
-    return scored[0];
-  } catch (err) {
-    throw new FaxNovaError("Provider routing failed", {
-      code: "PROVIDER_ROUTING_FAILED",
-      details: err.message
+/**
+ * Select provider using:
+ * - residency zone
+ * - sovereignty
+ * - outage states
+ * - real performance scores
+ * - retry-aware failover
+ */
+function selectProvider({ residencyZone, sovereignty, scores, outages, retry }) {
+  if (!residencyZone || !scores || !outages) {
+    throw new FaxNovaError("ProviderRouter missing routing fields", {
+      code: "PROVIDER_ROUTER_FIELDS_MISSING"
     });
   }
+
+  // 1. Residency-based provider order
+  const preferred = residencyPreference[residencyZone] || residencyPreference.global;
+
+  // 2. Filter out providers in OPEN outage state
+  const available = preferred.filter((provider) => {
+    const state = outages[provider]?.state || "closed";
+    return state !== "open";
+  });
+
+  if (available.length === 0) {
+    throw new FaxNovaError("No providers available (all in outage)", {
+      code: "NO_PROVIDERS_AVAILABLE",
+      residencyZone,
+      sovereignty
+    });
+  }
+
+  // 3. Retry → force failover to next provider
+  if (retry && available.length > 1) {
+    return available[1];
+  }
+
+  // 4. Score-based selection (highest score wins)
+  let bestProvider = available[0];
+  let bestScore = scores[bestProvider] || 0;
+
+  for (const provider of available) {
+    const score = scores[provider] || 0;
+    if (score > bestScore) {
+      bestProvider = provider;
+      bestScore = score;
+    }
+  }
+
+  return bestProvider;
+}
+
+/**
+ * Return provider adapter
+ */
+function getAdapter(provider) {
+  const adapter = adapters[provider];
+  if (!adapter) {
+    throw new FaxNovaError("Unknown provider adapter", {
+      code: "PROVIDER_ADAPTER_UNKNOWN",
+      provider
+    });
+  }
+  return adapter;
 }
 
 module.exports = {
-  routeProvider
+  selectProvider,
+  getAdapter
 };
