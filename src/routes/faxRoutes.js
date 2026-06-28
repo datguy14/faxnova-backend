@@ -1,12 +1,8 @@
 // src/routes/faxRoutes.js
 
-const express = require("express");
-const router = express.Router();
-const faxQueue = require("../queue/faxQueue");
-
 router.post("/send", async (req, res) => {
   try {
-    const { tenantId, to, from, pages, documentUrl, tier } = req.body;
+    const { tenantId, to, from, pages, documentUrl, tier, region } = req.body;
 
     const job = await faxQueue.add("sendFax", {
       tenantId,
@@ -14,7 +10,8 @@ router.post("/send", async (req, res) => {
       from,
       pages,
       documentUrl,
-      tier
+      tier,
+      region // "us" | "eu" | "global"
     });
 
     return res.json({
@@ -29,5 +26,3 @@ router.post("/send", async (req, res) => {
     });
   }
 });
-
-module.exports = router;
