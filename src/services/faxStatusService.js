@@ -10,10 +10,11 @@ const providerOutageService = require("./providerOutageService");
  */
 function normalize(event) {
   return {
-    faxId: event.faxId || event.id,
+    faxId: event.faxId || event.id || event.external_id,   // unified FaxNova ID
+    jobId: event.jobId || event.provider_job_id || null,   // provider job ID
     status: mapStatus(event.status),
-    errorCode: event.errorCode || null,
-    errorMessage: event.errorMessage || null
+    errorCode: event.errorCode || event.error_code || null,
+    errorMessage: event.errorMessage || event.error_message || null
   };
 }
 
@@ -37,14 +38,23 @@ async function updateFromProvider(event) {
   try {
     const n = normalize(event);
 
+    if (!n.faxId) {
+      throw new FaxNovaError("Missing faxId in provider status event", {
+        code: "STATUS_FAXID_MISSING",
+        event
+      });
+    }
+
+    // Unified outbound fax lookup
     const fax = await OutboundFax.findOne({ faxId: n.faxId });
     if (!fax) {
-      throw new FaxNovaError("Fax not found", {
-        code: "FAX_NOT_FOUND",
+      throw new FaxNovaError("Outbound fax not found", {
+        code: "OUTBOUND_FAX_NOT_FOUND",
         faxId: n.faxId
       });
     }
 
+    // Update status
     fax.status = n.status;
 
     if (n.status === "delivered") {
@@ -62,6 +72,7 @@ async function updateFromProvider(event) {
 
     await fax.save();
 
+    // Audit
     audit.logEvent({
       tenantId: fax.tenantId,
       type: "fax_status",
@@ -69,6 +80,7 @@ async function updateFromProvider(event) {
       details: {
         faxId: fax.faxId,
         provider: fax.provider,
+        jobId: fax.jobId,
         status: fax.status,
         errorCode: fax.errorCode,
         errorMessage: fax.errorMessage
