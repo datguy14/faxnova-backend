@@ -4,6 +4,7 @@ const FaxNovaError = require("../errors/FaxNovaError");
 const OutboundFax = require("../models/OutboundFax");
 const { routeAndSendFax } = require("./routingService.v2");
 const audit = require("../audit/auditService");
+const crypto = require("crypto");
 
 async function sendFax({ tenantId, to, from, pages, documentUrl, tier }) {
   try {
@@ -13,6 +14,9 @@ async function sendFax({ tenantId, to, from, pages, documentUrl, tier }) {
       });
     }
 
+    // Generate unified FaxNova faxId (NOT Mongo _id)
+    const faxId = crypto.randomUUID();
+
     // 1. Route + Send via Routing Engine v2
     const result = await routeAndSendFax({
       tenantId,
@@ -20,10 +24,13 @@ async function sendFax({ tenantId, to, from, pages, documentUrl, tier }) {
       from,
       pages,
       documentUrl,
-      tier
+      tier,
+      faxId
     });
 
+    // 2. Persist unified outbound fax record
     const fax = await OutboundFax.create({
+      faxId,                         // unified FaxNova ID
       tenantId,
       provider: result.provider,
       failoverProvider: null,
@@ -34,7 +41,7 @@ async function sendFax({ tenantId, to, from, pages, documentUrl, tier }) {
       residencyZone: result.residencyZone,
       sovereignty: result.sovereignty,
       tier,
-      jobId: result.jobId,
+      jobId: result.jobId,           // provider job ID
       status: "sending",
       latencyMs: result.latencyMs,
       routingScore: result.routingScore
@@ -46,7 +53,7 @@ async function sendFax({ tenantId, to, from, pages, documentUrl, tier }) {
       type: "fax_outbound",
       action: "created",
       details: {
-        faxId: fax._id,
+        faxId,
         provider: result.provider,
         jobId: result.jobId,
         residencyZone: result.residencyZone,
@@ -58,7 +65,7 @@ async function sendFax({ tenantId, to, from, pages, documentUrl, tier }) {
     });
 
     return {
-      faxId: fax._id,
+      faxId,
       ...result
     };
   } catch (err) {
