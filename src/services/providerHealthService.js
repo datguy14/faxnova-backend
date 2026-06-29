@@ -1,66 +1,52 @@
-// src/services/providerHealthService.js
-
-const FaxNovaError = require("../errors/FaxNovaError");
-const providerPerformanceService = require("./providerPerformanceService");
+const providerLatencyTracker = require("./providerLatencyTracker");
 const providerOutageService = require("./providerOutageService");
-const providerBillingService = require("./providerBillingService");
+const providerPerformanceService = require("./providerPerformanceService");
+const providerScoreCache = require("./providerScoreCache");
 
-/**
- * Provider Health Service (Routing Engine v2)
- *
- * Returns:
- * {
- *   sinch: {
- *     avgLatencyMs,
- *     successRate,
- *     activeOutage,
- *     healthScore,
- *     outageScore,
- *     billingScore
- *   },
- *   telnyx: { ...same }
- * }
- */
-
-async function getCurrentHealth() {
+exports.getProviderHealth = async (providerName) => {
   try {
-    const providers = ["sinch", "telnyx"];
-    const health = {};
+    // 1. Latency (ms)
+    const latency = providerLatencyTracker.getLatency(providerName);
 
-    for (const provider of providers) {
-      // Performance metrics (latency + success rate)
-      const perfScore = await providerPerformanceService.getHealthScore(provider);
+    // 2. Outage status
+    const outageInfo = providerOutageService.getOutage(providerName);
 
-      // Outage score (0–100)
-      const outageScore = providerOutageService.getOutageScore(provider);
+    // 3. Performance score (success rate, fail rate, etc.)
+    const performance = providerPerformanceService.getPerformance(providerName);
 
-      // Billing score (0–100)
-      const billingScore = providerBillingService.getBillingScore(provider);
+    // 4. Sovereignty routing score (cached)
+    const score = providerScoreCache.getScore(providerName);
 
-      // Active outage?
-      const activeOutages = providerOutageService.getActiveOutages();
-      const activeOutage = activeOutages.includes(provider);
-
-      // Build health object
-      health[provider] = {
-        avgLatencyMs: perfScore >= 90 ? 450 : 600, // placeholder until real metrics
-        successRate: perfScore >= 90 ? 0.97 : 0.93,
-        activeOutage,
-        healthScore: perfScore,
-        outageScore,
-        billingScore
-      };
-    }
-
-    return health;
+    return {
+      provider: providerName,
+      latency,
+      outage: outageInfo,
+      performance,
+      score,
+      healthy:
+        outageInfo?.isDown === false &&
+        latency !== null &&
+        performance?.successRate >= 0.85
+    };
   } catch (err) {
-    throw new FaxNovaError("Failed to load provider health", {
-      code: "PROVIDER_HEALTH_FAILED",
-      details: err.message
-    });
+    console.error("PROVIDER HEALTH ERROR:", err);
+    return {
+      provider: providerName,
+      healthy: false,
+      error: err.message
+    };
   }
-}
+};
 
-module.exports = {
-  getCurrentHealth
+// Bulk health for dashboard
+exports.getAllProvidersHealth = async () => {
+  const providers = providerScoreCache.getProviders(); // returns list of provider names
+
+  const results = [];
+  for (const p of providers) {
+    const health = await exports.getProviderHealth(p);
+    results.push(health);
+  }
+
+  return results;
 };
