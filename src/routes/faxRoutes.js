@@ -1,28 +1,17 @@
 // src/routes/faxRoutes.js
 
-router.post("/send", async (req, res) => {
-  try {
-    const { tenantId, to, from, pages, documentUrl, tier, region } = req.body;
+const express = require("express");
+const router = express.Router();
 
-    const job = await faxQueue.add("sendFax", {
-      tenantId,
-      to,
-      from,
-      pages,
-      documentUrl,
-      tier,
-      region // "us" | "eu" | "global"
-    });
+const faxController = require("../controllers/faxController");
 
-    return res.json({
-      success: true,
-      queued: true,
-      jobId: job.id
-    });
-  } catch (err) {
-    return res.status(400).json({
-      success: false,
-      error: err.message
-    });
-  }
-});
+// Queue a new outbound fax (async)
+router.post("/send", faxController.sendFax);
+
+// Get fax by faxId (OutboundFax only)
+router.get("/:faxId", faxController.getFaxById);
+
+// List all faxes for a tenant
+router.get("/tenant/:tenantId", faxController.listFaxes);
+
+module.exports = router;
