@@ -1,95 +1,42 @@
 // src/services/faxStatusService.js
 
-const FaxNovaError = require("../errors/FaxNovaError");
 const OutboundFax = require("../models/OutboundFax");
-const audit = require("../audit/auditService");
 const providerOutageService = require("./providerOutageService");
+const providerPerformanceService = require("./providerPerformanceService");
+const FaxNovaError = require("../errors/FaxNovaError");
 
-/**
- * Normalize provider webhook payloads (Sinch + Telnyx unified)
- */
-function normalize(event) {
-  return {
-    faxId: event.faxId || event.id || event.external_id,   // unified FaxNova ID
-    jobId: event.jobId || event.provider_job_id || null,   // provider job ID
-    status: mapStatus(event.status),
-    errorCode: event.errorCode || event.error_code || null,
-    errorMessage: event.errorMessage || event.error_message || null
-  };
-}
-
-/**
- * Map provider-specific statuses → FaxNova statuses
- */
-function mapStatus(status) {
-  const map = {
-    queued: "queued",
-    sending: "sending",
-    in_progress: "sending",
-    delivered: "delivered",
-    success: "delivered",
-    failed: "failed",
-    error: "failed"
-  };
-  return map[status] || "failed";
-}
-
-async function updateFromProvider(event) {
+async function updateFaxStatus({ faxId, provider, providerStatus, unifiedStatus }) {
   try {
-    const n = normalize(event);
-
-    if (!n.faxId) {
-      throw new FaxNovaError("Missing faxId in provider status event", {
-        code: "STATUS_FAXID_MISSING",
-        event
-      });
-    }
-
-    // Unified outbound fax lookup
-    const fax = await OutboundFax.findOne({ faxId: n.faxId });
+    const fax = await OutboundFax.findOne({ faxId });
     if (!fax) {
-      throw new FaxNovaError("Outbound fax not found", {
-        code: "OUTBOUND_FAX_NOT_FOUND",
-        faxId: n.faxId
+      throw new FaxNovaError("OutboundFax not found", {
+        code: "FAX_NOT_FOUND",
+        faxId
       });
     }
 
-    // Update status
-    fax.status = n.status;
-
-    if (n.status === "delivered") {
-      fax.deliveredAt = new Date();
-    }
-
-    if (n.status === "failed") {
-      fax.errorCode = n.errorCode;
-      fax.errorMessage = n.errorMessage;
-
-      if (n.errorCode) {
-        await providerOutageService.recordFailure(fax.provider);
-      }
-    }
-
+    // Update fax record
+    fax.status = unifiedStatus;
+    fax.providerStatus = providerStatus;
+    fax.updatedAt = new Date();
     await fax.save();
 
-    // Audit
-    audit.logEvent({
-      tenantId: fax.tenantId,
-      type: "fax_status",
-      action: "update",
-      details: {
-        faxId: fax.faxId,
-        provider: fax.provider,
-        jobId: fax.jobId,
-        status: fax.status,
-        errorCode: fax.errorCode,
-        errorMessage: fax.errorMessage
-      }
-    });
+    // Provider performance tracking
+    if (unifiedStatus === "failed") {
+      await providerOutageService.recordFailure(provider);
+      await providerPerformanceService.applyFailurePenalty(provider);
+    } else if (["sent", "delivered"].includes(unifiedStatus)) {
+      await providerOutageService.recordSuccess(provider);
+      await providerPerformanceService.applySuccessBoost(provider);
+    }
 
-    return fax;
+    return {
+      success: true,
+      faxId,
+      status: unifiedStatus
+    };
   } catch (err) {
-    throw new FaxNovaError("Fax status update failed", {
+    throw new FaxNovaError("Failed to update fax status", {
       code: "FAX_STATUS_UPDATE_FAILED",
       details: err.message
     });
@@ -97,5 +44,5 @@ async function updateFromProvider(event) {
 }
 
 module.exports = {
-  updateFromProvider
+  updateFaxStatus
 };
