@@ -1,7 +1,7 @@
 // src/services/providerOutageService.js
 
 /**
- * Provider Outage / Circuit Breaker Service (FaxNova v1)
+ * Provider Outage / Circuit Breaker Service
  *
  * States:
  * - CLOSED: provider healthy
