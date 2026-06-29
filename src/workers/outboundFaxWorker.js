@@ -4,9 +4,10 @@ const { Worker } = require("bullmq");
 const OutboundFax = require("../models/OutboundFax");
 const DeadLetterFax = require("../models/DeadLetterFax");
 
-const RoutingEngine = require("../services/routingEngine.v2");
+const routingEngine = require("../services/routingService.v2");
 const ProviderRouter = require("../services/providerRouter.v2");
 const faxStatusService = require("../services/faxStatusService");
+const providerLatencyTracker = require("../services/providerLatencyTracker");
 
 const connection = {
   host: process.env.REDIS_HOST,
@@ -16,41 +17,40 @@ const connection = {
 const worker = new Worker(
   "outboundFaxQueue",
   async (job) => {
-    const { faxId, tenantId, to, from, pages, documentUrl, region, tier } = job.data;
+    const { faxId } = job.data;
 
-    // Load fax record
     const fax = await OutboundFax.findOne({ faxId });
-    if (!fax) {
-      throw new Error(`OutboundFax not found: ${faxId}`);
-    }
+    if (!fax) throw new Error(`OutboundFax not found: ${faxId}`);
 
     // Mark as sending
     await faxStatusService.updateFaxStatus({
       faxId,
-      provider: null,
+      provider: fax.provider,
       providerStatus: "sending",
       unifiedStatus: "sending",
     });
 
-    // Sovereignty routing
-    const provider = await RoutingEngine.selectProvider({
-      region,
-      tier,
-      to,
-      tenantId,
+    // Sovereignty routing → best provider
+    const provider = await routingEngine.selectProvider({
+      region: fax.region,
+      to: fax.to,
+      tenantId: fax.tenantId,
     });
 
-    // Provider adapter
     const adapter = ProviderRouter.getAdapter(provider);
 
-    // Send fax
+    const start = Date.now();
+
     const result = await adapter.sendFax({
-      to,
-      from,
-      pages,
-      documentUrl,
       faxId,
+      to: fax.to,
+      from: fax.from,
+      pages: fax.pages,
+      documentUrl: fax.documentUrl,
     });
+
+    const latency = Date.now() - start;
+    await providerLatencyTracker.recordLatency(provider, latency);
 
     // Update fax record
     fax.provider = provider;
@@ -91,10 +91,9 @@ worker.on("failed", async (job, err) => {
     unifiedStatus: "dead",
   });
 
-  console.error(`❌ Fax moved to DLQ: ${faxId}`, err.message);
+  console.error(`❌ OutboundFaxWorker → DLQ: ${faxId}`, err.message);
 });
 
-// Worker ready
 worker.on("ready", () => {
   console.log("📡 OutboundFaxWorker ready");
 });
