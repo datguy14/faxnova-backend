@@ -1,55 +1,64 @@
-// src/services/providerPerformanceService.js
+// Tracks provider success/failure counts + computes performance metrics
+
+const performanceMap = new Map();
 
 /**
- * Provider Performance Service
- *
- * Scores range 0–100 and are used by providerRouter.
- * These will later be stored in Redis, but for now
- * we keep them in-memory with a clean API.
+ * Ensure provider entry exists
  */
+function ensure(provider) {
+  if (!performanceMap.has(provider)) {
+    performanceMap.set(provider, {
+      success: 0,
+      fail: 0,
+      lastSuccessAt: null,
+      lastFailAt: null
+    });
+  }
+  return performanceMap.get(provider);
+}
 
-let scores = {
-  sinch: 85,
-  telnyx: 90
+/**
+ * Record a successful fax event
+ */
+exports.recordSuccess = (provider) => {
+  const entry = ensure(provider);
+  entry.success += 1;
+  entry.lastSuccessAt = new Date();
 };
 
 /**
- * Get current provider scores
+ * Record a failed fax event
  */
-async function getScores() {
-  return scores;
-}
+exports.recordFailure = (provider) => {
+  const entry = ensure(provider);
+  entry.fail += 1;
+  entry.lastFailAt = new Date();
+};
 
 /**
- * Update provider score (0–100)
+ * Compute performance metrics
  */
-async function updateScore(provider, score) {
-  if (!scores[provider]) return;
+exports.getPerformance = (provider) => {
+  const entry = ensure(provider);
 
-  scores[provider] = Math.max(0, Math.min(100, score));
-}
+  const total = entry.success + entry.fail;
+  const successRate = total === 0 ? 1 : entry.success / total;
+  const failRate = total === 0 ? 0 : entry.fail / total;
+
+  return {
+    provider,
+    success: entry.success,
+    fail: entry.fail,
+    successRate: Number(successRate.toFixed(3)),
+    failRate: Number(failRate.toFixed(3)),
+    lastSuccessAt: entry.lastSuccessAt,
+    lastFailAt: entry.lastFailAt
+  };
+};
 
 /**
- * Apply penalty after failure
+ * Reset provider metrics (admin-only)
  */
-async function applyFailurePenalty(provider) {
-  if (!scores[provider]) return;
-
-  scores[provider] = Math.max(0, scores[provider] - 10);
-}
-
-/**
- * Apply reward after success
- */
-async function applySuccessBoost(provider) {
-  if (!scores[provider]) return;
-
-  scores[provider] = Math.min(100, scores[provider] + 5);
-}
-
-module.exports = {
-  getScores,
-  updateScore,
-  applyFailurePenalty,
-  applySuccessBoost
+exports.resetPerformance = (provider) => {
+  performanceMap.delete(provider);
 };
