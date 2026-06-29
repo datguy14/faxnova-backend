@@ -4,112 +4,91 @@ const express = require("express");
 const router = express.Router();
 
 const OutboundFax = require("../models/OutboundFax");
-const InboundFax = require("../models/InboundFax");
+const WebhookEvent = require("../models/WebhookEvent");
 
-/**
- * GET /analytics/summary
- * Unified outbound + inbound analytics
- */
-router.get("/summary", async (req, res) => {
+// Total faxes for a tenant
+router.get("/tenant/:tenantId/summary", async (req, res) => {
   try {
-    const tenantId = req.tenantId;
+    const { tenantId } = req.params;
 
-    const outboundCount = await OutboundFax.countDocuments({ tenantId });
-    const inboundCount = await InboundFax.countDocuments({ tenantId });
+    const total = await OutboundFax.countDocuments({ tenantId });
+    const sent = await OutboundFax.countDocuments({ tenantId, status: "sent" });
+    const delivered = await OutboundFax.countDocuments({ tenantId, status: "delivered" });
+    const failed = await OutboundFax.countDocuments({ tenantId, status: "failed" });
+    const retrying = await OutboundFax.countDocuments({ tenantId, status: "retrying" });
+    const dead = await OutboundFax.countDocuments({ tenantId, status: "dead" });
 
-    const deliveredCount = await OutboundFax.countDocuments({
-      tenantId,
-      status: "delivered"
+    return res.json({
+      success: true,
+      summary: {
+        total,
+        sent,
+        delivered,
+        failed,
+        retrying,
+        dead
+      }
+    });
+  } catch (err) {
+    return res.status(400).json({ success: false, error: err.message });
+  }
+});
+
+// Provider performance analytics
+router.get("/providers/performance", async (req, res) => {
+  try {
+    const sinchSuccess = await OutboundFax.countDocuments({
+      provider: "sinch",
+      status: { $in: ["sent", "delivered"] }
     });
 
-    const failedCount = await OutboundFax.countDocuments({
-      tenantId,
+    const sinchFail = await OutboundFax.countDocuments({
+      provider: "sinch",
+      status: "failed"
+    });
+
+    const telnyxSuccess = await OutboundFax.countDocuments({
+      provider: "telnyx",
+      status: { $in: ["sent", "delivered"] }
+    });
+
+    const telnyxFail = await OutboundFax.countDocuments({
+      provider: "telnyx",
       status: "failed"
     });
 
     return res.json({
       success: true,
-      outboundCount,
-      inboundCount,
-      deliveredCount,
-      failedCount
-    });
-  } catch (err) {
-    return res.status(400).json({
-      success: false,
-      error: err.message
-    });
-  }
-});
-
-/**
- * GET /analytics/providers
- * Provider performance breakdown
- */
-router.get("/providers", async (req, res) => {
-  try {
-    const tenantId = req.tenantId;
-
-    const providers = await OutboundFax.aggregate([
-      { $match: { tenantId } },
-      {
-        $group: {
-          _id: "$provider",
-          total: { $sum: 1 },
-          delivered: {
-            $sum: { $cond: [{ $eq: ["$status", "delivered"] }, 1, 0] }
-          },
-          failed: {
-            $sum: { $cond: [{ $eq: ["$status", "failed"] }, 1, 0] }
-          },
-          avgLatency: { $avg: "$latencyMs" },
-          avgRoutingScore: { $avg: "$routingScore" }
+      providers: {
+        sinch: {
+          success: sinchSuccess,
+          failed: sinchFail
+        },
+        telnyx: {
+          success: telnyxSuccess,
+          failed: telnyxFail
         }
       }
-    ]);
-
-    return res.json({
-      success: true,
-      providers
     });
   } catch (err) {
-    return res.status(400).json({
-      success: false,
-      error: err.message
-    });
+    return res.status(400).json({ success: false, error: err.message });
   }
 });
 
-/**
- * GET /analytics/timeline
- * Outbound fax volume by day
- */
-router.get("/timeline", async (req, res) => {
+// Timeline analytics (based on webhook events)
+router.get("/timeline/:faxId", async (req, res) => {
   try {
-    const tenantId = req.tenantId;
+    const { faxId } = req.params;
 
-    const timeline = await OutboundFax.aggregate([
-      { $match: { tenantId } },
-      {
-        $group: {
-          _id: {
-            $dateToString: { format: "%Y-%m-%d", date: "$createdAt" }
-          },
-          count: { $sum: 1 }
-        }
-      },
-      { $sort: { _id: 1 } }
-    ]);
+    const events = await WebhookEvent.find({ faxId }).sort({ createdAt: 1 });
 
     return res.json({
       success: true,
-      timeline
+      faxId,
+      timeline: events
     });
   } catch (err) {
-    return res.status(400).json({
-      success: false,
-      error: err.message
-    });
+    return res.status(400).json({ success: false, error: err.message });
   }
 });
 
