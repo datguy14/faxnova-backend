@@ -4,9 +4,10 @@ const { Worker } = require("bullmq");
 const OutboundFax = require("../models/OutboundFax");
 const DeadLetterFax = require("../models/DeadLetterFax");
 
-const RoutingEngine = require("../services/routingEngine.v2");
+const routingEngine = require("../services/routingService.v2");
 const ProviderRouter = require("../services/providerRouter.v2");
 const faxStatusService = require("../services/faxStatusService");
+const providerLatencyTracker = require("../services/providerLatencyTracker");
 
 const connection = {
   host: process.env.REDIS_HOST,
@@ -21,7 +22,6 @@ const worker = new Worker(
     const fax = await OutboundFax.findOne({ faxId });
     if (!fax) throw new Error(`OutboundFax not found: ${faxId}`);
 
-    // Prevent retrying delivered faxes
     if (fax.status === "delivered") {
       return { faxId, status: "already_delivered" };
     }
@@ -35,7 +35,7 @@ const worker = new Worker(
     });
 
     // Failover routing
-    const failoverProvider = await RoutingEngine.failoverProvider({
+    const failoverProvider = await routingEngine.failoverProvider({
       previousProvider: fax.provider,
       region: fax.region,
       to: fax.to,
@@ -44,13 +44,18 @@ const worker = new Worker(
 
     const adapter = ProviderRouter.getAdapter(failoverProvider);
 
+    const start = Date.now();
+
     const result = await adapter.sendFax({
+      faxId,
       to: fax.to,
       from: fax.from,
       pages: fax.pages,
       documentUrl: fax.documentUrl,
-      faxId,
     });
+
+    const latency = Date.now() - start;
+    await providerLatencyTracker.recordLatency(failoverProvider, latency);
 
     // Update fax record
     fax.provider = failoverProvider;
@@ -92,10 +97,9 @@ worker.on("failed", async (job, err) => {
     unifiedStatus: "dead",
   });
 
-  console.error(`❌ Retry failed → DLQ: ${faxId}`, err.message);
+  console.error(`❌ RetryFaxWorker → DLQ: ${faxId}`, err.message);
 });
 
-// Worker ready
 worker.on("ready", () => {
   console.log("🔁 RetryFaxWorker ready");
 });
