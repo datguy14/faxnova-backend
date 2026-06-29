@@ -2,6 +2,7 @@
 
 const express = require("express");
 const router = express.Router();
+
 const OutboundFax = require("../models/OutboundFax");
 const WebhookEvent = require("../models/WebhookEvent");
 
@@ -18,7 +19,7 @@ router.post("/provider/status", async (req, res) => {
       createdAt: new Date()
     });
 
-    // Update OutboundFax instead of Fax
+    // Update OutboundFax (the ONLY fax model in FaxNova v1)
     await OutboundFax.updateOne(
       { faxId },
       {
