@@ -1,95 +1,55 @@
 // src/services/providerPerformanceService.js
 
-const FaxNovaError = require("../errors/FaxNovaError");
+/**
+ * Provider Performance Service
+ *
+ * Scores range 0–100 and are used by providerRouter.
+ * These will later be stored in Redis, but for now
+ * we keep them in-memory with a clean API.
+ */
 
-// In‑memory metrics (can later be moved to Redis)
-const metrics = {
-  sinch: {
-    successes: 0,
-    failures: 0,
-    totalLatencyMs: 0
-  },
-  telnyx: {
-    successes: 0,
-    failures: 0,
-    totalLatencyMs: 0
-  }
+let scores = {
+  sinch: 85,
+  telnyx: 90
 };
 
 /**
- * Record a successful send with latency
+ * Get current provider scores
  */
-function recordSuccess(provider, latencyMs) {
-  if (!metrics[provider]) {
-    throw new FaxNovaError("Unknown provider for performance tracking", {
-      code: "PERF_PROVIDER_UNKNOWN",
-      provider
-    });
-  }
-
-  metrics[provider].successes += 1;
-  metrics[provider].totalLatencyMs += latencyMs || 0;
+async function getScores() {
+  return scores;
 }
 
 /**
- * Record a failed send
+ * Update provider score (0–100)
  */
-function recordFailure(provider) {
-  if (!metrics[provider]) {
-    throw new FaxNovaError("Unknown provider for performance tracking", {
-      code: "PERF_PROVIDER_UNKNOWN",
-      provider
-    });
-  }
+async function updateScore(provider, score) {
+  if (!scores[provider]) return;
 
-  metrics[provider].failures += 1;
+  scores[provider] = Math.max(0, Math.min(100, score));
 }
 
 /**
- * Compute a simple health score per provider (0–100)
+ * Apply penalty after failure
  */
-function getHealthScore(provider) {
-  const m = metrics[provider];
-  if (!m) {
-    throw new FaxNovaError("Unknown provider for health score", {
-      code: "PERF_PROVIDER_UNKNOWN",
-      provider
-    });
-  }
+async function applyFailurePenalty(provider) {
+  if (!scores[provider]) return;
 
-  const total = m.successes + m.failures;
-  if (total === 0) return 100; // no data yet → assume healthy
-
-  const successRate = m.successes / total; // 0–1
-  const avgLatency =
-    m.successes > 0 ? m.totalLatencyMs / m.successes : 1000; // ms
-
-  // Simple scoring: success rate weighted against latency
-  let score = successRate * 100;
-
-  if (avgLatency > 3000) score -= 30;
-  else if (avgLatency > 2000) score -= 20;
-  else if (avgLatency > 1000) score -= 10;
-
-  if (score < 0) score = 0;
-  if (score > 100) score = 100;
-
-  return Math.round(score);
+  scores[provider] = Math.max(0, scores[provider] - 10);
 }
 
 /**
- * Get scores for all providers (used by providerScoreCache + routingService.v2)
+ * Apply reward after success
  */
-function getScores() {
-  return {
-    sinch: getHealthScore("sinch"),
-    telnyx: getHealthScore("telnyx")
-  };
+async function applySuccessBoost(provider) {
+  if (!scores[provider]) return;
+
+  scores[provider] = Math.min(100, scores[provider] + 5);
 }
 
 module.exports = {
-  recordSuccess,
-  recordFailure,
-  getHealthScore,
-  getScores
+  getScores,
+  updateScore,
+  applyFailurePenalty,
+  applySuccessBoost
 };
