@@ -1,3 +1,0 @@
-export const onboardingPrompt = `
-  ...your full onboarding prompt here...
-`;
