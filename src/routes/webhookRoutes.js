@@ -9,12 +9,13 @@ router.post("/provider/status", async (req, res) => {
   try {
     const { faxId, status, provider, raw } = req.body;
 
-    // Store webhook event
+    // Store webhook event for audit + analytics
     await WebhookEvent.create({
       faxId,
       provider,
       payload: raw,
-      eventType: "status"
+      eventType: "status",
+      createdAt: new Date()
     });
 
     // Update OutboundFax instead of Fax
