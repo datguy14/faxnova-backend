@@ -1,75 +1,69 @@
 // src/services/sendFaxService.js
 
-const FaxNovaError = require("../errors/FaxNovaError");
 const OutboundFax = require("../models/OutboundFax");
-const { routeAndSendFax } = require("./routingService.v2");
-const audit = require("../audit/auditService");
-const crypto = require("crypto");
+const providerRouter = require("../providers/providerRouter");
+const providerPerformance = require("../services/providerPerformanceService");
+const providerOutages = require("../services/providerOutageService");
+const FaxNovaError = require("../errors/FaxNovaError");
 
-async function sendFax({ tenantId, to, from, pages, documentUrl, tier }) {
+async function sendFax({ tenantId, to, from, pages, documentUrl, tier, region }) {
   try {
-    if (!tenantId || !to || !from || !documentUrl) {
-      throw new FaxNovaError("Missing required fax fields", {
-        code: "FAX_FIELDS_MISSING"
-      });
-    }
+    // Load real-time routing data
+    const scores = await providerPerformance.getScores();
+    const outages = await providerOutages.getOutageStates();
 
-    // Generate unified FaxNova faxId (NOT Mongo _id)
-    const faxId = crypto.randomUUID();
+    // Determine residency zone from tenant or region
+    const residencyZone = region === "eu" ? "eu" : "us";
 
-    // 1. Route + Send via Routing Engine v2
-    const result = await routeAndSendFax({
-      tenantId,
-      to,
-      from,
-      pages,
-      documentUrl,
-      tier,
-      faxId
+    // Select provider
+    const provider = providerRouter.selectProvider({
+      residencyZone,
+      sovereignty: region,
+      scores,
+      outages,
+      retry: false
     });
 
-    // 2. Persist unified outbound fax record
-    const fax = await OutboundFax.create({
-      faxId,                         // unified FaxNova ID
+    const adapter = providerRouter.getAdapter(provider);
+
+    // Create DB record
+    const faxRecord = await OutboundFax.create({
       tenantId,
-      provider: result.provider,
-      failoverProvider: null,
       to,
       from,
       pages,
       documentUrl,
-      residencyZone: result.residencyZone,
-      sovereignty: result.sovereignty,
-      tier,
-      jobId: result.jobId,           // provider job ID
+      provider,
+      region,
       status: "sending",
-      latencyMs: result.latencyMs,
-      routingScore: result.routingScore
+      createdAt: new Date()
     });
 
-    // 3. Audit
-    audit.logEvent({
-      tenantId,
-      type: "fax_outbound",
-      action: "created",
-      details: {
-        faxId,
-        provider: result.provider,
-        jobId: result.jobId,
-        residencyZone: result.residencyZone,
-        sovereignty: result.sovereignty,
-        tier,
-        latencyMs: result.latencyMs,
-        routingScore: result.routingScore
+    // Send fax via provider adapter
+    const result = await adapter.sendFax({
+      faxId: faxRecord.faxId,
+      to,
+      from,
+      documentUrl
+    });
+
+    // Update DB
+    await OutboundFax.updateOne(
+      { faxId: faxRecord.faxId },
+      {
+        $set: {
+          providerMessageId: result.messageId,
+          status: "sent",
+          updatedAt: new Date()
+        }
       }
-    });
+    );
 
-    return {
-      faxId,
-      ...result
-    };
+    return result;
+
   } catch (err) {
-    throw new FaxNovaError("SendFaxService failed", {
+    await providerOutages.recordFailure(err.provider);
+    throw new FaxNovaError("sendFax failed", {
       code: "SEND_FAX_FAILED",
       details: err.message
     });
