@@ -1,17 +1,13 @@
-// src/routes/outboundFaxRoutes.js
-
 const express = require("express");
 const router = express.Router();
+const { auth } = require("../middleware/authMiddleware");
 
-const { outboundFax } = require("../controllers/outboundFaxController");
-const { residencyGuard } = require("../middleware/residencyGuard");
+router.post("/", auth, async (req, res) => {
+  // create outbound fax
+});
 
-/**
- * POST /fax/send
- *
- * Sends an outbound fax using Routing Engine v2.
- * residencyGuard ensures sovereignty + residency compliance.
- */
-router.post("/send", residencyGuard, outboundFax);
+router.get("/:id", auth, async (req, res) => {
+  // fetch outbound fax
+});
 
 module.exports = router;
