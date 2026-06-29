@@ -1,112 +1,42 @@
 // src/models/OutboundFax.js
 
 const mongoose = require("mongoose");
+const { v4: uuidv4 } = require("uuid");
 
-const OutboundFaxSchema = new mongoose.Schema(
-  {
-    tenantId: {
-      type: mongoose.Schema.Types.ObjectId,
-      required: true,
-      index: true
-    },
+const OutboundFaxSchema = new mongoose.Schema({
+  faxId: { type: String, default: uuidv4 },
+  tenantId: { type: String, required: true },
 
-    provider: {
-      type: String,
-      enum: ["sinch", "telnyx"],
-      required: true
-    },
+  to: { type: String, required: true },
+  from: { type: String, required: true },
 
-    failoverProvider: {
-      type: String,
-      enum: ["sinch", "telnyx", null],
-      default: null
-    },
+  pages: { type: Number, required: true },
+  documentUrl: { type: String, required: true },
 
-    to: {
-      type: String,
-      required: true
-    },
+  provider: { type: String },
+  providerMessageId: { type: String },
+  providerStatus: { type: Object },
 
-    from: {
-      type: String,
-      required: true
-    },
+  region: { type: String, enum: ["us", "eu", "global"], required: true },
 
-    pages: {
-      type: Number,
-      default: 1
-    },
-
-    documentUrl: {
-      type: String,
-      required: true
-    },
-
-    residencyZone: {
-      type: String,
-      enum: ["us", "eu", "global"],
-      required: true
-    },
-
-    sovereignty: {
-      type: String,
-      enum: ["domestic", "foreign"],
-      default: "domestic"
-    },
-
-    tier: {
-      type: String,
-      enum: ["basic", "pro", "enterprise"],
-      default: "basic"
-    },
-
-    jobId: {
-      type: String,
-      required: true,
-      index: true
-    },
-
-    status: {
-      type: String,
-      enum: ["queued", "sending", "delivered", "failed"],
-      default: "queued",
-      index: true
-    },
-
-    errorCode: {
-      type: String,
-      default: null
-    },
-
-    errorMessage: {
-      type: String,
-      default: null
-    },
-
-    latencyMs: {
-      type: Number,
-      default: null
-    },
-
-    routingScore: {
-      type: Number,
-      default: null
-    },
-
-    deliveredAt: {
-      type: Date,
-      default: null
-    }
+  status: {
+    type: String,
+    enum: [
+      "queued",
+      "sending",
+      "sent",
+      "delivered",
+      "failed",
+      "retrying",
+      "dead"
+    ],
+    default: "queued"
   },
-  {
-    timestamps: true
-  }
-);
 
-// Indexes for dashboard + analytics
-OutboundFaxSchema.index({ tenantId: 1, createdAt: -1 });
-OutboundFaxSchema.index({ provider: 1, status: 1 });
-OutboundFaxSchema.index({ residencyZone: 1 });
-OutboundFaxSchema.index({ sovereignty: 1 });
+  attempts: { type: Number, default: 0 },
+
+  createdAt: { type: Date, default: Date.now },
+  updatedAt: { type: Date }
+});
 
 module.exports = mongoose.model("OutboundFax", OutboundFaxSchema);
