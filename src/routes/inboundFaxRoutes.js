@@ -1,24 +1,9 @@
-// src/routes/inboundFaxRoutes.js
-
 const express = require("express");
 const router = express.Router();
+const { auth, requireAdmin } = require("../middleware/authMiddleware");
 
-const { inboundFax } = require("../controllers/inboundFaxController");
-
-// Provider-specific inbound adapters
-const sinchInbound = require("../providers/sinchInboundAdapter");
-const telnyxInbound = require("../providers/telnyxInboundAdapter");
-
-/**
- * POST /fax/inbound/sinch
- * Sinch inbound webhook → normalized → inboundFaxController
- */
-router.post("/sinch", sinchInbound, inboundFax);
-
-/**
- * POST /fax/inbound/telnyx
- * Telnyx inbound webhook → normalized → inboundFaxController
- */
-router.post("/telnyx", telnyxInbound, inboundFax);
+router.get("/", auth, requireAdmin, async (req, res) => {
+  // list inbound faxes
+});
 
 module.exports = router;
