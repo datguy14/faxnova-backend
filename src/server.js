@@ -1,5 +1,3 @@
-// server.js
-
 require("dotenv").config();
 const express = require("express");
 const mongoose = require("mongoose");
@@ -26,61 +24,34 @@ app.use(
 );
 
 // --------------------
-// Route Imports
+// Unified Route Imports
 // --------------------
-const adminDashboardRoutes = require("./src/routes/adminDashboardRoutes");
-const adminAnalyticsRoutes = require("./src/routes/adminAnalytics");
-const analyticsRoutes = require("./src/routes/analyticsRoutes");
-const agentRoutes = require("./src/routes/agentRoutes");
-const auditRoutes = require("./src/routes/auditRoutes");
-const auditViewerRoutes = require("./src/routes/auditViewerRoutes");
 const authRoutes = require("./src/routes/authRoutes");
+const adminRoutes = require("./src/routes/adminRoutes");          // merged admin router
 const dashboardRoutes = require("./src/routes/dashboardRoutes");
-const docsRoutes = require("./src/routes/docsRoutes");
+const analyticsRoutes = require("./src/routes/analyticsRoutes");
 
-const faxRoutes = require("./src/routes/faxRoutes");
-const faxDeleteRoutes = require("./src/routes/faxDeleteRoutes");
-const faxDownloadRoutes = require("./src/routes/faxDownloadRoutes");
-const faxEventHistoryRoutes = require("./src/routes/faxEventHistoryRoutes");
-const faxResendRoutes = require("./src/routes/faxResendRoutes");
-const faxRetryRoutes = require("./src/routes/faxRetryRoutes");
-const faxStatusRoutes = require("./src/routes/faxStatusRoutes");
-const faxWebhookRoutes = require("./src/routes/faxWebhookRoutes");
-
+const faxRoutes = require("./src/routes/faxRoutes");              // merged fax router
 const inboundFaxRoutes = require("./src/routes/inboundFaxRoutes");
-const outboundFaxRoutes = require("./src/routes/outboundFaxRoutes");
 
 const providerRoutes = require("./src/routes/providerRoutes");
 const webhookRoutes = require("./src/routes/webhookRoutes");
 
 // --------------------
-// Route Mounting
+// Unified Route Mounting
 // --------------------
-app.use("/admin/dashboard", adminDashboardRoutes);
-app.use("/admin/analytics", adminAnalyticsRoutes);
+app.use("/api/auth", authRoutes);
+app.use("/api/admin", adminRoutes);
+app.use("/api/dashboard", dashboardRoutes);
+app.use("/api/analytics", analyticsRoutes);
 
-app.use("/analytics", analyticsRoutes);
-app.use("/agent", agentRoutes);
-app.use("/audit", auditRoutes);
-app.use("/audit/viewer", auditViewerRoutes);
-app.use("/auth", authRoutes);
-app.use("/dashboard", dashboardRoutes);
-app.use("/docs", docsRoutes);
+app.use("/api/faxes", faxRoutes);
+app.use("/api/faxes/inbound", inboundFaxRoutes);
 
-app.use("/fax", faxRoutes);
-app.use("/fax/delete", faxDeleteRoutes);
-app.use("/fax/download", faxDownloadRoutes);
-app.use("/fax/history", faxEventHistoryRoutes);
-app.use("/fax/resend", faxResendRoutes);
-app.use("/fax/retry", faxRetryRoutes);
-app.use("/fax/status", faxStatusRoutes);
-app.use("/fax/webhook", faxWebhookRoutes);
+app.use("/api/providers", providerRoutes);
 
-app.use("/inbound", inboundFaxRoutes);
-app.use("/outbound", outboundFaxRoutes);
-
-app.use("/provider", providerRoutes);
-app.use("/webhook", webhookRoutes);
+// External provider callbacks (no auth)
+app.use("/webhooks", webhookRoutes);
 
 // --------------------
 // Health Check
