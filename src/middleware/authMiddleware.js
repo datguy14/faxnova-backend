@@ -1,55 +1,64 @@
 const jwt = require("jsonwebtoken");
-const User = require("../models/User");
+const FaxNovaError = require("../errors/FaxNovaError");
 
-// Standard JWT authentication
-exports.auth = async (req, res, next) => {
+// API keys for internal services (workers, webhooks, admin tools)
+const VALID_API_KEYS = new Set([
+  process.env.INTERNAL_API_KEY,
+  process.env.WORKER_API_KEY,
+  process.env.WEBHOOK_API_KEY
+]);
+
+module.exports = async (req, res, next) => {
   try {
-    const header = req.headers.authorization;
-    if (!header || !header.startsWith("Bearer ")) {
-      return res.status(401).json({ error: "Missing or invalid token" });
+    const authHeader = req.headers.authorization;
+    const apiKeyHeader = req.headers["x-api-key"];
+
+    // ---------------------------------------------
+    // 1. API KEY AUTH (Workers, Webhooks, Internal Services)
+    // ---------------------------------------------
+    if (apiKeyHeader && VALID_API_KEYS.has(apiKeyHeader)) {
+      req.user = {
+        id: "internal-service",
+        role: "system",
+        tenantId: "global"
+      };
+      req.tenantId = "global";
+      return next();
     }
 
-    const token = header.split(" ")[1];
+    // ---------------------------------------------
+    // 2. JWT AUTH (User / Admin)
+    // ---------------------------------------------
+    if (!authHeader) {
+      throw new FaxNovaError("Missing authentication token", {
+        code: "AUTH_TOKEN_MISSING"
+      });
+    }
+
+    const token = authHeader.split(" ")[1];
+    if (!token) {
+      throw new FaxNovaError("Missing authentication token", {
+        code: "AUTH_TOKEN_MISSING"
+      });
+    }
+
     const decoded = jwt.verify(token, process.env.JWT_SECRET);
 
-    const user = await User.findById(decoded.userId);
-    if (!user) {
-      return res.status(401).json({ error: "User not found" });
-    }
+    req.user = {
+      id: decoded.userId,
+      tenantId: decoded.tenantId,
+      role: decoded.role
+    };
 
-    req.user = user;
+    req.tenantId = decoded.tenantId;
+
     next();
   } catch (err) {
-    console.error("AUTH ERROR:", err);
-    return res.status(401).json({ error: "Unauthorized" });
-  }
-};
-
-// Admin-only protection
-exports.requireAdmin = (req, res, next) => {
-  if (!req.user || req.user.role !== "admin") {
-    return res.status(403).json({ error: "Admin access required" });
-  }
-  next();
-};
-
-// Optional API key authentication
-exports.apiKeyAuth = async (req, res, next) => {
-  try {
-    const apiKey = req.headers["x-api-key"];
-    if (!apiKey) {
-      return res.status(401).json({ error: "Missing API key" });
-    }
-
-    const user = await User.findOne({ apiKey });
-    if (!user) {
-      return res.status(401).json({ error: "Invalid API key" });
-    }
-
-    req.user = user;
-    next();
-  } catch (err) {
-    console.error("APIKEY AUTH ERROR:", err);
-    return res.status(401).json({ error: "Unauthorized" });
+    next(
+      new FaxNovaError("Invalid or expired token", {
+        code: "AUTH_INVALID",
+        details: err.message
+      })
+    );
   }
 };
