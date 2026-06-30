@@ -1,44 +1,131 @@
 services:
+  # -----------------------------
+  # MAIN BACKEND API SERVICE
+  # -----------------------------
   - type: web
     name: faxnova-backend
     env: node
-    plan: free
+    plan: starter
     region: oregon
-
-    rootDir: .
-    buildCommand: npm install
-    startCommand: node server.js
-
-    runtime:
-      nodeVersion: 20
-
+    buildCommand: "npm install"
+    startCommand: "npm start"
     autoDeploy: true
 
-    build:
-      noCache: true
-
     envVars:
-      - key: NODE_ENV
-        value: production
-
+      - key: JWT_SECRET
+        sync: false
       - key: MONGO_URI
         sync: false
-
-      - key: JWT_ADMIN_SECRET
+      - key: REDIS_HOST
+        fromService:
+          name: faxnova-redis
+          property: host
+      - key: REDIS_PORT
+        fromService:
+          name: faxnova-redis
+          property: port
+      - key: REDIS_PASSWORD
+        fromService:
+          name: faxnova-redis
+          property: password
+      - key: WEBHOOK_SECRET
         sync: false
 
-      - key: WEBHOOK_SECRET_2026_05
+  # -----------------------------
+  # OUTBOUND FAX WORKER
+  # -----------------------------
+  - type: worker
+    name: outbound-fax-worker
+    env: node
+    plan: starter
+    region: oregon
+    buildCommand: "npm install"
+    startCommand: "node src/workers/outboundFaxWorker.js"
+    autoDeploy: true
+
+    envVars:
+      - key: JWT_SECRET
         sync: false
+      - key: MONGO_URI
+        sync: false
+      - key: REDIS_HOST
+        fromService:
+          name: faxnova-redis
+          property: host
+      - key: REDIS_PORT
+        fromService:
+          name: faxnova-redis
+          property: port
+      - key: REDIS_PASSWORD
+        fromService:
+          name: faxnova-redis
+          property: password
 
-      - key: DEBUG_RESIDENCY
-        value: "false"
+  # -----------------------------
+  # RETRY WORKER
+  # -----------------------------
+  - type: worker
+    name: retry-fax-worker
+    env: node
+    plan: starter
+    region: oregon
+    buildCommand: "npm install"
+    startCommand: "node src/workers/retryFaxWorker.js"
+    autoDeploy: true
 
-    healthCheckPath: /health
+    envVars:
+      - key: JWT_SECRET
+        sync: false
+      - key: MONGO_URI
+        sync: false
+      - key: REDIS_HOST
+        fromService:
+          name: faxnova-redis
+          property: host
+      - key: REDIS_PORT
+        fromService:
+          name: faxnova-redis
+          property: port
+      - key: REDIS_PASSWORD
+        fromService:
+          name: faxnova-redis
+          property: password
 
-    buildFilter:
-      paths:
-        - src/**
-        - package.json
-        - package-lock.json
-        - server.js
-        - render.yaml
+  # -----------------------------
+  # DEAD LETTER WORKER
+  # -----------------------------
+  - type: worker
+    name: dead-letter-worker
+    env: node
+    plan: starter
+    region: oregon
+    buildCommand: "npm install"
+    startCommand: "node src/workers/deadLetterWorker.js"
+    autoDeploy: true
+
+    envVars:
+      - key: JWT_SECRET
+        sync: false
+      - key: MONGO_URI
+        sync: false
+      - key: REDIS_HOST
+        fromService:
+          name: faxnova-redis
+          property: host
+      - key: REDIS_PORT
+        fromService:
+          name: faxnova-redis
+          property: port
+      - key: REDIS_PASSWORD
+        fromService:
+          name: faxnova-redis
+          property: password
+
+# -----------------------------
+# REDIS INSTANCE
+# -----------------------------
+databases:
+  - name: faxnova-redis
+    plan: starter
+    region: oregon
+    ipAllowList: []
