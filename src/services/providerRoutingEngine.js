@@ -2,10 +2,11 @@
 
 const providerDiagnosticsService = require("./providerDiagnosticsService");
 const providerResidencyEngine = require("./providerResidencyEngine");
+const providerPerformanceService = require("./providerPerformanceService");
+const providerHealthService = require("./providerHealthService");
 
 module.exports = {
   async selectProviderForFax(fax) {
-    // 1) Residency + sovereignty filtering
     const allowedProviders =
       providerResidencyEngine.getAllowedProvidersForFax(fax);
 
@@ -15,16 +16,13 @@ module.exports = {
 
     const scored = [];
 
-    // 2) Unified diagnostics for each provider
     for (const provider of allowedProviders) {
       const diag = await providerDiagnosticsService.getDiagnostics(provider);
 
-      // Hard fail: provider is down or outage detected
       if (diag.health === "down" || diag.outageState === "open") {
         continue;
       }
 
-      // Unified routing weight
       scored.push({
         provider,
         weight: diag.routingWeight,
@@ -39,7 +37,6 @@ module.exports = {
       throw new Error("No available providers after diagnostics filtering");
     }
 
-    // 3) Sort by unified weight
     scored.sort((a, b) => b.weight - a.weight);
 
     return scored[0].provider;
