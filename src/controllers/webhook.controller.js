@@ -1,119 +1,63 @@
-// webhookController.js
+// src/controllers/webhookController.js
 
+const providerWebhookNormalizer = require("../services/providerWebhookNormalizer");
+const providerRoutingEngine = require("../services/providerRoutingEngine");
 const providerHealthService = require("../services/providerHealthService");
 const providerPerformanceService = require("../services/providerPerformanceService");
-const faxService = require("../services/faxService");
-const inboundFaxService = require("../services/inboundFaxService");
-const providerRoutingEngine = require("../services/providerRoutingEngine");
+const OutboundFax = require("../models/OutboundFax");
+const WebhookEvent = require("../models/WebhookEvent");
 
 module.exports = {
   // ---------------------------------------------------------
-  // SINCH OUTBOUND CALLBACK
+  // Unified webhook handler for Sinch + Telnyx
   // ---------------------------------------------------------
-  async handleSinchOutbound(payload) {
-    const normalized = {
-      provider: "sinch",
-      faxId: payload.messageId || payload.faxId,
-      status: payload.status,
-      error: payload.errorCode || null,
-      raw: payload
-    };
+  async handleWebhook(req, res) {
+    try {
+      const provider = req.params.provider; // "sinch" or "telnyx"
+      const payload = req.body;
 
-    await this._processOutbound(normalized);
-  },
+      // Normalize provider-specific payload
+      const event = providerWebhookNormalizer.normalize(provider, payload);
 
-  // ---------------------------------------------------------
-  // TELNYX OUTBOUND CALLBACK
-  // ---------------------------------------------------------
-  async handleTelnyxOutbound(payload) {
-    const normalized = {
-      provider: "telnyx",
-      faxId: payload.data?.payload?.fax_id,
-      status: payload.data?.payload?.status,
-      error: payload.data?.payload?.errors || null,
-      raw: payload
-    };
+      // Persist raw webhook event
+      await WebhookEvent.create({
+        faxId: event.faxId,
+        provider: event.provider,
+        providerFaxId: event.providerFaxId,
+        status: event.status,
+        error: event.error,
+        raw: event.raw,
+      });
 
-    await this._processOutbound(normalized);
-  },
+      // Update outbound fax record
+      if (event.faxId) {
+        await OutboundFax.findByIdAndUpdate(event.faxId, {
+          status: event.status,
+          provider: event.provider,
+          providerFaxId: event.providerFaxId,
+          error: event.error,
+          lastEventAt: new Date(),
+        });
+      }
 
-  // ---------------------------------------------------------
-  // INBOUND FAX CALLBACK (Sinch or Telnyx)
-  // ---------------------------------------------------------
-  async handleInboundFax(payload) {
-    const normalized = {
-      provider: payload.provider || "unknown",
-      from: payload.from || payload.caller_id,
-      to: payload.to || payload.destination,
-      faxId: payload.faxId || payload.messageId,
-      raw: payload
-    };
+      // Update provider performance + health
+      if (event.status === "delivered") {
+        providerPerformanceService.applySuccessBoost(provider);
+        providerHealthService.setHealth(provider, "healthy");
+      }
 
-    await inboundFaxService.storeInboundFax(normalized);
-  },
+      if (event.status === "failed") {
+        providerPerformanceService.applyFailurePenalty(provider);
+        providerHealthService.setHealth(provider, "degraded");
+      }
 
-  // ---------------------------------------------------------
-  // DELIVERY RECEIPT (Unified)
-  // ---------------------------------------------------------
-  async handleDeliveryReceipt(payload) {
-    const normalized = {
-      provider: payload.provider,
-      faxId: payload.faxId,
-      delivered: payload.delivered === true,
-      timestamp: payload.timestamp || Date.now(),
-      raw: payload
-    };
+      // Notify routing engine of provider event
+      providerRoutingEngine.recordEvent(provider, event);
 
-    if (normalized.delivered) {
-      providerPerformanceService.applySuccessBoost(normalized.provider);
-      providerHealthService.setHealth(normalized.provider, "healthy");
+      return res.status(200).json({ ok: true });
+    } catch (err) {
+      console.error("Webhook error:", err);
+      return res.status(500).json({ error: err.message });
     }
-
-    await faxService.updateFaxStatus(normalized.faxId, "delivered");
   },
-
-  // ---------------------------------------------------------
-  // PROVIDER ERROR / FAILURE
-  // ---------------------------------------------------------
-  async handleProviderError(payload) {
-    const normalized = {
-      provider: payload.provider,
-      faxId: payload.faxId,
-      error: payload.error,
-      raw: payload
-    };
-
-    providerPerformanceService.applyFailurePenalty(normalized.provider);
-    providerHealthService.setHealth(normalized.provider, "degraded");
-
-    await faxService.updateFaxStatus(normalized.faxId, "failed");
-  },
-
-  // ---------------------------------------------------------
-  // INTERNAL OUTBOUND PROCESSOR (Normalization Target)
-  // ---------------------------------------------------------
-  async _processOutbound(event) {
-    const { provider, faxId, status, error } = event;
-
-    // Update fax status
-    await faxService.updateFaxStatus(faxId, status);
-
-    // Provider scoring + health
-    if (status === "delivered" || status === "success") {
-      providerPerformanceService.applySuccessBoost(provider);
-      providerHealthService.setHealth(provider, "healthy");
-    }
-
-    if (status === "failed" || error) {
-      providerPerformanceService.applyFailurePenalty(provider);
-      providerHealthService.setHealth(provider, "degraded");
-    }
-
-    // Sovereignty routing engine can log or adjust routing
-    providerRoutingEngine.recordEvent(provider, {
-      faxId,
-      status,
-      error
-    });
-  }
 };
