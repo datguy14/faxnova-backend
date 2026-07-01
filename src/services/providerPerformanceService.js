@@ -2,13 +2,13 @@
 
 const providerScoreCache = require("./providerScoreCache");
 
-// Default scores (can be persisted in Redis later)
+// Sovereignty scoring model
 const DEFAULT_SCORE = 100;
 const MIN_SCORE = 10;
 const MAX_SCORE = 200;
 
-const BOOST_AMOUNT = 15;
-const PENALTY_AMOUNT = 25;
+const BOOST_AMOUNT = 15;     // success
+const PENALTY_AMOUNT = 25;   // failure
 
 module.exports = {
   // ---------------------------------------------------------
@@ -63,14 +63,13 @@ module.exports = {
   },
 
   // ---------------------------------------------------------
-  // Normalize score (called by routing engine)
+  // Normalize score (routing engine safety)
   // ---------------------------------------------------------
   normalize(provider) {
     const current = this.getScore(provider);
-
     const normalized = Math.max(MIN_SCORE, Math.min(MAX_SCORE, current));
-    providerScoreCache.set(provider, normalized);
 
+    providerScoreCache.set(provider, normalized);
     return normalized;
   },
 
