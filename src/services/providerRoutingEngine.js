@@ -1,82 +1,89 @@
-// providerRoutingEngine.js
+// src/services/providerRoutingEngine.js
 
 const providerHealthService = require("./providerHealthService");
 const providerPerformanceService = require("./providerPerformanceService");
+const providerLatencyTracker = require("./providerLatencyTracker");
+const providerOutageService = require("./providerOutageService");
+const providerDiagnosticsService = require("./providerDiagnosticsService");
 
-// List of providers FaxNova supports
+// FaxNova providers
 const PROVIDERS = ["sinch", "telnyx"];
 
 module.exports = {
   // ---------------------------------------------------------
-  // Return all providers with health + score
-  // ---------------------------------------------------------
-  getAllProviders() {
-    return PROVIDERS.map((provider) => ({
-      name: provider,
-      score: providerPerformanceService.getScore(provider),
-      health: providerHealthService.getHealth(provider),
-    }));
-  },
-
-  // ---------------------------------------------------------
   // Select best provider using sovereignty routing
   // ---------------------------------------------------------
   async selectProvider() {
-    const candidates = PROVIDERS.map((provider) => ({
-      provider,
-      score: providerPerformanceService.getScore(provider),
-      health: providerHealthService.getHealth(provider),
-    }));
+    const scored = [];
 
-    // Filter out unhealthy providers
-    const healthyProviders = candidates.filter(
-      (p) => p.health === "healthy" || p.health === "degraded"
-    );
+    for (const provider of PROVIDERS) {
+      const health = providerHealthService.getHealth(provider);
+      const score = providerPerformanceService.getScore(provider);
+      const latency = await providerLatencyTracker.getLatency(provider);
+      const outage = await providerOutageService.isOutage(provider);
 
-    // If no healthy providers exist, fallback to highest score
-    const pool = healthyProviders.length > 0 ? healthyProviders : candidates;
-
-    // Weighted selection based on score
-    const totalScore = pool.reduce((sum, p) => sum + p.score, 0);
-
-    // If all scores are zero, pick randomly
-    if (totalScore === 0) {
-      return pool[Math.floor(Math.random() * pool.length)].provider;
-    }
-
-    // Weighted random selection
-    let threshold = Math.random() * totalScore;
-
-    for (const p of pool) {
-      if (threshold < p.score) {
-        return p.provider;
+      // Hard fail: provider is down or outage detected
+      if (health === "down" || outage) {
+        continue;
       }
-      threshold -= p.score;
+
+      // Soft fail: degraded providers get reduced weight
+      const healthWeight = health === "degraded" ? 0.5 : 1;
+
+      // Latency penalty (higher latency → lower weight)
+      const latencyPenalty = latency > 5000 ? 0.7 : 1;
+
+      const weight = score * healthWeight * latencyPenalty;
+
+      scored.push({ provider, weight });
     }
 
-    // Fallback (should never hit)
-    return pool[0].provider;
+    if (scored.length === 0) {
+      throw new Error("No available providers");
+    }
+
+    // Sort by highest weight
+    scored.sort((a, b) => b.weight - a.weight);
+
+    return scored[0].provider;
   },
 
   // ---------------------------------------------------------
-  // Record provider event (success/failure)
+  // Return provider weight (for diagnostics)
   // ---------------------------------------------------------
-  recordEvent(provider, event) {
-    // event = { faxId, status, error }
+  async getProviderWeight(provider) {
+    const health = providerHealthService.getHealth(provider);
+    const score = providerPerformanceService.getScore(provider);
+    const latency = await providerLatencyTracker.getLatency(provider);
+    const outage = await providerOutageService.isOutage(provider);
 
-    // Success → boost score + healthy
-    if (event.status === "delivered" || event.status === "success") {
+    if (health === "down" || outage) return 0;
+
+    const healthWeight = health === "degraded" ? 0.5 : 1;
+    const latencyPenalty = latency > 5000 ? 0.7 : 1;
+
+    return score * healthWeight * latencyPenalty;
+  },
+
+  // ---------------------------------------------------------
+  // Record provider event (from webhookController)
+  // ---------------------------------------------------------
+  async recordEvent(provider, event) {
+    // Update health + score based on event
+    if (event.status === "delivered") {
       providerPerformanceService.applySuccessBoost(provider);
       providerHealthService.setHealth(provider, "healthy");
     }
 
-    // Failure → penalty + degraded
-    if (event.status === "failed" || event.error) {
+    if (event.status === "failed") {
       providerPerformanceService.applyFailurePenalty(provider);
       providerHealthService.setHealth(provider, "degraded");
     }
 
-    // Could log to Redis or DB here if needed
-    return true;
+    // Optionally: log diagnostics
+    const diag = await providerDiagnosticsService.getDiagnostics(provider);
+    console.log("Provider diagnostics:", diag);
+
+    return diag;
   },
 };
