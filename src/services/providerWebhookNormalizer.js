@@ -22,7 +22,10 @@ function normalizeSinch(payload) {
     error: payload?.errorMessage || null,
     raw: payload,
 
-    externalEventId: payload?.eventId || payload?.id || `${payload?.id}-${payload?.event}`,
+    externalEventId:
+      payload?.eventId ||
+      payload?.id ||
+      `${payload?.id}-${payload?.event}`,
   };
 }
 
@@ -37,15 +40,19 @@ function mapSinchStatus(event = "") {
 
 function normalizeTelnyx(payload) {
   const data = payload?.data || {};
+
   return {
     faxId: data?.metadata?.faxId || null,
     provider: "telnyx",
     providerFaxId: data?.id || null,
-    status: mapTelnyxStatus(payload?.event_type),
+    status: mapTelnyxStatus(payload?.eventType),
     error: data?.errors?.[0]?.detail || null,
     raw: payload,
 
-    externalEventId: payload?.event_id || data?.id || `${data?.id}-${payload?.event_type}`,
+    externalEventId:
+      payload?.eventId ||
+      data?.id ||
+      `${data?.id}-${payload?.eventType}`,
   };
 }
 
