@@ -1,86 +1,55 @@
+// src/routes/authRoutes.js
+
 const express = require("express");
-const bcrypt = require("bcryptjs");
-const jwt = require("jsonwebtoken");
-const User = require("../models/User");
-
 const router = express.Router();
+const { z } = require("zod");
 
-// POST /auth/register  (admin-only creation)
-router.post("/register", async (req, res) => {
-  try {
-    const { email, password, role } = req.body;
+const FaxNovaError = require("../errors/FaxNovaError");
+const authController = require("../controllers/authController");
 
-    const existing = await User.findOne({ email });
-    if (existing) {
-      return res.status(400).json({ error: "User already exists" });
-    }
+// Zod validation schema
+const authSchema = z.object({
+  email: z.string()
+    .email("Invalid email format")
+    .min(5, "Email too short")
+    .max(254, "Email too long")
+    .transform(e => e.toLowerCase().trim()),
 
-    const passwordHash = await bcrypt.hash(password, 10);
-
-    const user = await User.create({
-      email,
-      passwordHash,
-      role: role || "admin"
-    });
-
-    res.json({ success: true, userId: user._id });
-  } catch (err) {
-    console.error("REGISTER ERROR:", err);
-    res.status(500).json({ error: "Registration failed" });
-  }
+  password: z.string()
+    .min(8, "Password must be at least 8 characters")
+    .max(128, "Password too long")
+    .regex(/^\S+$/, "Password cannot contain spaces")
 });
 
-// POST /auth/login
-router.post("/login", async (req, res) => {
+// Wrapper to validate input
+function validateAuth(req, res, next) {
+  try {
+    req.body = authSchema.parse(req.body);
+    next();
+  } catch (err) {
+    next(new FaxNovaError(err.errors?.[0]?.message || "Invalid credentials", 400));
+  }
+}
+
+// Register
+router.post("/register", validateAuth, async (req, res, next) => {
   try {
     const { email, password } = req.body;
-
-    const user = await User.findOne({ email });
-    if (!user) {
-      return res.status(401).json({ error: "Invalid credentials" });
-    }
-
-    const valid = await bcrypt.compare(password, user.passwordHash);
-    if (!valid) {
-      return res.status(401).json({ error: "Invalid credentials" });
-    }
-
-    user.lastLoginAt = new Date();
-    await user.save();
-
-    const token = jwt.sign(
-      { userId: user._id, role: user.role },
-      process.env.JWT_SECRET,
-      { expiresIn: "7d" }
-    );
-
-    res.json({ token });
+    const result = await authController.register(email, password);
+    res.json(result);
   } catch (err) {
-    console.error("LOGIN ERROR:", err);
-    res.status(500).json({ error: "Login failed" });
+    next(err);
   }
 });
 
-// Optional: API key authentication
-router.post("/apikey/login", async (req, res) => {
+// Login
+router.post("/login", validateAuth, async (req, res, next) => {
   try {
-    const { apiKey } = req.body;
-
-    const user = await User.findOne({ apiKey });
-    if (!user) {
-      return res.status(401).json({ error: "Invalid API key" });
-    }
-
-    const token = jwt.sign(
-      { userId: user._id, role: user.role },
-      process.env.JWT_SECRET,
-      { expiresIn: "7d" }
-    );
-
-    res.json({ token });
+    const { email, password } = req.body;
+    const result = await authController.login(email, password);
+    res.json(result);
   } catch (err) {
-    console.error("APIKEY LOGIN ERROR:", err);
-    res.status(500).json({ error: "API key login failed" });
+    next(err);
   }
 });
 
