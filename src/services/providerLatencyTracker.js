@@ -1,42 +1,46 @@
 // src/services/providerLatencyTracker.js
 
-/**
- * Provider Latency Tracker (FaxNova v1)
- *
- * Responsibilities:
- * - Track per‑provider latency for Routing Engine v2
- * - Feed latency into providerPerformanceService
- */
+const LATENCY_WINDOW = 50; // last 50 samples
+const EWMA_ALPHA = 0.3;    // smoothing factor
 
-const providerPerformanceService = require("./providerPerformanceService");
-const FaxNovaError = require("../errors/FaxNovaError");
+const latencyData = {
+  sinch: { samples: [], ewma: null },
+  telnyx: { samples: [], ewma: null },
+};
 
-/**
- * Track latency for a provider
- */
-function trackLatency(provider, latencyMs) {
-  try {
-    if (!provider || typeof latencyMs !== "number") {
-      throw new FaxNovaError("Invalid latency tracking fields", {
-        code: "LATENCY_FIELDS_INVALID",
-        provider,
-        latencyMs
-      });
+module.exports = {
+  recordLatency(provider, ms) {
+    const data = latencyData[provider];
+
+    // Rolling window
+    data.samples.push(ms);
+    if (data.samples.length > LATENCY_WINDOW) {
+      data.samples.shift();
     }
 
-    providerPerformanceService.recordSuccess(provider, latencyMs);
+    // EWMA smoothing
+    if (data.ewma === null) {
+      data.ewma = ms;
+    } else {
+      data.ewma = EWMA_ALPHA * ms + (1 - EWMA_ALPHA) * data.ewma;
+    }
+  },
+
+  async getLatency(provider) {
+    const data = latencyData[provider];
+    const samples = [...data.samples];
+
+    if (!samples.length) return { p95: 0, p99: 0, ewma: 0 };
+
+    samples.sort((a, b) => a - b);
+
+    const p95 = samples[Math.floor(samples.length * 0.95)];
+    const p99 = samples[Math.floor(samples.length * 0.99)];
 
     return {
-      provider,
-      latencyMs,
-      avgLatency: providerPerformanceService.computeScore(provider)
+      p95,
+      p99,
+      ewma: data.ewma,
     };
-  } catch (err) {
-    throw new FaxNovaError("Latency tracking failed", {
-      code: "LATENCY_TRACK_FAILED",
-      details: err.message
-    });
-  }
-}
-
-module.exports = { trackLatency };
+  },
+};
