@@ -1,6 +1,6 @@
 // src/services/providerRoutingEngine.js
 
-const providerDiagnosticsService = require("./providerDiagnosticsService");
+const providerCapabilitiesEngine = require("./providerCapabilitiesEngine");
 const providerResidencyEngine = require("./providerResidencyEngine");
 const providerPerformanceService = require("./providerPerformanceService");
 const providerHealthService = require("./providerHealthService");
@@ -17,19 +17,19 @@ module.exports = {
     const scored = [];
 
     for (const provider of allowedProviders) {
-      const diag = await providerDiagnosticsService.getDiagnostics(provider);
+      const caps = await providerCapabilitiesEngine.getProviderCapabilities(provider, fax);
 
-      if (diag.health === "down" || diag.outageState === "open") {
+      if (caps.health === "down" || caps.outageState === "open") {
         continue;
       }
 
       scored.push({
         provider,
-        weight: diag.routingWeight,
-        latency: diag.latency,
-        health: diag.health,
-        score: diag.score,
-        outageState: diag.outageState,
+        weight: caps.weight,
+        latency: caps.latency,
+        health: caps.health,
+        score: caps.score,
+        outageState: caps.outageState,
       });
     }
 
@@ -43,8 +43,8 @@ module.exports = {
   },
 
   async getProviderWeight(provider) {
-    const diag = await providerDiagnosticsService.getDiagnostics(provider);
-    return diag.routingWeight;
+    const caps = await providerCapabilitiesEngine.getProviderCapabilities(provider);
+    return caps.weight;
   },
 
   async recordEvent(provider, event) {
@@ -58,6 +58,6 @@ module.exports = {
       providerHealthService.setHealth(provider, "degraded");
     }
 
-    return providerDiagnosticsService.getDiagnostics(provider);
+    return providerCapabilitiesEngine.getProviderCapabilities(provider);
   }
 };
