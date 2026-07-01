@@ -19,9 +19,10 @@ module.exports = {
   async getDiagnostics(provider) {
     const health = providerHealthService.getHealth(provider);
     const score = providerPerformanceService.getScore(provider);
+    const errorRate = providerPerformanceService.getErrorRate(provider);
 
     const latencyInfo = await providerLatencyTracker.getLatency(provider);
-    const latency = latencyInfo.value; // numeric latency
+    const latency = latencyInfo.value;
 
     const outageState = await providerOutageService.getOutageState(provider);
 
@@ -31,9 +32,10 @@ module.exports = {
       provider,
       health,
       score,
-      latency,               // numeric
+      errorRate,
+      latency,
       latencyDetails: latencyInfo,
-      outageState,           // "open" | "closed" | "half-open"
+      outageState,
       routingWeight,
       circuitBreaker: breakerState[provider] || "unknown",
       timestamp: new Date(),
