@@ -30,7 +30,14 @@ module.exports = {
     const data = latencyData[provider];
     const samples = [...data.samples];
 
-    if (!samples.length) return { p95: 0, p99: 0, ewma: 0 };
+    if (!samples.length) {
+      return {
+        p95: 0,
+        p99: 0,
+        ewma: 0,
+        value: 0, // routing-safe numeric latency
+      };
+    }
 
     samples.sort((a, b) => a - b);
 
@@ -41,6 +48,7 @@ module.exports = {
       p95,
       p99,
       ewma: data.ewma,
+      value: data.ewma, // routing engine uses this
     };
   },
 };
