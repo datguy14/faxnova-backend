@@ -1,23 +1,26 @@
 // src/services/providerRoutingEngine.js
 
-const providerCapabilitiesEngine = require("./providerCapabilitiesEngine");
-const providerResidencyEngine = require("./providerResidencyEngine");
+const providerCapabilitiesService = require("./providerCapabilitiesService");
 const providerPerformanceService = require("./providerPerformanceService");
 const providerHealthService = require("./providerHealthService");
+const providerOutageService = require("./providerOutageService");
+const providerLatencyTracker = require("./providerLatencyTracker");
+const providerDiagnosticsService = require("./providerDiagnosticsService");
 
 module.exports = {
   async selectProviderForFax(fax) {
+    // Residency filtering now handled inside capabilities service
     const allowedProviders =
-      providerResidencyEngine.getAllowedProvidersForFax(fax);
+      await providerCapabilitiesService.getAllowedProvidersForFax(fax);
 
     if (!allowedProviders.length) {
-      throw new Error("No providers satisfy residency constraints");
+      throw new Error("No providers satisfy residency/capability constraints");
     }
 
     const scored = [];
 
     for (const provider of allowedProviders) {
-      const caps = await providerCapabilitiesEngine.getProviderCapabilities(provider, fax);
+      const caps = await providerCapabilitiesService.getProviderCapabilities(provider, fax);
 
       if (caps.health === "down" || caps.outageState === "open") {
         continue;
@@ -43,7 +46,7 @@ module.exports = {
   },
 
   async getProviderWeight(provider) {
-    const caps = await providerCapabilitiesEngine.getProviderCapabilities(provider);
+    const caps = await providerCapabilitiesService.getProviderCapabilities(provider);
     return caps.weight;
   },
 
@@ -58,6 +61,6 @@ module.exports = {
       providerHealthService.setHealth(provider, "degraded");
     }
 
-    return providerCapabilitiesEngine.getProviderCapabilities(provider);
+    return providerCapabilitiesService.getProviderCapabilities(provider);
   }
 };
