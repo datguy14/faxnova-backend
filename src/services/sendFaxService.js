@@ -2,29 +2,34 @@
 
 const breaker = require("./providerCircuitBreaker");
 const providerRoutingEngine = require("./providerRoutingEngine");
-const providerHealthService = require("./providerHealthService");
-const providerPerformanceService = require("./providerPerformanceService");
+const OutboundFax = require("../models/OutboundFax");
 
-// This function is called by workers and faxService
 async function sendFax(fax) {
   try {
-    // Ensure provider is selected if not already set
+    // Ensure sovereigntyConstraints exist
+    fax.sovereigntyConstraints = fax.sovereigntyConstraints || {};
+
+    // Residency‑aware provider selection
     if (!fax.provider) {
-      fax.provider = await providerRoutingEngine.selectProvider();
+      fax.provider = await providerRoutingEngine.selectProviderForFax(fax);
     }
 
-    // Fire through circuit breaker
-    const result = await breaker.fire(fax);
+    // Persist fax with residencyZone + decision log
+    const outboundFax = await OutboundFax.create(fax);
 
-    // Provider succeeded → health + score already updated by breaker
+    // Fire through circuit breaker
+    const result = await breaker.fire({
+      ...fax,
+      _id: outboundFax._id,
+    });
+
     return {
       success: true,
       provider: fax.provider,
+      faxId: outboundFax._id,
       result,
     };
-
   } catch (err) {
-    // Provider failed → breaker already applied penalty + degraded health
     return {
       success: false,
       provider: fax.provider,
