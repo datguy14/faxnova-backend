@@ -6,16 +6,12 @@ const providerLatencyTracker = require("./providerLatencyTracker");
 const providerOutageService = require("./providerOutageService");
 const providerDiagnosticsService = require("./providerDiagnosticsService");
 const providerResidencyEngine = require("./providerResidencyEngine");
+const dataResidencyGuard = require("./dataResidencyGuard");
 
-// All known providers
 const PROVIDERS = ["sinch", "telnyx"];
 
 module.exports = {
-  // ---------------------------------------------------------
-  // Select best provider for a fax (sovereignty + residency)
-  // ---------------------------------------------------------
   async selectProviderForFax(fax) {
-    // 1) Filter by residency constraints
     const allowedProviders =
       providerResidencyEngine.getAllowedProvidersForFax(fax);
 
@@ -25,22 +21,15 @@ module.exports = {
 
     const scored = [];
 
-    // 2) Apply health, score, latency, outage signals
     for (const provider of allowedProviders) {
       const health = providerHealthService.getHealth(provider);
       const score = providerPerformanceService.getScore(provider);
       const latency = await providerLatencyTracker.getLatency(provider);
       const outage = await providerOutageService.isOutage(provider);
 
-      // Hard fail: provider is down or outage detected
-      if (health === "down" || outage) {
-        continue;
-      }
+      if (health === "down" || outage) continue;
 
-      // Soft fail: degraded providers get reduced weight
       const healthWeight = health === "degraded" ? 0.5 : 1;
-
-      // Latency penalty (higher latency → lower weight)
       const latencyPenalty = latency > 5000 ? 0.7 : 1;
 
       const weight = score * healthWeight * latencyPenalty;
@@ -52,23 +41,29 @@ module.exports = {
       throw new Error("No available providers after health/outage filtering");
     }
 
-    // 3) Sort by highest weight
     scored.sort((a, b) => b.weight - a.weight);
+    const selected = scored[0].provider;
 
-    return scored[0].provider;
+    // Enforce residency
+    dataResidencyGuard.enforceForFax(fax, selected);
+
+    // Attach residency zone + audit log
+    fax.residencyZone =
+      (fax.sovereigntyConstraints?.region || "us").toLowerCase();
+
+    fax.residencyDecisionLog = fax.residencyDecisionLog || [];
+    fax.residencyDecisionLog.push(
+      dataResidencyGuard.buildDecisionLogEntry(fax, selected)
+    );
+
+    return selected;
   },
 
-  // ---------------------------------------------------------
-  // Legacy helper: selectProvider() without fax (no residency)
-  // ---------------------------------------------------------
   async selectProvider() {
     const fax = { sovereigntyConstraints: {} };
     return this.selectProviderForFax(fax);
   },
 
-  // ---------------------------------------------------------
-  // Return provider weight (for diagnostics)
-  // ---------------------------------------------------------
   async getProviderWeight(provider) {
     const health = providerHealthService.getHealth(provider);
     const score = providerPerformanceService.getScore(provider);
@@ -83,9 +78,6 @@ module.exports = {
     return score * healthWeight * latencyPenalty;
   },
 
-  // ---------------------------------------------------------
-  // Record provider event (from webhookController)
-  // ---------------------------------------------------------
   async recordEvent(provider, event) {
     if (event.status === "delivered") {
       providerPerformanceService.applySuccessBoost(provider);
