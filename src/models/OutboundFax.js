@@ -1,42 +1,41 @@
 // src/models/OutboundFax.js
 
 const mongoose = require("mongoose");
-const { v4: uuidv4 } = require("uuid");
 
 const OutboundFaxSchema = new mongoose.Schema({
-  faxId: { type: String, default: uuidv4 },
-  tenantId: { type: String, required: true },
+  to: String,
+  from: String,
+  mediaUrl: String,
+  callbackUrl: String,
 
-  to: { type: String, required: true },
-  from: { type: String, required: true },
+  provider: String,
+  providerFaxId: String,
+  status: String,
+  error: String,
 
-  pages: { type: Number, required: true },
-  documentUrl: { type: String, required: true },
-
-  provider: { type: String },
-  providerMessageId: { type: String },
-  providerStatus: { type: Object },
-
-  region: { type: String, enum: ["us", "eu", "global"], required: true },
-
-  status: {
-    type: String,
-    enum: [
-      "queued",
-      "sending",
-      "sent",
-      "delivered",
-      "failed",
-      "retrying",
-      "dead"
-    ],
-    default: "queued"
+  sovereigntyConstraints: {
+    type: Object,
+    default: {},
   },
 
-  attempts: { type: Number, default: 0 },
+  residencyZone: {
+    type: String,
+    enum: ["us", "eu", "ca"],
+    required: true,
+    default: "us",
+  },
+
+  residencyDecisionLog: [
+    {
+      provider: String,
+      region: String,
+      decidedAt: Date,
+      reason: String,
+    },
+  ],
 
   createdAt: { type: Date, default: Date.now },
-  updatedAt: { type: Date }
+  lastEventAt: { type: Date },
 });
 
 module.exports = mongoose.model("OutboundFax", OutboundFaxSchema);
