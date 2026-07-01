@@ -1,35 +1,63 @@
 // src/services/providerPerformanceService.js
 
-const ERROR_WINDOW = 100; // last 100 events
+/**
+ * Unified Provider Performance Service
+ * Tracks:
+ *  - successes
+ *  - failures
+ *  - error rate
+ *  - performance score
+ */
 
-const providerStats = {
-  sinch: { score: 1.0, errors: [] },
-  telnyx: { score: 1.0, errors: [] },
+const performanceState = {
+  sinch: { successes: 0, failures: 0, score: 1.0 },
+  telnyx: { successes: 0, failures: 0, score: 1.0 }
 };
 
 module.exports = {
   applySuccessBoost(provider) {
-    const stats = providerStats[provider];
-    stats.score = Math.min(stats.score + 0.05, 2.0);
+    const p = performanceState[provider];
+    if (!p) return;
+
+    p.successes += 1;
+
+    // Positive reinforcement
+    p.score = Math.min(p.score + 0.05, 2.0);
   },
 
   applyFailurePenalty(provider) {
-    const stats = providerStats[provider];
-    stats.score = Math.max(stats.score - 0.1, 0.1);
+    const p = performanceState[provider];
+    if (!p) return;
 
-    // Track rolling error window
-    stats.errors.push(Date.now());
-    if (stats.errors.length > ERROR_WINDOW) {
-      stats.errors.shift();
-    }
+    p.failures += 1;
+
+    // Negative reinforcement
+    p.score = Math.max(p.score - 0.1, 0.1);
   },
 
   getErrorRate(provider) {
-    const stats = providerStats[provider];
-    return stats.errors.length / ERROR_WINDOW;
+    const p = performanceState[provider];
+    if (!p) return 0;
+
+    const total = p.successes + p.failures;
+    if (total === 0) return 0;
+
+    return p.failures / total;
   },
 
   getScore(provider) {
-    return providerStats[provider].score;
+    return performanceState[provider]?.score || 1.0;
   },
+
+  getDiagnostics(provider) {
+    const p = performanceState[provider];
+
+    return {
+      provider,
+      successes: p.successes,
+      failures: p.failures,
+      score: p.score,
+      errorRate: this.getErrorRate(provider)
+    };
+  }
 };
