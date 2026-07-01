@@ -1,39 +1,13 @@
-// src/routes/deadLetterRoutes.js
+// src/queues/deadLetterQueue.js
 
-const express = require("express");
-const router = express.Router();
+const { Queue } = require("bullmq");
+const connection = require("../lib/redis");
 
-const deadLetterQueue = require("../queues/deadLetterQueue");
-const webhookQueue = require("../queues/webhookQueue");
-
-// List DLQ events
-router.get("/", async (req, res) => {
-  const jobs = await deadLetterQueue.getJobs(["waiting", "failed"]);
-  res.json(jobs.map((j) => j.data));
+module.exports = new Queue("deadLetterQueue", {
+  connection,
+  defaultJobOptions: {
+    priority: 10, // lowest priority
+    removeOnComplete: false,
+    removeOnFail: false,
+  },
 });
-
-// Requeue DLQ event
-router.post("/requeue/:eventId", async (req, res) => {
-  const jobs = await deadLetterQueue.getJobs(["waiting", "failed"]);
-
-  const job = jobs.find((j) => j.data.event.externalEventId === req.params.eventId);
-  if (!job) return res.status(404).json({ error: "Event not found" });
-
-  await webhookQueue.add("processWebhookEvent", job.data.event);
-  await job.remove();
-
-  res.json({ ok: true, requeued: req.params.eventId });
-});
-
-// Discard DLQ event
-router.delete("/:eventId", async (req, res) => {
-  const jobs = await deadLetterQueue.getJobs(["waiting", "failed"]);
-
-  const job = jobs.find((j) => j.data.event.externalEventId === req.params.eventId);
-  if (!job) return res.status(404).json({ error: "Event not found" });
-
-  await job.remove();
-  res.json({ ok: true, discarded: req.params.eventId });
-});
-
-module.exports = router;
