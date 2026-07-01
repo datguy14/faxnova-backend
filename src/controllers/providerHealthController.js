@@ -18,7 +18,7 @@ module.exports = {
       const performance = await providerPerformanceService.getPerformanceSummary();
       const routing = providerRoutingRules.getAllProviders();
 
-      audit.log("provider_health_status_viewed", {
+      audit.log("providerHealthStatusViewed", {
         user: req.user?.id,
         outagesCount: outages.length
       });
@@ -41,7 +41,7 @@ module.exports = {
     try {
       const summary = await providerOutageService.getOutageSummary();
 
-      audit.log("provider_health_outages_viewed", {
+      audit.log("providerHealthOutagesViewed", {
         user: req.user?.id
       });
 
@@ -59,7 +59,7 @@ module.exports = {
     try {
       const performance = await providerPerformanceService.getPerformanceSummary();
 
-      audit.log("provider_health_performance_viewed", {
+      audit.log("providerHealthPerformanceViewed", {
         user: req.user?.id
       });
 
@@ -85,7 +85,7 @@ module.exports = {
 
       await providerOutageService.clearOutage(provider);
 
-      audit.log("provider_outage_cleared", {
+      audit.log("providerOutageCleared", {
         user: req.user?.id,
         provider
       });
