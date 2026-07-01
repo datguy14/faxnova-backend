@@ -1,63 +1,84 @@
+// src/services/providerPerformanceService.js
+
 const providerScoreCache = require("./providerScoreCache");
 
-// Score boundaries
-const MIN_SCORE = 0;
-const MAX_SCORE = 100;
+// Default scores (can be persisted in Redis later)
+const DEFAULT_SCORE = 100;
+const MIN_SCORE = 10;
+const MAX_SCORE = 200;
 
-// Default baseline score for new providers
-const BASELINE_SCORE = 50;
+const BOOST_AMOUNT = 15;
+const PENALTY_AMOUNT = 25;
 
-// Performance adjustments
-const FAILURE_PENALTY = 5;   // subtract 5 points on failure
-const SUCCESS_BOOST = 3;     // add 3 points on success
+module.exports = {
+  // ---------------------------------------------------------
+  // Get provider score
+  // ---------------------------------------------------------
+  getScore(provider) {
+    const score = providerScoreCache.get(provider);
+    return score ?? DEFAULT_SCORE;
+  },
 
-// ---------------------------------------------------------
-// Initialize provider score if missing
-// ---------------------------------------------------------
-exports.initializeScore = (provider) => {
-  const existing = providerScoreCache.getScore(provider);
-  if (existing === null || existing === undefined) {
-    providerScoreCache.setScore(provider, BASELINE_SCORE);
-    return BASELINE_SCORE;
-  }
-  return existing;
-};
+  // ---------------------------------------------------------
+  // Set provider score manually
+  // ---------------------------------------------------------
+  setScore(provider, score) {
+    const clamped = Math.max(MIN_SCORE, Math.min(MAX_SCORE, score));
+    providerScoreCache.set(provider, clamped);
+    return clamped;
+  },
 
-// ---------------------------------------------------------
-// Get provider score
-// ---------------------------------------------------------
-exports.getScore = (provider) => {
-  const score = providerScoreCache.getScore(provider);
-  return score ?? BASELINE_SCORE;
-};
+  // ---------------------------------------------------------
+  // Apply success boost
+  // ---------------------------------------------------------
+  applySuccessBoost(provider) {
+    const current = this.getScore(provider);
+    const updated = Math.min(MAX_SCORE, current + BOOST_AMOUNT);
 
-// ---------------------------------------------------------
-// Set provider score (clamped between 0–100)
-// ---------------------------------------------------------
-exports.setScore = (provider, score) => {
-  const clamped = Math.max(MIN_SCORE, Math.min(MAX_SCORE, score));
-  providerScoreCache.setScore(provider, clamped);
-  return clamped;
-};
+    providerScoreCache.set(provider, updated);
 
-// ---------------------------------------------------------
-// Apply failure penalty
-// ---------------------------------------------------------
-exports.applyFailurePenalty = async (provider) => {
-  const current = providerScoreCache.getScore(provider) ?? BASELINE_SCORE;
-  const updated = Math.max(MIN_SCORE, current - FAILURE_PENALTY);
+    return {
+      provider,
+      previous: current,
+      updated,
+      change: +BOOST_AMOUNT,
+    };
+  },
 
-  providerScoreCache.setScore(provider, updated);
-  return updated;
-};
+  // ---------------------------------------------------------
+  // Apply failure penalty
+  // ---------------------------------------------------------
+  applyFailurePenalty(provider) {
+    const current = this.getScore(provider);
+    const updated = Math.max(MIN_SCORE, current - PENALTY_AMOUNT);
 
-// ---------------------------------------------------------
-// Apply success boost
-// ---------------------------------------------------------
-exports.applySuccessBoost = async (provider) => {
-  const current = providerScoreCache.getScore(provider) ?? BASELINE_SCORE;
-  const updated = Math.min(MAX_SCORE, current + SUCCESS_BOOST);
+    providerScoreCache.set(provider, updated);
 
-  providerScoreCache.setScore(provider, updated);
-  return updated;
+    return {
+      provider,
+      previous: current,
+      updated,
+      change: -PENALTY_AMOUNT,
+    };
+  },
+
+  // ---------------------------------------------------------
+  // Normalize score (called by routing engine)
+  // ---------------------------------------------------------
+  normalize(provider) {
+    const current = this.getScore(provider);
+
+    const normalized = Math.max(MIN_SCORE, Math.min(MAX_SCORE, current));
+    providerScoreCache.set(provider, normalized);
+
+    return normalized;
+  },
+
+  // ---------------------------------------------------------
+  // Reset provider score to default
+  // ---------------------------------------------------------
+  reset(provider) {
+    providerScoreCache.set(provider, DEFAULT_SCORE);
+    return DEFAULT_SCORE;
+  },
 };
