@@ -5,18 +5,28 @@ const providerPerformanceService = require("./providerPerformanceService");
 const providerLatencyTracker = require("./providerLatencyTracker");
 const providerOutageService = require("./providerOutageService");
 const providerDiagnosticsService = require("./providerDiagnosticsService");
+const providerResidencyEngine = require("./providerResidencyEngine");
 
-// FaxNova providers
+// All known providers
 const PROVIDERS = ["sinch", "telnyx"];
 
 module.exports = {
   // ---------------------------------------------------------
-  // Select best provider using sovereignty routing
+  // Select best provider for a fax (sovereignty + residency)
   // ---------------------------------------------------------
-  async selectProvider() {
+  async selectProviderForFax(fax) {
+    // 1) Filter by residency constraints
+    const allowedProviders =
+      providerResidencyEngine.getAllowedProvidersForFax(fax);
+
+    if (!allowedProviders.length) {
+      throw new Error("No providers satisfy residency constraints");
+    }
+
     const scored = [];
 
-    for (const provider of PROVIDERS) {
+    // 2) Apply health, score, latency, outage signals
+    for (const provider of allowedProviders) {
       const health = providerHealthService.getHealth(provider);
       const score = providerPerformanceService.getScore(provider);
       const latency = await providerLatencyTracker.getLatency(provider);
@@ -38,14 +48,22 @@ module.exports = {
       scored.push({ provider, weight });
     }
 
-    if (scored.length === 0) {
-      throw new Error("No available providers");
+    if (!scored.length) {
+      throw new Error("No available providers after health/outage filtering");
     }
 
-    // Sort by highest weight
+    // 3) Sort by highest weight
     scored.sort((a, b) => b.weight - a.weight);
 
     return scored[0].provider;
+  },
+
+  // ---------------------------------------------------------
+  // Legacy helper: selectProvider() without fax (no residency)
+  // ---------------------------------------------------------
+  async selectProvider() {
+    const fax = { sovereigntyConstraints: {} };
+    return this.selectProviderForFax(fax);
   },
 
   // ---------------------------------------------------------
@@ -69,7 +87,6 @@ module.exports = {
   // Record provider event (from webhookController)
   // ---------------------------------------------------------
   async recordEvent(provider, event) {
-    // Update health + score based on event
     if (event.status === "delivered") {
       providerPerformanceService.applySuccessBoost(provider);
       providerHealthService.setHealth(provider, "healthy");
@@ -80,7 +97,6 @@ module.exports = {
       providerHealthService.setHealth(provider, "degraded");
     }
 
-    // Optionally: log diagnostics
     const diag = await providerDiagnosticsService.getDiagnostics(provider);
     console.log("Provider diagnostics:", diag);
 
