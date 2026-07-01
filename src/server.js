@@ -1,77 +1,70 @@
+// src/server.js — FINAL VERSION
 require("dotenv").config();
 const express = require("express");
-const mongoose = require("mongoose");
 const helmet = require("helmet");
 const cors = require("cors");
-const morgan = require("morgan");
-const rateLimit = require("express-rate-limit");
+const mongoose = require("mongoose");
+
+const validateEnv = require("./utils/validateEnv");
+const errorHandler = require("./middleware/errorHandler");
+
+// Validate before starting
+validateEnv();
 
 const app = express();
 
-// --------------------
-// Global Middleware
-// --------------------
-app.use(express.json({ limit: "10mb" }));
+// Security middleware
 app.use(helmet());
-app.use(cors());
-app.use(morgan("combined"));
+app.use(cors({
+  origin: (origin, cb) => {
+    if (!origin) return cb(null, true);
+    const allowed = [
+      "https://app.faxnova.com",
+      "https://admin.faxnova.com",
+      "http://localhost:3000"
+    ];
+    if (allowed.includes(origin) || origin.endsWith(".faxnova.com")) {
+      return cb(null, true);
+    }
+    cb(new Error("CORS: Origin not allowed"));
+  },
+  credentials: true
+}));
 
-app.use(
-  rateLimit({
-    windowMs: 1 * 60 * 1000,
-    max: 200,
-  })
-);
+app.use(express.json({ limit: "10mb" }));
 
-// --------------------
-// Unified Route Imports
-// --------------------
-const authRoutes = require("./src/routes/authRoutes");
-const adminRoutes = require("./src/routes/adminRoutes");          // merged admin router
-const dashboardRoutes = require("./src/routes/dashboardRoutes");
-const analyticsRoutes = require("./src/routes/analyticsRoutes");
-
-const faxRoutes = require("./src/routes/faxRoutes");              // merged fax router
-const inboundFaxRoutes = require("./src/routes/inboundFaxRoutes");
-
-const providerRoutes = require("./src/routes/providerRoutes");
-const webhookRoutes = require("./src/routes/webhookRoutes");
-
-// --------------------
-// Unified Route Mounting
-// --------------------
-app.use("/api/auth", authRoutes);
-app.use("/api/admin", adminRoutes);
-app.use("/api/dashboard", dashboardRoutes);
-app.use("/api/analytics", analyticsRoutes);
-
-app.use("/api/faxes", faxRoutes);
-app.use("/api/faxes/inbound", inboundFaxRoutes);
-
-app.use("/api/providers", providerRoutes);
-
-// External provider callbacks (no auth)
+// Webhooks — NO AUTH (must be before protected routes)
+const webhookRoutes = require("./routes/webhookRoutes");
 app.use("/webhooks", webhookRoutes);
 
-// --------------------
-// Health Check
-// --------------------
+// Protected API routes
+app.use("/api", require("./middleware/authMiddleware"));
+app.use("/api/auth", require("./routes/authRoutes"));
+app.use("/api/faxes", require("./routes/faxRoutes"));
+app.use("/api/providers", require("./routes/providerRoutes"));
+
+// Health check
 app.get("/health", (req, res) => {
-  res.json({ success: true, status: "FaxNova backend operational" });
+  res.json({ status: "ok", timestamp: new Date().toISOString() });
 });
 
-// --------------------
-// Database Connection
-// --------------------
-mongoose
-  .connect(process.env.MONGO_URI)
-  .then(() => console.log("📡 Connected to MongoDB"))
-  .catch((err) => console.error("❌ MongoDB connection error:", err));
+// Error handler — MUST be last
+app.use(errorHandler);
 
-// --------------------
-// Start Server
-// --------------------
-const PORT = process.env.PORT || 3000;
-app.listen(PORT, () => {
-  console.log(`🚀 FaxNova backend running on port ${PORT}`);
-});
+// Start workers
+require("./workers/outboundFaxWorker");
+require("./workers/retryFaxWorker");
+require("./workers/webhookWorker");
+
+// Database + Server
+mongoose.connect(process.env.MONGO_URI)
+  .then(() => {
+    const PORT = process.env.PORT || 3000;
+    app.listen(PORT, () => {
+      console.log(`🚀 FaxNova backend running on port ${PORT}`);
+    });
+  })
+  .catch(err => {
+    console.error("❌ MongoDB connection error:", err);
+    process.exit(1);
+  });
