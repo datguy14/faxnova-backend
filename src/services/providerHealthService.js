@@ -1,52 +1,98 @@
-const providerLatencyTracker = require("./providerLatencyTracker");
+// providerHealthService.js
+
 const providerOutageService = require("./providerOutageService");
-const providerPerformanceService = require("./providerPerformanceService");
-const providerScoreCache = require("./providerScoreCache");
+const providerLatencyTracker = require("./providerLatencyTracker");
 
-exports.getProviderHealth = async (providerName) => {
-  try {
-    // 1. Latency (ms)
-    const latency = providerLatencyTracker.getLatency(providerName);
-
-    // 2. Outage status
-    const outageInfo = providerOutageService.getOutage(providerName);
-
-    // 3. Performance score (success rate, fail rate, etc.)
-    const performance = providerPerformanceService.getPerformance(providerName);
-
-    // 4. Sovereignty routing score (cached)
-    const score = providerScoreCache.getScore(providerName);
-
-    return {
-      provider: providerName,
-      latency,
-      outage: outageInfo,
-      performance,
-      score,
-      healthy:
-        outageInfo?.isDown === false &&
-        latency !== null &&
-        performance?.successRate >= 0.85
-    };
-  } catch (err) {
-    console.error("PROVIDER HEALTH ERROR:", err);
-    return {
-      provider: providerName,
-      healthy: false,
-      error: err.message
-    };
-  }
+// In-memory health map (Redis optional)
+const providerHealth = {
+  sinch: "healthy",
+  telnyx: "healthy",
 };
 
-// Bulk health for dashboard
-exports.getAllProvidersHealth = async () => {
-  const providers = providerScoreCache.getProviders(); // returns list of provider names
+module.exports = {
+  // ---------------------------------------------------------
+  // Get provider health
+  // ---------------------------------------------------------
+  getHealth(provider) {
+    return providerHealth[provider] || "unknown";
+  },
 
-  const results = [];
-  for (const p of providers) {
-    const health = await exports.getProviderHealth(p);
-    results.push(health);
-  }
+  // ---------------------------------------------------------
+  // Set provider health manually or programmatically
+  // ---------------------------------------------------------
+  setHealth(provider, status) {
+    providerHealth[provider] = status;
+    return providerHealth[provider];
+  },
 
-  return results;
+  // ---------------------------------------------------------
+  // Mark provider as degraded (soft failure)
+  // ---------------------------------------------------------
+  degrade(provider, reason = "unknown") {
+    providerHealth[provider] = "degraded";
+
+    return {
+      provider,
+      status: "degraded",
+      reason,
+    };
+  },
+
+  // ---------------------------------------------------------
+  // Mark provider as down (hard failure)
+  // ---------------------------------------------------------
+  down(provider, reason = "unknown") {
+    providerHealth[provider] = "down";
+
+    return {
+      provider,
+      status: "down",
+      reason,
+    };
+  },
+
+  // ---------------------------------------------------------
+  // Auto-update health based on outage detection
+  // ---------------------------------------------------------
+  async evaluateOutage(provider) {
+    const isOutage = await providerOutageService.isOutage(provider);
+
+    if (isOutage) {
+      providerHealth[provider] = "down";
+    } else {
+      providerHealth[provider] = "healthy";
+    }
+
+    return providerHealth[provider];
+  },
+
+  // ---------------------------------------------------------
+  // Auto-update health based on latency spikes
+  // ---------------------------------------------------------
+  async evaluateLatency(provider) {
+    const latency = await providerLatencyTracker.getLatency(provider);
+
+    if (latency > 5000) {
+      providerHealth[provider] = "degraded";
+    }
+
+    if (latency > 15000) {
+      providerHealth[provider] = "down";
+    }
+
+    return providerHealth[provider];
+  },
+
+  // ---------------------------------------------------------
+  // Unified health evaluator (called by webhookController)
+  // ---------------------------------------------------------
+  async evaluate(provider) {
+    // Outage check
+    await this.evaluateOutage(provider);
+
+    // Latency check
+    await this.evaluateLatency(provider);
+
+    return providerHealth[provider];
+  },
 };
