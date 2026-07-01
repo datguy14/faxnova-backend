@@ -6,7 +6,6 @@ const providerPerformanceService = require("./providerPerformanceService");
 const providerLatencyTracker = require("./providerLatencyTracker");
 const providerOutageService = require("./providerOutageService");
 
-// Optional: expose breaker state if needed
 let breakerState = {
   sinch: "closed",
   telnyx: "closed",
@@ -17,16 +16,16 @@ function setBreakerState(provider, state) {
 }
 
 module.exports = {
-  // ---------------------------------------------------------
-  // Unified provider diagnostic snapshot
-  // ---------------------------------------------------------
   async getDiagnostics(provider) {
     const health = providerHealthService.getHealth(provider);
     const score = providerPerformanceService.getScore(provider);
-    const latency = await providerLatencyTracker.getLatency(provider);
-    const outage = await providerOutageService.isOutage(provider);
 
-    // Sovereignty routing weight (score + health modifiers)
+    const latencyInfo = await providerLatencyTracker.getLatency(provider);
+    const latency = latencyInfo.value; // numeric latency for routing
+
+    const outage = await providerOutageService.isOutage(provider);
+    const outageState = outage ? "open" : "closed";
+
     const routingWeight = await providerRoutingEngine.getProviderWeight(provider);
 
     return {
@@ -34,16 +33,14 @@ module.exports = {
       health,
       score,
       latency,
+      latencyDetails: latencyInfo, // p95, p99, ewma
       outage,
+      outageState,
       routingWeight,
       circuitBreaker: breakerState[provider] || "unknown",
       timestamp: new Date(),
     };
   },
 
-  // ---------------------------------------------------------
-  // Expose breaker state updates
-  // Called by providerCircuitBreaker.js
-  // ---------------------------------------------------------
   setBreakerState,
 };
