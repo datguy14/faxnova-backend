@@ -1,20 +1,38 @@
-const CircuitBreaker = require("opossum");
+// src/services/sendFaxService.js
+
+const breaker = require("./providerCircuitBreaker");
 const providerRoutingEngine = require("./providerRoutingEngine");
-const sendToProvider = require("./providerApiService"); // your actual provider call
+const providerHealthService = require("./providerHealthService");
+const providerPerformanceService = require("./providerPerformanceService");
 
-const breakerOptions = {
-  timeout: 10000,                 // fail fast
-  errorThresholdPercentage: 50,   // open circuit after 50% failures
-  resetTimeout: 30000,            // try again after 30s
-  volumeThreshold: 5              // minimum number of calls before evaluating
+// This function is called by workers and faxService
+async function sendFax(fax) {
+  try {
+    // Ensure provider is selected if not already set
+    if (!fax.provider) {
+      fax.provider = await providerRoutingEngine.selectProvider();
+    }
+
+    // Fire through circuit breaker
+    const result = await breaker.fire(fax);
+
+    // Provider succeeded → health + score already updated by breaker
+    return {
+      success: true,
+      provider: fax.provider,
+      result,
+    };
+
+  } catch (err) {
+    // Provider failed → breaker already applied penalty + degraded health
+    return {
+      success: false,
+      provider: fax.provider,
+      error: err.message || err,
+    };
+  }
+}
+
+module.exports = {
+  sendFax,
 };
-
-const breaker = new CircuitBreaker(sendToProvider, breakerOptions);
-
-// Fallback: route to next best provider
-breaker.fallback(async (fax) => {
-  const nextProvider = await providerRoutingEngine.selectProvider();
-  return sendToProvider(fax, nextProvider);
-});
-
-module.exports = breaker;
