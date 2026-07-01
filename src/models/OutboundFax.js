@@ -8,10 +8,25 @@ const OutboundFaxSchema = new mongoose.Schema({
   mediaUrl: String,
   callbackUrl: String,
 
-  provider: String,
-  providerFaxId: String,
-  status: String,
-  error: String,
+  provider: {
+    type: String,
+    index: true, // high-cardinality
+  },
+
+  providerFaxId: {
+    type: String,
+    index: true,
+  },
+
+  status: {
+    type: String,
+    index: true, // high-cardinality
+  },
+
+  userId: {
+    type: String,
+    index: true, // multi-tenant SaaS
+  },
 
   sovereigntyConstraints: {
     type: Object,
@@ -23,6 +38,7 @@ const OutboundFaxSchema = new mongoose.Schema({
     enum: ["us", "eu", "ca"],
     required: true,
     default: "us",
+    index: true, // sovereignty routing
   },
 
   residencyDecisionLog: [
@@ -34,8 +50,22 @@ const OutboundFaxSchema = new mongoose.Schema({
     },
   ],
 
-  createdAt: { type: Date, default: Date.now },
-  lastEventAt: { type: Date },
+  createdAt: {
+    type: Date,
+    default: Date.now,
+    index: true, // dashboards + analytics
+  },
+
+  lastEventAt: {
+    type: Date,
+    index: true,
+  },
 });
+
+// Composite indexes
+OutboundFaxSchema.index({ provider: 1, status: 1 });
+OutboundFaxSchema.index({ userId: 1, createdAt: -1 });
+OutboundFaxSchema.index({ residencyZone: 1, status: 1 });
+OutboundFaxSchema.index({ "sovereigntyConstraints.region": 1, status: 1 });
 
 module.exports = mongoose.model("OutboundFax", OutboundFaxSchema);
