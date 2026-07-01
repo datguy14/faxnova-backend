@@ -21,10 +21,9 @@ module.exports = {
     const score = providerPerformanceService.getScore(provider);
 
     const latencyInfo = await providerLatencyTracker.getLatency(provider);
-    const latency = latencyInfo.value; // numeric latency for routing
+    const latency = latencyInfo.value; // numeric latency
 
-    const outage = await providerOutageService.isOutage(provider);
-    const outageState = outage ? "open" : "closed";
+    const outageState = await providerOutageService.getOutageState(provider);
 
     const routingWeight = await providerRoutingEngine.getProviderWeight(provider);
 
@@ -32,10 +31,9 @@ module.exports = {
       provider,
       health,
       score,
-      latency,
-      latencyDetails: latencyInfo, // p95, p99, ewma
-      outage,
-      outageState,
+      latency,               // numeric
+      latencyDetails: latencyInfo,
+      outageState,           // "open" | "closed" | "half-open"
       routingWeight,
       circuitBreaker: breakerState[provider] || "unknown",
       timestamp: new Date(),
