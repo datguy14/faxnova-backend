@@ -1,66 +1,51 @@
 // src/services/providerRoutingEngine.js
 
-const providerCapabilitiesService = require("./providerCapabilitiesService");
-const providerPerformanceService = require("./providerPerformanceService");
 const providerHealthService = require("./providerHealthService");
 const providerOutageService = require("./providerOutageService");
+const providerPerformanceService = require("./providerPerformanceService");
 const providerLatencyTracker = require("./providerLatencyTracker");
-const providerDiagnosticsService = require("./providerDiagnosticsService");
+
+const PROVIDERS = ["sinch", "telnyx"];
 
 module.exports = {
   async selectProviderForFax(fax) {
-    // Residency filtering now handled inside capabilities service
-    const allowedProviders =
-      await providerCapabilitiesService.getAllowedProvidersForFax(fax);
+    const scores = [];
 
-    if (!allowedProviders.length) {
-      throw new Error("No providers satisfy residency/capability constraints");
-    }
+    for (const provider of PROVIDERS) {
+      const outageState = await providerOutageService.getOutageState(provider);
+      const health = await providerHealthService.getHealth(provider);
+      const score = await providerPerformanceService.getScore(provider);
+      const latency = await providerLatencyTracker.getLatency(provider);
 
-    const scored = [];
-
-    for (const provider of allowedProviders) {
-      const caps = await providerCapabilitiesService.getProviderCapabilities(provider, fax);
-
-      if (caps.health === "down" || caps.outageState === "open") {
+      // Hard exclusions
+      if (outageState === "open") {
+        scores.push({ provider, weight: 0 });
         continue;
       }
 
-      scored.push({
-        provider,
-        weight: caps.weight,
-        latency: caps.latency,
-        health: caps.health,
-        score: caps.score,
-        outageState: caps.outageState,
-      });
+      // Base weight from performance score
+      let weight = score;
+
+      // Health penalties
+      if (health === "degraded") weight *= 0.6;
+      if (health === "half-open") weight *= 0.4;
+
+      // Latency penalties
+      if (latency > 5000) weight *= 0.3;
+      else if (latency > 2000) weight *= 0.7;
+
+      scores.push({ provider, weight });
     }
 
-    if (!scored.length) {
-      throw new Error("No available providers after diagnostics filtering");
+    // Sort by weight descending
+    scores.sort((a, b) => b.weight - a.weight);
+
+    const best = scores[0];
+
+    if (!best || best.weight <= 0) {
+      throw new Error("No available providers");
     }
 
-    scored.sort((a, b) => b.weight - a.weight);
-
-    return scored[0].provider;
-  },
-
-  async getProviderWeight(provider) {
-    const caps = await providerCapabilitiesService.getProviderCapabilities(provider);
-    return caps.weight;
-  },
-
-  async recordEvent(provider, event) {
-    if (event.status === "delivered") {
-      providerPerformanceService.applySuccessBoost(provider);
-      providerHealthService.setHealth(provider, "healthy");
-    }
-
-    if (event.status === "failed") {
-      providerPerformanceService.applyFailurePenalty(provider);
-      providerHealthService.setHealth(provider, "degraded");
-    }
-
-    return providerCapabilitiesService.getProviderCapabilities(provider);
+    return best.provider;
   }
 };
