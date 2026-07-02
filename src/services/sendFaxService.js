@@ -1,13 +1,52 @@
-// src/services/sendFaxService.js — FIXED: No circuit breaker import
-const providerRoutingEngine = require("./providerRoutingEngine");
+// src/services/sendFaxService.js
+
 const OutboundFax = require("../models/OutboundFax");
+const providerRoutingEngine = require("./providerRoutingEngine");
+const providerOutageService = require("./providerOutageService");
+const providerPerformanceService = require("./providerPerformanceService");
+const providerHealthService = require("./providerHealthService");
 
-async function sendFax(fax) {
-  if (!fax.provider) {
-    fax.provider = await providerRoutingEngine.selectProviderForFax(fax);
+module.exports = {
+  async sendFax(faxId) {
+    const fax = await OutboundFax.findOne({ faxId });
+    if (!fax) throw new Error(`Fax not found: ${faxId}`);
+
+    const provider = await providerRoutingEngine.selectProviderForFax(fax);
+    fax.provider = provider;
+    await fax.save();
+
+    try {
+      const adapter = require(`../providers/${provider}Adapter`);
+      const result = await adapter.sendFax(fax);
+
+      await providerPerformanceService.applySuccessBoost(provider);
+      await providerOutageService.recordSuccess(provider);
+      await providerHealthService.evaluate(provider);
+
+      await OutboundFax.updateOne(
+        { faxId },
+        {
+          status: "sending",
+          providerMessageId: result.messageId
+        }
+      );
+
+      return result;
+    } catch (err) {
+      await providerPerformanceService.applyFailurePenalty(provider);
+      await providerOutageService.recordFailure(provider);
+      await providerHealthService.evaluate(provider);
+
+      await OutboundFax.updateOne(
+        { faxId },
+        {
+          status: "failed",
+          errorMessage: err.message,
+          errorCode: err.code || "SEND_FAILED"
+        }
+      );
+
+      throw err;
+    }
   }
-  const outboundFax = await OutboundFax.create(fax);
-  return { success: true, faxId: outboundFax._id, provider: fax.provider };
-}
-
-module.exports = { sendFax };
+};
