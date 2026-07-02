@@ -1,60 +1,70 @@
 // src/services/providerHealthService.js
 
-const providerLatencyTracker = require("./providerLatencyTracker");
-const providerPerformanceService = require("./providerPerformanceService");
 const providerOutageService = require("./providerOutageService");
+const providerPerformanceService = require("./providerPerformanceService");
+const providerLatencyTracker = require("./providerLatencyTracker");
 
-const providerHealth = {
+const HEALTH_KEY = "faxnova:providerHealth";
+
+const DEFAULT_HEALTH = {
   sinch: "healthy",
-  telnyx: "healthy",
+  telnyx: "healthy"
 };
 
 module.exports = {
+  async getHealth(provider) {
+    const stored = await global.redis.hget(HEALTH_KEY, provider);
+    return stored || DEFAULT_HEALTH[provider];
+  },
+
+  async setHealth(provider, state) {
+    await global.redis.hset(HEALTH_KEY, provider, state);
+    return state;
+  },
+
   async evaluate(provider) {
-    const latencyInfo = await providerLatencyTracker.getLatency(provider);
-    const latencyValue = latencyInfo.value;
-    const errorRate = providerPerformanceService.getErrorRate(provider);
     const outageState = await providerOutageService.getOutageState(provider);
+    const latency = await providerLatencyTracker.getLatency(provider);
+    const errorRate = await providerPerformanceService.getErrorRate(provider);
+    const score = await providerPerformanceService.getScore(provider);
 
-    // Outage → provider is DOWN
+    // Outage overrides everything
     if (outageState === "open") {
-      providerHealth[provider] = "down";
-      return "down";
+      return this.setHealth(provider, "down");
     }
 
-    // HALF-OPEN → degraded probation
     if (outageState === "half-open") {
-      providerHealth[provider] = "degraded";
-      return "degraded";
+      return this.setHealth(provider, "half-open");
     }
 
-    // Latency anomaly detection
-    const latencySpike =
-      latencyInfo.p99 > 8000 ||
-      latencyInfo.ewma > 5000 ||
-      latencyValue > 6000;
-
-    // Error rate anomaly detection
-    const errorSpike = errorRate > 0.25;
-
-    if (latencySpike || errorSpike) {
-      providerHealth[provider] = "degraded";
-    } else {
-      providerHealth[provider] = "healthy";
+    // Latency-based degradation
+    if (latency > 5000) {
+      return this.setHealth(provider, "down");
     }
 
-    return providerHealth[provider];
-  },
+    if (latency > 2000) {
+      return this.setHealth(provider, "degraded");
+    }
 
-  setHealth(provider, state) {
-    providerHealth[provider] = state;
-  },
+    // Error-rate-based degradation
+    if (errorRate > 0.25) {
+      return this.setHealth(provider, "down");
+    }
 
-  getHealth(provider) {
-    return providerHealth[provider];
-  },
+    if (errorRate > 0.10) {
+      return this.setHealth(provider, "degraded");
+    }
 
-  getAllHealth() {
-    return { ...providerHealth };
+    // Performance score degradation
+    if (score < 20) {
+      return this.setHealth(provider, "down");
+    }
+
+    if (score < 40) {
+      return this.setHealth(provider, "degraded");
+    }
+
+    // Default
+    return this.setHealth(provider, "healthy");
   }
 };
