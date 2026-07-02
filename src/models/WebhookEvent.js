@@ -2,50 +2,59 @@
 
 const mongoose = require("mongoose");
 
-const WebhookEventSchema = new mongoose.Schema({
-  faxId: {
-    type: String,
-    index: true,
+const WebhookEventSchema = new mongoose.Schema(
+  {
+    externalEventId: {
+      type: String,
+      required: true,
+      unique: true,         // idempotency key
+      index: true
+    },
+
+    provider: {
+      type: String,
+      required: true,
+      index: true
+    },
+
+    faxId: {
+      type: String,
+      index: true           // links webhook → OutboundFax
+    },
+
+    status: {
+      type: String,
+      index: true           // delivered, failed, etc.
+    },
+
+    providerStatus: {
+      type: String
+    },
+
+    errorCode: {
+      type: String
+    },
+
+    errorMessage: {
+      type: String
+    },
+
+    raw: {
+      type: Object,         // full payload for debugging
+      required: true
+    },
+
+    receivedAt: {
+      type: Date,
+      default: Date.now,
+      index: true
+    }
   },
+  {
+    timestamps: true
+  }
+);
 
-  provider: {
-    type: String,
-    index: true,
-  },
-
-  providerFaxId: {
-    type: String,
-    index: true,
-  },
-
-  status: {
-    type: String,
-    index: true,
-  },
-
-  externalEventId: {
-    type: String,
-    required: true,
-    unique: true, // idempotency
-  },
-
-  error: String,
-  raw: Object,
-
-  processedAt: {
-    type: Date,
-    index: true,
-  },
-
-  createdAt: {
-    type: Date,
-    default: Date.now,
-    index: true,
-  },
-});
-
-// Composite indexes
-WebhookEventSchema.index({ provider: 1, status: 1 });
-WebhookEventSchema.index({ faxId: 1, createdAt: -1 });
+WebhookEventSchema.index({ provider: 1, faxId: 1, status: 1 });
 
 module.exports = mongoose.model("WebhookEvent", WebhookEventSchema);
