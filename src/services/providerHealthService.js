@@ -1,70 +1,71 @@
 // src/services/providerHealthService.js
 
+const redis = require("../lib/redis");
 const providerOutageService = require("./providerOutageService");
 const providerPerformanceService = require("./providerPerformanceService");
 const providerLatencyTracker = require("./providerLatencyTracker");
 
-const HEALTH_KEY = "faxnova:providerHealth";
+const KEY = "faxnova:providerHealth";
+const PROVIDERS = ["sinch", "telnyx"];
 
-const DEFAULT_HEALTH = {
-  sinch: "healthy",
-  telnyx: "healthy"
+// Health states
+const STATES = {
+  HEALTHY: "healthy",
+  DEGRADED: "degraded",
+  HALF_OPEN: "half-open",
+  DOWN: "down"
 };
+
+// Thresholds
+const SCORE_DEGRADED = 40;
+const SCORE_DOWN = 20;
+
+const LATENCY_DEGRADED = 2000;
+const LATENCY_DOWN = 5000;
 
 module.exports = {
   async getHealth(provider) {
-    const stored = await global.redis.hget(HEALTH_KEY, provider);
-    return stored || DEFAULT_HEALTH[provider];
-  },
-
-  async setHealth(provider, state) {
-    await global.redis.hset(HEALTH_KEY, provider, state);
-    return state;
+    const raw = await redis.hget(KEY, provider);
+    return raw || STATES.HEALTHY;
   },
 
   async evaluate(provider) {
     const outageState = await providerOutageService.getOutageState(provider);
-    const latency = await providerLatencyTracker.getLatency(provider);
-    const errorRate = await providerPerformanceService.getErrorRate(provider);
     const score = await providerPerformanceService.getScore(provider);
+    const latency = await providerLatencyTracker.getLatency(provider);
+
+    let state = STATES.HEALTHY;
 
     // Outage overrides everything
     if (outageState === "open") {
-      return this.setHealth(provider, "down");
+      state = STATES.DOWN;
+    } else if (outageState === "half-open") {
+      state = STATES.HALF_OPEN;
+    } else {
+      // Score-based health
+      if (score < SCORE_DOWN) {
+        state = STATES.DOWN;
+      } else if (score < SCORE_DEGRADED) {
+        state = STATES.DEGRADED;
+      }
+
+      // Latency-based health
+      if (latency > LATENCY_DOWN) {
+        state = STATES.DOWN;
+      } else if (latency > LATENCY_DEGRADED) {
+        state = STATES.DEGRADED;
+      }
     }
 
-    if (outageState === "half-open") {
-      return this.setHealth(provider, "half-open");
-    }
+    await redis.hset(KEY, provider, state);
+    return state;
+  },
 
-    // Latency-based degradation
-    if (latency > 5000) {
-      return this.setHealth(provider, "down");
+  async getAllHealth() {
+    const results = {};
+    for (const provider of PROVIDERS) {
+      results[provider] = await this.getHealth(provider);
     }
-
-    if (latency > 2000) {
-      return this.setHealth(provider, "degraded");
-    }
-
-    // Error-rate-based degradation
-    if (errorRate > 0.25) {
-      return this.setHealth(provider, "down");
-    }
-
-    if (errorRate > 0.10) {
-      return this.setHealth(provider, "degraded");
-    }
-
-    // Performance score degradation
-    if (score < 20) {
-      return this.setHealth(provider, "down");
-    }
-
-    if (score < 40) {
-      return this.setHealth(provider, "degraded");
-    }
-
-    // Default
-    return this.setHealth(provider, "healthy");
+    return results;
   }
 };
