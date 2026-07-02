@@ -12,7 +12,18 @@ module.exports = async function processRetryFax(job) {
 
   const outageState = await providerOutageService.getOutageState(fax.provider);
   if (outageState === "open") {
-    return; // provider is in full outage → skip retry
+    return; // Provider is in full outage → skip retry
+  }
+
+  // Exponential backoff
+  const attempts = fax.attempts || 0;
+  const delayMs = Math.min(60000, Math.pow(2, attempts) * 1000); // max 60s
+
+  const now = Date.now();
+  const nextAllowed = fax.lastAttemptAt ? fax.lastAttemptAt.getTime() + delayMs : 0;
+
+  if (now < nextAllowed) {
+    return; // Not ready yet
   }
 
   await OutboundFax.updateOne(
