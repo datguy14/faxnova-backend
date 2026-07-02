@@ -2,46 +2,49 @@
 
 const mongoose = require("mongoose");
 
-const ProviderOutageSchema = new mongoose.Schema({
-  provider: {
-    type: String,
-    index: true,
-  },
+const ProviderOutageSchema = new mongoose.Schema(
+  {
+    provider: {
+      type: String,
+      index: true,
+      required: true
+    },
 
-  region: {
-    type: String,
-    index: true,
-  },
+    region: {
+      type: String,
+      index: true
+    },
 
-  outageType: {
-    type: String,
-    enum: ["partial", "full", "degraded"],
-    required: true,
-  },
+    outageType: {
+      type: String,
+      enum: ["partial", "full", "degraded"],
+      required: true
+    },
 
-  detectedAt: {
-    type: Date,
-    default: Date.now,
-    index: true,
-  },
+    detectedAt: {
+      type: Date,
+      default: Date.now,
+      index: true
+    },
 
-  resolvedAt: {
-    type: Date,
-    index: true,
-  },
+    resolvedAt: {
+      type: Date,
+      index: true
+    },
 
-  details: {
-    type: Object,
-    default: {},
-  },
+    details: {
+      type: Object,
+      default: {}
+    },
 
-  attemptsMade: {
-    type: Number,
-    default: 0,
+    attemptsMade: {
+      type: Number,
+      default: 0
+    }
   },
-});
+  { timestamps: true }
+);
 
-// Composite indexes
 ProviderOutageSchema.index({ provider: 1, region: 1 });
 ProviderOutageSchema.index({ outageType: 1, detectedAt: -1 });
 
