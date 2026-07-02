@@ -1,86 +1,43 @@
 // src/services/providerDiagnosticsService.js
 
-const providerHealthService = require("./providerHealthService");
 const providerOutageService = require("./providerOutageService");
+const providerHealthService = require("./providerHealthService");
 const providerPerformanceService = require("./providerPerformanceService");
 const providerLatencyTracker = require("./providerLatencyTracker");
 
-// Static provider capabilities
-const STATIC_CAPABILITIES = {
-  sinch: {
-    canSend: true,
-    canReceive: false,
-    supportsPdf: true,
-    supportsTiff: true,
-    supportsWebhook: true,
-    residency: { US: true, CA: true, EU: true }
-  },
-  telnyx: {
-    canSend: true,
-    canReceive: true,
-    supportsPdf: true,
-    supportsTiff: true,
-    supportsWebhook: true,
-    residency: { US: true, CA: true, EU: true }
-  }
-};
+const PROVIDERS = ["sinch", "telnyx"];
 
 module.exports = {
-  getStaticCapabilities(provider) {
-    return STATIC_CAPABILITIES[provider] || {};
-  },
-
-  async getDiagnostics(provider) {
-    const staticCaps = this.getStaticCapabilities(provider);
-
-    const health = await providerHealthService.getHealth(provider);
+  async getProviderDiagnostics(provider) {
     const outageState = await providerOutageService.getOutageState(provider);
-    const circuitBreaker = await providerOutageService.getCircuitBreakerState(provider);
-
-    const latency = await providerLatencyTracker.getLatency(provider);
-    const latencyDetails = await providerLatencyTracker.getLatencyDetails(provider);
-
+    const health = await providerHealthService.getHealth(provider);
     const score = await providerPerformanceService.getScore(provider);
-    const errorRate = await providerPerformanceService.getErrorRate(provider);
-    const successRate = await providerPerformanceService.getSuccessRate(provider);
+    const latency = await providerLatencyTracker.getLatency(provider);
 
-    const routingWeight = this.calculateRoutingWeight({
-      health,
-      outageState,
-      latency,
-      score,
-      staticCaps
-    });
+    const outageDetails = await providerOutageService.getDiagnostics(provider);
 
     return {
       provider,
-      ...staticCaps,
       health,
       outageState,
-      latency,
-      latencyDetails,
       score,
-      errorRate,
-      successRate,
-      routingWeight,
-      circuitBreaker,
-      timestamp: Date.now()
+      latency,
+      failures: outageDetails.failures,
+      lastFailureAt: outageDetails.lastFailureAt,
+      openedAt: outageDetails.openedAt,
+      probationUntil: outageDetails.probationUntil,
+      cooldownRemaining: outageDetails.cooldownRemaining,
+      probationRemaining: outageDetails.probationRemaining
     };
   },
 
-  calculateRoutingWeight({ health, outageState, latency, score, staticCaps }) {
-    if (!staticCaps.canSend) return 0;
-    if (outageState === "open") return 0;
-    if (health === "down") return 0;
+  async getAllDiagnostics() {
+    const results = [];
 
-    let weight = score;
+    for (const provider of PROVIDERS) {
+      results.push(await this.getProviderDiagnostics(provider));
+    }
 
-    if (health === "degraded") weight *= 0.7;
-    if (outageState === "half-open") weight *= 0.5;
-
-    if (latency > 2000) weight *= 0.6;
-    if (latency > 5000) weight *= 0.3;
-
-    return weight;
+    return results;
   }
 };
