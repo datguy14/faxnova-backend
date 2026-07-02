@@ -1,63 +1,50 @@
 // src/services/providerPerformanceService.js
 
-/**
- * Unified Provider Performance Service
- * Tracks:
- *  - successes
- *  - failures
- *  - error rate
- *  - performance score
- */
+const redis = require("../lib/redis");
 
-const performanceState = {
-  sinch: { successes: 0, failures: 0, score: 1.0 },
-  telnyx: { successes: 0, failures: 0, score: 1.0 }
-};
+const KEY = "faxnova:providerPerformance";
+const PROVIDERS = ["sinch", "telnyx"];
+
+// Score boundaries
+const MIN_SCORE = 0;
+const MAX_SCORE = 100;
+
+// Boost / penalty values
+const SUCCESS_BOOST = 5;
+const FAILURE_PENALTY = 10;
 
 module.exports = {
-  applySuccessBoost(provider) {
-    const p = performanceState[provider];
-    if (!p) return;
-
-    p.successes += 1;
-
-    // Positive reinforcement
-    p.score = Math.min(p.score + 0.05, 2.0);
+  async getScore(provider) {
+    const raw = await redis.hget(KEY, provider);
+    const score = raw ? Number(raw) : 80; // default baseline
+    return Math.min(MAX_SCORE, Math.max(MIN_SCORE, score));
   },
 
-  applyFailurePenalty(provider) {
-    const p = performanceState[provider];
-    if (!p) return;
+  async getScores() {
+    const all = await redis.hgetall(KEY);
+    const scores = {};
 
-    p.failures += 1;
+    for (const provider of PROVIDERS) {
+      const raw = all[provider];
+      scores[provider] = raw ? Number(raw) : 80;
+    }
 
-    // Negative reinforcement
-    p.score = Math.max(p.score - 0.1, 0.1);
+    return scores;
   },
 
-  getErrorRate(provider) {
-    const p = performanceState[provider];
-    if (!p) return 0;
+  async applySuccessBoost(provider) {
+    const current = await this.getScore(provider);
+    const updated = Math.min(MAX_SCORE, current + SUCCESS_BOOST);
 
-    const total = p.successes + p.failures;
-    if (total === 0) return 0;
-
-    return p.failures / total;
+    await redis.hset(KEY, provider, updated);
+    return updated;
   },
 
-  getScore(provider) {
-    return performanceState[provider]?.score || 1.0;
-  },
+  async applyFailurePenalty(provider) {
+    const current = await this.getScore(provider);
+    const updated = Math.max(MIN_SCORE, current - FAILURE_PENALTY);
 
-  getDiagnostics(provider) {
-    const p = performanceState[provider];
-
-    return {
-      provider,
-      successes: p.successes,
-      failures: p.failures,
-      score: p.score,
-      errorRate: this.getErrorRate(provider)
-    };
+    await redis.hset(KEY, provider, updated);
+    return updated;
   }
 };
