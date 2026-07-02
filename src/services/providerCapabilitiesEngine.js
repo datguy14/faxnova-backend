@@ -1,61 +1,68 @@
-// src/services/providerCapabilitiesEngine.js
+// src/services/providerCapabilitiesService.js
 
 const providerDiagnosticsService = require("./providerDiagnosticsService");
-const providerResidencyEngine = require("./providerResidencyEngine");
+const providerHealthService = require("./providerHealthService");
+const providerOutageService = require("./providerOutageService");
+const providerPerformanceService = require("./providerPerformanceService");
+const providerLatencyTracker = require("./providerLatencyTracker");
 
 const PROVIDERS = ["sinch", "telnyx"];
 
 module.exports = {
-  isProviderAllowed(provider, constraints = {}) {
-    const regions = {
-      sinch: ["us", "eu", "ca"],
-      telnyx: ["us", "eu", "ca"]
-    }[provider] || [];
+  async getAllowedProvidersForFax(fax) {
+    const country = fax.toCountry || "US";
 
-    const residencyZone = constraints.residencyZone?.toLowerCase();
-    const requiredRegion = (constraints.region || residencyZone || "us").toLowerCase();
+    return PROVIDERS.filter(provider => {
+      const caps = providerDiagnosticsService.getStaticCapabilities(provider);
 
-    return regions.includes(requiredRegion);
-  },
+      if (!caps.residency[country]) return false;
+      if (!caps.canSend) return false;
 
-  filterProviders(providers, constraints = {}) {
-    return providers.filter((provider) =>
-      this.isProviderAllowed(provider, constraints)
-    );
-  },
-
-  getAllowedProvidersForFax(fax) {
-    const constraints = fax.sovereigntyConstraints || {};
-    return this.filterProviders(PROVIDERS, constraints);
+      return true;
+    });
   },
 
   async getProviderCapabilities(provider, fax = null) {
-    const constraints = fax?.sovereigntyConstraints || {};
+    const health = await providerHealthService.getHealth(provider);
+    const outageState = await providerOutageService.getOutageState(provider);
+    const latency = await providerLatencyTracker.getLatency(provider);
+    const score = await providerPerformanceService.getScore(provider);
 
-    const allowed = this.isProviderAllowed(provider, constraints);
+    const staticCaps = providerDiagnosticsService.getStaticCapabilities(provider);
 
-    // Unified diagnostics snapshot
-    const diag = await providerDiagnosticsService.getDiagnostics(provider);
+    const weight = this.calculateWeight({
+      health,
+      outageState,
+      latency,
+      score,
+      staticCaps
+    });
 
     return {
       provider,
-      allowed,
-      health: diag.health,
-      outageState: diag.outageState,
-      latency: diag.latency,            // numeric latency.value
-      latencyDetails: diag.latencyDetails,
-      score: diag.score,
-      weight: diag.routingWeight,       // unified weight
-      circuitBreaker: diag.circuitBreaker,
-      timestamp: diag.timestamp
+      ...staticCaps,
+      health,
+      outageState,
+      latency,
+      score,
+      weight
     };
   },
 
-  async getDiagnostics(fax = null) {
-    const results = [];
-    for (const provider of PROVIDERS) {
-      results.push(await this.getProviderCapabilities(provider, fax));
-    }
-    return results;
+  calculateWeight({ health, outageState, latency, score, staticCaps }) {
+    if (outageState === "open") return 0;
+    if (health === "down") return 0;
+
+    let weight = score;
+
+    if (health === "degraded") weight *= 0.7;
+    if (outageState === "half-open") weight *= 0.5;
+
+    if (latency > 2000) weight *= 0.6;
+    if (latency > 5000) weight *= 0.3;
+
+    if (!staticCaps.canSend) weight = 0;
+
+    return weight;
   }
 };
