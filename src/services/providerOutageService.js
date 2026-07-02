@@ -3,8 +3,8 @@
 const redis = require("../lib/redis");
 
 const FAILURE_THRESHOLD = 3;
-const COOLDOWN_MS = 15 * 60 * 1000;      // outage window
-const PROBATION_MS = 2 * 60 * 1000;      // half-open window
+const OPEN_DURATION_MS = 15 * 60 * 1000;     // 15 minutes
+const HALF_OPEN_DURATION_MS = 2 * 60 * 1000; // 2 minutes
 
 function key(provider) {
   return `outage:${provider}`;
@@ -22,10 +22,7 @@ module.exports = {
     if (failures >= FAILURE_THRESHOLD && state !== "open") {
       await redis.hset(k, "state", "open");
       await redis.hset(k, "openedAt", Date.now());
-      await redis.hset(k, "probationUntil", Date.now() + COOLDOWN_MS);
-
-      // TTL triggers half-open transition
-      await redis.pexpire(k, COOLDOWN_MS);
+      await redis.hset(k, "halfOpenAt", Date.now() + OPEN_DURATION_MS);
     }
   },
 
@@ -34,12 +31,13 @@ module.exports = {
     const state = await redis.hget(k, "state");
 
     if (state === "half-open") {
-      const probationUntil = Number(await redis.hget(k, "probationUntil"));
+      const halfOpenAt = Number(await redis.hget(k, "halfOpenAt"));
 
-      if (Date.now() >= probationUntil) {
+      if (Date.now() >= halfOpenAt) {
         await redis.hset(k, "state", "closed");
         await redis.hset(k, "failures", 0);
         await redis.hdel(k, "openedAt");
+        await redis.hdel(k, "halfOpenAt");
       }
     }
   },
@@ -48,35 +46,45 @@ module.exports = {
     const k = key(provider);
 
     const state = await redis.hget(k, "state");
-    const ttl = await redis.pttl(k);
-
     if (!state) return "closed";
 
-    if (state === "open" && ttl <= 0) {
-      await redis.hset(k, "state", "half-open");
-      await redis.hset(k, "probationUntil", Date.now() + PROBATION_MS);
-      await redis.hset(k, "failures", 0);
-      return "half-open";
+    if (state === "open") {
+      const openedAt = Number(await redis.hget(k, "openedAt"));
+      if (Date.now() - openedAt >= OPEN_DURATION_MS) {
+        await redis.hset(k, "state", "half-open");
+        await redis.hset(k, "halfOpenAt", Date.now() + HALF_OPEN_DURATION_MS);
+        return "half-open";
+      }
     }
 
     return state;
   },
 
-  async isOutage(provider) {
-    return (await this.getOutageState(provider)) === "open";
+  async getCircuitBreakerState(provider) {
+    return this.getOutageState(provider);
   },
 
   async getDiagnostics(provider) {
     const k = key(provider);
     const data = await redis.hgetall(k);
 
+    const state = await this.getOutageState(provider);
+
     return {
       provider,
-      outageState: await this.getOutageState(provider),
+      outageState: state,
       failures: Number(data.failures || 0),
       lastFailureAt: Number(data.lastFailureAt || 0),
       openedAt: Number(data.openedAt || 0),
-      probationUntil: Number(data.probationUntil || 0),
+      halfOpenAt: Number(data.halfOpenAt || 0),
+      cooldownRemaining:
+        state === "open"
+          ? Math.max(0, OPEN_DURATION_MS - (Date.now() - Number(data.openedAt || 0)))
+          : 0,
+      probationRemaining:
+        state === "half-open"
+          ? Math.max(0, Number(data.halfOpenAt || 0) - Date.now())
+          : 0
     };
   }
 };
