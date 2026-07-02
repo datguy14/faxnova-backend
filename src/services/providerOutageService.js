@@ -2,89 +2,143 @@
 
 const redis = require("../lib/redis");
 
-const FAILURE_THRESHOLD = 3;
-const OPEN_DURATION_MS = 15 * 60 * 1000;     // 15 minutes
-const HALF_OPEN_DURATION_MS = 2 * 60 * 1000; // 2 minutes
+const KEY = "faxnova:providerOutageState";
+const PROVIDERS = ["sinch", "telnyx"];
 
-function key(provider) {
-  return `outage:${provider}`;
-}
+// Circuit breaker timings
+const FAILURE_THRESHOLD = 5;          // failures before OPEN
+const COOLDOWN_MS = 60_000;           // 1 minute cooldown before HALF-OPEN
+const PROBATION_MS = 30_000;          // 30 seconds probation in HALF-OPEN
 
 module.exports = {
-  async recordFailure(provider) {
-    const k = key(provider);
-
-    const failures = await redis.hincrby(k, "failures", 1);
-    await redis.hset(k, "lastFailureAt", Date.now());
-
-    const state = await redis.hget(k, "state");
-
-    if (failures >= FAILURE_THRESHOLD && state !== "open") {
-      await redis.hset(k, "state", "open");
-      await redis.hset(k, "openedAt", Date.now());
-      await redis.hset(k, "halfOpenAt", Date.now() + OPEN_DURATION_MS);
-    }
-  },
-
-  async recordSuccess(provider) {
-    const k = key(provider);
-    const state = await redis.hget(k, "state");
-
-    if (state === "half-open") {
-      const halfOpenAt = Number(await redis.hget(k, "halfOpenAt"));
-
-      if (Date.now() >= halfOpenAt) {
-        await redis.hset(k, "state", "closed");
-        await redis.hset(k, "failures", 0);
-        await redis.hdel(k, "openedAt");
-        await redis.hdel(k, "halfOpenAt");
-      }
-    }
-  },
-
   async getOutageState(provider) {
-    const k = key(provider);
+    const raw = await redis.hget(KEY, provider);
+    if (!raw) return "closed";
 
-    const state = await redis.hget(k, "state");
-    if (!state) return "closed";
-
-    if (state === "open") {
-      const openedAt = Number(await redis.hget(k, "openedAt"));
-      if (Date.now() - openedAt >= OPEN_DURATION_MS) {
-        await redis.hset(k, "state", "half-open");
-        await redis.hset(k, "halfOpenAt", Date.now() + HALF_OPEN_DURATION_MS);
-        return "half-open";
-      }
-    }
-
-    return state;
-  },
-
-  async getCircuitBreakerState(provider) {
-    return this.getOutageState(provider);
+    const state = JSON.parse(raw);
+    return state.state || "closed";
   },
 
   async getDiagnostics(provider) {
-    const k = key(provider);
-    const data = await redis.hgetall(k);
+    const raw = await redis.hget(KEY, provider);
+    if (!raw) {
+      return {
+        failures: 0,
+        lastFailureAt: null,
+        openedAt: null,
+        probationUntil: null,
+        cooldownRemaining: 0,
+        probationRemaining: 0
+      };
+    }
 
-    const state = await this.getOutageState(provider);
+    const state = JSON.parse(raw);
+    const now = Date.now();
 
     return {
-      provider,
-      outageState: state,
-      failures: Number(data.failures || 0),
-      lastFailureAt: Number(data.lastFailureAt || 0),
-      openedAt: Number(data.openedAt || 0),
-      halfOpenAt: Number(data.halfOpenAt || 0),
-      cooldownRemaining:
-        state === "open"
-          ? Math.max(0, OPEN_DURATION_MS - (Date.now() - Number(data.openedAt || 0)))
-          : 0,
-      probationRemaining:
-        state === "half-open"
-          ? Math.max(0, Number(data.halfOpenAt || 0) - Date.now())
-          : 0
+      failures: state.failures || 0,
+      lastFailureAt: state.lastFailureAt || null,
+      openedAt: state.openedAt || null,
+      probationUntil: state.probationUntil || null,
+      cooldownRemaining: state.openedAt
+        ? Math.max(0, state.openedAt + COOLDOWN_MS - now)
+        : 0,
+      probationRemaining: state.probationUntil
+        ? Math.max(0, state.probationUntil - now)
+        : 0
     };
+  },
+
+  async recordFailure(provider) {
+    const raw = await redis.hget(KEY, provider);
+    const now = Date.now();
+
+    let state = raw ? JSON.parse(raw) : {
+      state: "closed",
+      failures: 0,
+      lastFailureAt: null,
+      openedAt: null,
+      probationUntil: null
+    };
+
+    state.failures += 1;
+    state.lastFailureAt = now;
+
+    // If provider is already OPEN, keep it open
+    if (state.state === "open") {
+      await redis.hset(KEY, provider, JSON.stringify(state));
+      return state;
+    }
+
+    // If provider is HALF-OPEN and fails → go back to OPEN
+    if (state.state === "half-open") {
+      state.state = "open";
+      state.openedAt = now;
+      state.probationUntil = null;
+      await redis.hset(KEY, provider, JSON.stringify(state));
+      return state;
+    }
+
+    // CLOSED → check if threshold exceeded
+    if (state.failures >= FAILURE_THRESHOLD) {
+      state.state = "open";
+      state.openedAt = now;
+      state.probationUntil = null;
+    }
+
+    await redis.hset(KEY, provider, JSON.stringify(state));
+    return state;
+  },
+
+  async recordSuccess(provider) {
+    const raw = await redis.hget(KEY, provider);
+    const now = Date.now();
+
+    let state = raw ? JSON.parse(raw) : {
+      state: "closed",
+      failures: 0,
+      lastFailureAt: null,
+      openedAt: null,
+      probationUntil: null
+    };
+
+    // CLOSED → success just resets failures
+    if (state.state === "closed") {
+      state.failures = 0;
+      await redis.hset(KEY, provider, JSON.stringify(state));
+      return state;
+    }
+
+    // OPEN → check cooldown window
+    if (state.state === "open") {
+      const cooldownPassed = now > state.openedAt + COOLDOWN_MS;
+
+      if (cooldownPassed) {
+        state.state = "half-open";
+        state.probationUntil = now + PROBATION_MS;
+        state.failures = 0;
+      }
+
+      await redis.hset(KEY, provider, JSON.stringify(state));
+      return state;
+    }
+
+    // HALF-OPEN → success during probation closes the breaker
+    if (state.state === "half-open") {
+      const probationPassed = now > state.probationUntil;
+
+      if (probationPassed) {
+        state.state = "closed";
+        state.failures = 0;
+        state.openedAt = null;
+        state.probationUntil = null;
+      }
+
+      await redis.hset(KEY, provider, JSON.stringify(state));
+      return state;
+    }
+
+    await redis.hset(KEY, provider, JSON.stringify(state));
+    return state;
   }
 };
