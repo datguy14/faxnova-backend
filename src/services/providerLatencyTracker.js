@@ -1,54 +1,74 @@
 // src/services/providerLatencyTracker.js
 
-const LATENCY_WINDOW = 50; // last 50 samples
-const EWMA_ALPHA = 0.3;    // smoothing factor
+const redis = require("../lib/redis");
 
-const latencyData = {
-  sinch: { samples: [], ewma: null },
-  telnyx: { samples: [], ewma: null },
-};
+const PROVIDERS = ["sinch", "telnyx"];
+
+// Redis keys
+const EWMA_KEY = "faxnova:latency:ewma";
+const HIST_KEY = "faxnova:latency:hist";
+
+// EWMA smoothing factor
+// Higher alpha = more reactive, lower alpha = more stable
+const ALPHA = 0.3;
+
+// Max history size per provider (for p95/p99)
+const MAX_HISTORY = 200;
 
 module.exports = {
-  recordLatency(provider, ms) {
-    const data = latencyData[provider];
+  async recordLatency(provider, ms) {
+    if (!PROVIDERS.includes(provider)) return;
 
-    // Rolling window
-    data.samples.push(ms);
-    if (data.samples.length > LATENCY_WINDOW) {
-      data.samples.shift();
-    }
+    // --- EWMA Update ---
+    const prevRaw = await redis.hget(EWMA_KEY, provider);
+    const prev = prevRaw ? Number(prevRaw) : ms;
 
-    // EWMA smoothing
-    if (data.ewma === null) {
-      data.ewma = ms;
-    } else {
-      data.ewma = EWMA_ALPHA * ms + (1 - EWMA_ALPHA) * data.ewma;
-    }
+    const ewma = ALPHA * ms + (1 - ALPHA) * prev;
+    await redis.hset(EWMA_KEY, provider, ewma);
+
+    // --- History Update (for p95/p99) ---
+    const score = Date.now(); // sorted set score
+    await redis.zadd(`${HIST_KEY}:${provider}`, score, ms.toString());
+
+    // Trim history to MAX_HISTORY
+    await redis.zremrangebyrank(`${HIST_KEY}:${provider}`, 0, -MAX_HISTORY - 1);
+
+    return ewma;
   },
 
   async getLatency(provider) {
-    const data = latencyData[provider];
-    const samples = [...data.samples];
+    const raw = await redis.hget(EWMA_KEY, provider);
+    return raw ? Number(raw) : 0;
+  },
 
-    if (!samples.length) {
-      return {
-        p95: 0,
-        p99: 0,
-        ewma: 0,
-        value: 0, // routing-safe numeric latency
-      };
+  async getPercentiles(provider) {
+    const key = `${HIST_KEY}:${provider}`;
+
+    const values = await redis.zrange(key, 0, -1);
+    if (values.length === 0) {
+      return { p95: 0, p99: 0 };
     }
 
-    samples.sort((a, b) => a - b);
+    const sorted = values.map(Number).sort((a, b) => a - b);
 
-    const p95 = samples[Math.floor(samples.length * 0.95)];
-    const p99 = samples[Math.floor(samples.length * 0.99)];
+    const p95Index = Math.floor(sorted.length * 0.95);
+    const p99Index = Math.floor(sorted.length * 0.99);
 
     return {
-      p95,
-      p99,
-      ewma: data.ewma,
-      value: data.ewma, // routing engine uses this
+      p95: sorted[p95Index] || sorted[sorted.length - 1],
+      p99: sorted[p99Index] || sorted[sorted.length - 1]
     };
   },
+
+  async getDiagnostics(provider) {
+    const ewma = await this.getLatency(provider);
+    const { p95, p99 } = await this.getPercentiles(provider);
+
+    return {
+      provider,
+      ewma,
+      p95,
+      p99
+    };
+  }
 };
