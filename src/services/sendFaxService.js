@@ -22,23 +22,12 @@ const telnyxAdapter = require("../providers/telnyxAdapter");
 /**
  * Send a fax through the best available provider
  *
- * Process:
- * 1. Validate fax record exists
- * 2. Select provider using unified routing engine (health + outage + performance + latency)
- * 3. Update fax status to "sending"
- * 4. Execute send via provider adapter
- * 5. Record latency metrics via providerLatencyTracker
- * 6. Apply success boost to performance and outage services
- * 7. Evaluate overall provider health
- * 8. Update fax with provider message ID
- *
  * @param {string} faxId - Unique fax identifier
  * @returns {Promise<object>} - Provider response { messageId, raw }
  * @throws {FaxNovaError} - If provider selection or send fails
  */
 async function sendFax(faxId) {
   try {
-    // Validate fax exists
     const fax = await OutboundFax.findOne({ faxId });
     if (!fax) {
       throw new FaxNovaError("Fax not found", {
@@ -47,19 +36,21 @@ async function sendFax(faxId) {
       });
     }
 
-    // Select best provider using unified routing engine
-    const provider = await providerRoutingEngine.selectProviderForFax(fax);
+    // Region-aware routing (if region/residency is present on fax)
+    const routingContext = {
+      faxId,
+      region: fax.region || fax.residencyZone || null
+    };
 
-    // Update fax with selected provider and status
+    const provider = await providerRoutingEngine.selectProviderForFax(routingContext);
+
     await OutboundFax.updateOne(
       { faxId },
       { provider, status: "sending" }
     );
 
-    // Get adapter for selected provider
     const adapter = provider === "sinch" ? sinchAdapter : telnyxAdapter;
 
-    // Execute send with timing
     const startTime = Date.now();
     const result = await adapter.sendFax({
       faxId,
@@ -69,36 +60,31 @@ async function sendFax(faxId) {
     });
     const latency = Date.now() - startTime;
 
-    // Record success metrics in parallel
     await Promise.all([
       providerLatencyTracker.recordLatency(provider, latency),
-      providerPerformanceService.applySuccessBoost(provider),
+      providerPerformanceService.recordSuccess(provider),
       providerOutageService.recordSuccess(provider),
       providerHealthService.evaluate(provider)
     ]);
 
-    // Update fax with provider message ID
     await OutboundFax.updateOne(
       { faxId },
-      { providerMessageId: result.messageId }
+      { providerMessageId: result.messageId, status: "sent" }
     );
 
     return result;
-
   } catch (err) {
-    // Extract provider from error context or previous fax state
     let provider = null;
     try {
       const fax = await OutboundFax.findOne({ faxId });
-      provider = fax?.provider;
-    } catch (lookupErr) {
-      // Silently fail - don't double-throw
+      provider = fax?.provider || null;
+    } catch (_) {
+      // ignore lookup error
     }
 
-    // Record failure metrics if provider is known
     if (provider) {
       await Promise.all([
-        providerPerformanceService.applyFailurePenalty(provider),
+        providerPerformanceService.recordFailure(provider),
         providerOutageService.recordFailure(provider),
         providerHealthService.evaluate(provider)
       ]).catch(metricsErr => {
@@ -106,7 +92,6 @@ async function sendFax(faxId) {
       });
     }
 
-    // Update fax with error details
     await OutboundFax.updateOne(
       { faxId },
       {
@@ -118,7 +103,6 @@ async function sendFax(faxId) {
       console.error(`[sendFaxService] Failed to update fax ${faxId}:`, updateErr);
     });
 
-    // Re-throw with normalized error structure
     throw new FaxNovaError("Failed to send fax", {
       code: "FAX_SEND_FAILED",
       provider,
