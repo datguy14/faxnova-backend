@@ -1,9 +1,10 @@
-// src/services/outboundFaxService.js — STRICT-MODE VERSION
+// src/services/outboundFaxService.js — STRICT-MODE FINAL VERSION
 
 const OutboundFax = require("../models/OutboundFax");
 const providerRoutingEngine = require("./providerRoutingEngine");
 const FaxNovaError = require("../errors/FaxNovaError");
 const audit = require("../utils/auditLogger");
+const { v4: uuid } = require("uuid");
 
 module.exports = {
   /**
@@ -16,26 +17,33 @@ module.exports = {
       });
     }
 
-    // Residency + sovereignty normalization
+    // Normalize residency + sovereignty
     const region = residencyZone || sovereignty || "us";
+
+    // Generate faxId if model doesn't auto-generate it
+    const faxId = uuid();
 
     // Strict‑mode provider selection
     const provider = await providerRoutingEngine.selectProviderForFax({
-      to,
-      from,
+      faxId,
+      toNumber: to,
+      fromNumber: from,
       region,
       residencyZone,
       sovereignty,
-      userId
+      userId,
+      retry: false
     });
 
+    // Create fax record
     const fax = await OutboundFax.create({
+      faxId,
       toNumber: to,
       fromNumber: from,
       documentUrl: mediaUrl,
       callbackUrl,
       userId,
-      residencyZone: region,
+      residencyZone,
       sovereignty,
       provider,
       status: "queued",
@@ -43,7 +51,7 @@ module.exports = {
     });
 
     audit.log("outboundFaxCreated", {
-      faxId: fax.faxId,
+      faxId,
       provider,
       userId,
       region
