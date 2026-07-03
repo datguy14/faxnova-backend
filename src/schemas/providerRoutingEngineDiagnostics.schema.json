@@ -1,0 +1,99 @@
+{
+  "type": "object",
+  "title": "ProviderRoutingEngineDiagnostics",
+  "properties": {
+    "provider": {
+      "type": "string",
+      "enum": ["sinch", "telnyx"],
+      "description": "Provider name"
+    },
+
+    "region": {
+      "type": "string",
+      "enum": ["us", "eu", null],
+      "description": "Region used for routing and metric scoping"
+    },
+
+    "performance": {
+      "type": "object",
+      "properties": {
+        "score": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 100,
+          "description": "Strict‑mode performance score (0–100 baseline)"
+        }
+      },
+      "required": ["score"]
+    },
+
+    "health": {
+      "type": "object",
+      "properties": {
+        "state": {
+          "type": "string",
+          "enum": ["healthy", "degraded", "half_open", "open", "probation"],
+          "description": "Provider health state"
+        },
+        "lastUpdated": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Timestamp of last health update"
+        }
+      },
+      "required": ["state"]
+    },
+
+    "outage": {
+      "type": "object",
+      "properties": {
+        "outageState": {
+          "type": "string",
+          "enum": ["none", "healthy", "degraded", "half_open", "open", "probation"],
+          "description": "Outage state from providerOutageService"
+        },
+        "cooldownUntil": {
+          "type": ["string", "null"],
+          "format": "date-time",
+          "description": "Provider is excluded until this time"
+        },
+        "probationUntil": {
+          "type": ["string", "null"],
+          "format": "date-time",
+          "description": "Provider receives soft penalties until this time"
+        }
+      },
+      "required": ["outageState"]
+    },
+
+    "latency": {
+      "type": "object",
+      "properties": {
+        "ewma": {
+          "type": "number",
+          "description": "EWMA latency in ms"
+        },
+        "p95": {
+          "type": "number",
+          "description": "95th percentile latency in ms"
+        },
+        "p99": {
+          "type": "number",
+          "description": "99th percentile latency in ms"
+        },
+        "samples": {
+          "type": "number",
+          "description": "Number of latency samples collected"
+        }
+      },
+      "required": ["ewma", "p95", "p99"]
+    },
+
+    "error": {
+      "type": ["string", "null"],
+      "description": "Error message if diagnostics failed"
+    }
+  },
+
+  "required": ["provider", "region", "performance", "health", "outage", "latency"]
+}
