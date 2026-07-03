@@ -8,20 +8,21 @@ const providerLatencyTracker = require("./providerLatencyTracker");
 const KEY = "faxnova:providerHealth";
 const PROVIDERS = ["sinch", "telnyx"];
 
-// Health states
+// Unified strict‑mode health states
 const STATES = {
   HEALTHY: "healthy",
   DEGRADED: "degraded",
-  HALF_OPEN: "half-open",
-  DOWN: "down"
+  HALF_OPEN: "half_open",
+  OPEN: "open",
+  PROBATION: "probation"
 };
 
 // Thresholds
 const SCORE_DEGRADED = 40;
-const SCORE_DOWN = 20;
+const SCORE_OPEN = 20;
 
 const LATENCY_DEGRADED = 2000;
-const LATENCY_DOWN = 5000;
+const LATENCY_OPEN = 5000;
 
 module.exports = {
   async getHealth(provider) {
@@ -37,21 +38,23 @@ module.exports = {
     let state = STATES.HEALTHY;
 
     // Outage overrides everything
-    if (outageState === "open") {
-      state = STATES.DOWN;
-    } else if (outageState === "half-open") {
+    if (outageState === STATES.OPEN) {
+      state = STATES.OPEN;
+    } else if (outageState === STATES.HALF_OPEN) {
       state = STATES.HALF_OPEN;
+    } else if (outageState === STATES.PROBATION) {
+      state = STATES.PROBATION;
     } else {
       // Score-based health
-      if (score < SCORE_DOWN) {
-        state = STATES.DOWN;
+      if (score < SCORE_OPEN) {
+        state = STATES.OPEN;
       } else if (score < SCORE_DEGRADED) {
         state = STATES.DEGRADED;
       }
 
       // Latency-based health
-      if (latency > LATENCY_DOWN) {
-        state = STATES.DOWN;
+      if (latency > LATENCY_OPEN) {
+        state = STATES.OPEN;
       } else if (latency > LATENCY_DEGRADED) {
         state = STATES.DEGRADED;
       }
