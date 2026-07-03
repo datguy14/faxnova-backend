@@ -1,242 +1,167 @@
-FaxNova Backend
+FaxNova Backend — Strict‑Mode Edition
 
-Multi‑Provider Fax Infrastructure for Modern Compliance, Reliability & Scale
+A horizontally scalable, provider‑agnostic fax‑sending backend built with Node.js, Redis, and a unified provider diagnostics stack.This backend powers FaxNova’s real‑time routing engine, outage detection, webhook ingestion, and worker pipeline.
 
-FaxNova Backend is a production‑grade communications infrastructure service designed for organizations that require high‑deliverability faxing, provider redundancy, data‑residency controls, and AI‑assisted operations.
+🚀 Features
 
-Built on Node.js + Express, FaxNova delivers a modular, acquisition‑ready architecture that integrates seamlessly with Sinch and Telnyx while providing intelligent routing, automated troubleshooting, and enterprise‑grade observability.
+Unified provider stack (Outage, Health, Performance, Latency, Routing)
 
-🚀 Platform Overview
+Percentile‑weighted routing (EWMA + p95 + p99)
 
-FaxNova Backend provides:
+Deterministic Redis‑backed state
 
-Multi‑provider fax delivery with automatic failover
+Outage‑aware retry gating
 
-Residency‑aware routing for sovereignty‑sensitive workloads
+Exponential backoff (2^attempts, capped at 60s)
 
-Webhook ingestion with signature validation
+Secure webhook ingestion (HMAC SHA‑256 + idempotency)
 
-AI‑powered agents for routing, compliance, billing, and troubleshooting
+Structured diagnostics for all providers
 
-Secure authentication with JWT + rate limiting
+Horizontally scalable worker pipeline
 
-Provider‑agnostic abstraction layer for future expansion
+Comprehensive strict‑mode JSDoc coverage
 
-Automated code audits via CI‑driven Audit Agent
+20+ integration tests (pipeline, routing, webhook, Redis)
 
-FaxNova is engineered for high availability, regulatory alignment, and SaaS‑grade scalability.
+🏗 Architecture Overview
 
-🧱 Core Capabilities
+Provider Stack
 
-1. Multi‑Provider Fax Delivery
+providerOutageService — outage state, cooldown, probation
 
-Intelligent provider selection (Sinch + Telnyx)
+providerHealthService — degraded/half‑open/down
 
-Automatic failover on provider outage or degraded performance
+providerPerformanceService — scoring
 
-Provider‑specific metadata normalization
+providerLatencyTracker — EWMA + p95 + p99
 
-Delivery status tracking + webhook ingestion
+providerRoutingEngine — composite scoring
 
-Unified outbound fax pipeline
+Worker Pipeline
 
-Explore the provider routing engine.
+outboundFaxWorker — sends fax
 
-2. Residency & Sovereignty Engine
+retryFaxWorker — exponential backoff + outage gating
 
-FaxNova includes a residency policy layer that ensures outbound faxes comply with:
+webhookWorker — applies provider feedback
 
-US‑only routing
+Controllers
 
-EU‑sovereign routing
+provider.controller.js
 
-Global routing
+webhookController.js
 
-Provider‑level residency constraints
+healthController.js
 
-This enables enterprise customers to meet GDPR, tribal sovereignty, and regulated‑industry requirements.
+All controllers now use:
 
-Learn about the residency model.
+strict error normalization
 
-3. AI‑Powered Internal Agents
+structured JSON responses
 
-FaxNova ships with a suite of internal agents that automate operational intelligence:
+unified diagnostics
 
-Troubleshooting Agent
+consistent logging
 
-Routing Agent
+📡 Routing Engine (EWMA + p95 + p99)
 
-Compliance Agent
+Providers are scored using:
 
-Billing Agent
+performance score
 
-Sales Agent
+health penalties
 
-Code Audit Agent (CI‑integrated)
+outage penalties
 
-These agents reduce engineering overhead and accelerate debugging, compliance checks, and routing decisions.
+EWMA latency
 
-Explore the AI agent system.
+p95 tail latency
 
-4. Secure, Modern Architecture
+p99 extreme latency
 
-JWT authentication
+This ensures the best provider is selected under real‑world load.
 
-Role‑based access
+🔐 Webhook Security
 
-Rate limiting
+HMAC SHA‑256 signature verification
 
-Input validation
+timing‑safe comparison
 
-SSRF‑safe file URL validation
+idempotency via externalEventId
 
-Provider isolation
+duplicate‑event protection
 
-Environment validation
+structured error responses
 
-Structured audit logging
+📊 Diagnostics
 
-See the security model.
+Each provider exposes:
 
-5. Automated Code Audits (CI)
+{
+  provider,
+  health,
+  outageState,
+  score,
+  failures,
+  lastFailureAt,
+  openedAt,
+  probationUntil,
+  cooldownRemaining,
+  latency: {
+    ewma,
+    p95,
+    p99
+  }
+}
 
-Every push and pull request triggers:This dramatically increases acquisition readiness and reduces long‑term maintenance risk.
+🧪 Testing
 
-📂 Project Structure
+Included test suites:
 
-src/
-  agents/          # AI agent handlers
-  audit/           # Audit Agent logic
-  controllers/     # Business logic
-  integrations/    # Provider integrations (Sinch, Telnyx)
-  middleware/      # Auth, rate limiting, validation
-  models/          # Mongoose models
-  routes/          # API routes
-  services/        # Core services (fax, usage, billing)
-  utils/           # Helpers, validators, env checks
+Provider routing engine tests
 
-🔌 API Endpoints
+Worker chain integration tests
 
-Fax
+Webhook security tests
 
-POST /fax/send
+Redis consistency tests
 
-GET /fax/:id
+Error recovery tests
 
-GET /fax
+End‑to‑end pipeline tests
 
-DELETE /fax/:id
+Run tests:
 
-Agents
+npm test
 
-POST /agents/audit-code
+🗑 Deprecated Engines Removed
 
-POST /agents/troubleshoot
+providerCircuitBreaker.js
 
-POST /agents/route
+providerResidencyEngine.js
 
-Auth
+providerCapabilitiesEngine.js
 
-POST /auth/login
+All references removed.
 
-POST /auth/register
+🚀 Deployment
 
-Explore the API reference.
+Environment variables:
 
-🧰 Environment Variables
+REDIS_URL=
+SINCH_API_KEY=
+TELNYX_API_KEY=
+WEBHOOK_SECRET=
 
-Category
+Start workers:
 
-Variable
+npm run workers
 
-Core
-
-PORT, MONGODB_URI, JWT_SECRET
-
-AI
-
-OPENAI_API_KEY
-
-Sinch
-
-SINCH_KEY_ID, SINCH_KEY_SECRET, SINCH_PROJECT_ID, SINCH_FAX_NUMBER
-
-Telnyx
-
-TELNYX_API_KEY, TELNYX_CONNECTION_ID, TELNYX_WEBHOOK_SECRET
-
-Audit Agent
-
-AUDIT_AGENT_URL, AUDIT_AGENT_KEY
-
-Security
-
-ALLOWED_FILE_HOSTS
-
-Learn about environment configuration.
-
-🧪 Running Locally
-
-Install dependencies:
-
-npm install
-
-Start development server:
-
-npm run dev
-
-Start production server:
+Start API:
 
 npm start
 
-🔐 Security & Compliance
+📞 Support
 
-FaxNova includes:
-
-SSRF‑safe file URL validation
-
-Provider‑safe routing
-
-Strict input validation
-
-Webhook signature verification
-
-Audit logging
-
-Error normalization
-
-See the security overview.
-
-🤖 Audit Agent CI (Included)
-
-This repository includes a GitHub Action that:
-
-Runs the Audit Agent
-
-Parses issues
-
-Posts PR comments
-
-Blocks merges on critical issues
-
-This ensures continuous hardening and boosts acquisition valuation.
-
-Learn more about the Audit Agent CI.
-
-🗺️ Roadmap
-
-Next.js dashboard
-
-Team accounts + RBAC
-
-Usage analytics
-
-Provider failover UI
-
-Mobile app (FlutterFlow)
-
-Explore the roadmap.
-
-📞 Contact
-
-Charles LocklearFounder, NovaStack TechnologiesLaurinburg, NC
+For issues, open a GitHub issue or contact the FaxNova engineering team.
