@@ -19,10 +19,6 @@ const PROVIDERS = ["sinch", "telnyx"];
 
 /**
  * Calculate latency penalty multiplier based on EWMA + percentiles
- * @param {number} ewma
- * @param {number} p95
- * @param {number} p99
- * @returns {number}
  */
 function calculateLatencyPenalty(ewma, p95, p99) {
   const EWMA_CRITICAL = 5000;
@@ -32,98 +28,55 @@ function calculateLatencyPenalty(ewma, p95, p99) {
 
   let multiplier = 1.0;
 
-  if (ewma > EWMA_CRITICAL) {
-    multiplier *= 0.2;
-  } else if (ewma > EWMA_SEVERE) {
-    multiplier *= 0.5;
-  }
+  if (ewma > EWMA_CRITICAL) multiplier *= 0.2;
+  else if (ewma > EWMA_SEVERE) multiplier *= 0.5;
 
-  if (p99 > P99_CRITICAL) {
-    multiplier *= 0.25;
-  }
-
-  if (p95 > P95_SEVERE) {
-    multiplier *= 0.6;
-  }
+  if (p99 > P99_CRITICAL) multiplier *= 0.25;
+  if (p95 > P95_SEVERE) multiplier *= 0.6;
 
   return Math.max(0, multiplier);
 }
 
 /**
  * Calculate health state penalty multiplier
- * @param {string} healthState - healthy | degraded | half_open | open | probation
- * @returns {number}
  */
 function calculateHealthPenalty(healthState) {
   switch (healthState) {
-    case "healthy":
-      return 1.0;
-    case "degraded":
-      return 0.7;
-    case "half_open":
-      return 0.4;
-    case "probation":
-      return 0.3;
-    case "open":
-      return 0.0;
-    default:
-      return 1.0;
+    case "healthy": return 1.0;
+    case "degraded": return 0.7;
+    case "half_open": return 0.4;
+    case "probation": return 0.3;
+    case "open": return 0.0;
+    default: return 1.0;
   }
 }
 
 /**
  * Apply outage state + cooldown/probation penalties
- * @param {string} outageState
- * @param {Date|null} cooldownUntil
- * @param {Date|null} probationUntil
- * @returns {number} multiplier (0–1)
  */
 function calculateOutagePenalty(outageState, cooldownUntil, probationUntil) {
   const now = new Date();
 
-  // Hard exclusion if in open outage
-  if (outageState === "open") {
-    return 0.0;
-  }
-
-  // Hard exclusion if still in cooldown window
-  if (cooldownUntil && cooldownUntil > now) {
-    return 0.0;
-  }
-
-  // Soft penalty if in probation window
-  if (probationUntil && probationUntil > now) {
-    return 0.5;
-  }
-
-  // Soft penalty for half_open state
-  if (outageState === "half_open") {
-    return 0.5;
-  }
-
-  // Degraded gets a mild penalty
-  if (outageState === "degraded") {
-    return 0.8;
-  }
+  if (outageState === "open") return 0.0;
+  if (cooldownUntil && cooldownUntil > now) return 0.0;
+  if (probationUntil && probationUntil > now) return 0.5;
+  if (outageState === "half_open") return 0.5;
+  if (outageState === "degraded") return 0.8;
 
   return 1.0;
 }
 
 /**
  * Build cache key for provider score
- * @param {string} provider
- * @param {string|null} region
- * @returns {string}
  */
 function buildScoreCacheKey(provider, region) {
-  return region ? `provider-score:${provider}:${region}` : `provider-score:${provider}`;
+  return region
+    ? `provider-score:${provider}:${region}`
+    : `provider-score:${provider}`;
 }
 
 /**
  * Select the best provider for a fax based on weighted scoring
- * @param {object} fax - Fax object (may include region)
- * @returns {string} - Provider name
- * @throws {Error}
  */
 async function selectProviderForFax(fax = {}) {
   const region = fax.region || null;
@@ -132,6 +85,7 @@ async function selectProviderForFax(fax = {}) {
   for (const provider of PROVIDERS) {
     const cacheKey = buildScoreCacheKey(provider, region);
     const cached = await providerScoreCache.get(cacheKey);
+
     if (cached) {
       scores.push(cached);
       continue;
@@ -151,9 +105,9 @@ async function selectProviderForFax(fax = {}) {
       ]);
 
       const ewma = await providerLatencyTracker.getLatency(provider, region);
-      const { p95, p99 } = latencyMetrics || { p95: null, p99: null };
+      const { p95, p99 } = latencyMetrics || { p95: 0, p99: 0 };
 
-      const outageState = outageInfo?.outageState || "healthy";
+      const outageState = outageInfo?.outageState || "none";
       const cooldownUntil = outageInfo?.cooldownUntil || null;
       const probationUntil = outageInfo?.probationUntil || null;
 
@@ -165,6 +119,7 @@ async function selectProviderForFax(fax = {}) {
         cooldownUntil,
         probationUntil
       );
+
       if (outagePenalty === 0) {
         const excluded = {
           provider,
@@ -186,15 +141,23 @@ async function selectProviderForFax(fax = {}) {
         continue;
       }
 
-      let weight = performanceScore || 0;
+      // Baseline performance score fallback
+      let weight = typeof performanceScore === "number"
+        ? performanceScore
+        : 50;
 
-      const healthPenalty = calculateHealthPenalty(healthState);
-      weight *= healthPenalty;
+      // Health penalty
+      weight *= calculateHealthPenalty(healthState);
 
-      const latencyPenalty = calculateLatencyPenalty(ewma || 0, p95 || 0, p99 || 0);
-      weight *= latencyPenalty;
+      // Latency penalty
+      weight *= calculateLatencyPenalty(ewma || 0, p95 || 0, p99 || 0);
 
+      // Outage penalty
       weight *= outagePenalty;
+
+      // Region preference weighting
+      if (region === "us" && provider === "sinch") weight *= 1.1;
+      if (region === "eu" && provider === "telnyx") weight *= 1.1;
 
       const result = {
         provider,
@@ -214,6 +177,7 @@ async function selectProviderForFax(fax = {}) {
 
       scores.push(result);
       await providerScoreCache.set(cacheKey, result);
+
     } catch (err) {
       console.error(`[providerRoutingEngine] Error fetching metrics for ${provider}:`, err);
       const failed = {
@@ -241,8 +205,6 @@ async function selectProviderForFax(fax = {}) {
 
 /**
  * Get diagnostic information for all providers
- * @param {string|null} region
- * @returns {array}
  */
 async function getDiagnostics(region = null) {
   const diagnostics = [];
@@ -264,13 +226,12 @@ async function getDiagnostics(region = null) {
       diagnostics.push({
         provider,
         region,
-        performance: {
-          score: performanceScore
-        },
+        performance: { score: performanceScore },
         health: healthInfo,
         outage: outageInfo,
         latency: latencyDiag
       });
+
     } catch (err) {
       console.error(`[providerRoutingEngine] Diagnostic error for ${provider}:`, err);
       diagnostics.push({
