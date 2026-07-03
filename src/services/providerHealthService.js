@@ -1,4 +1,4 @@
-// src/services/providerHealthService.js
+// src/services/providerHealthService.js — STRICT-MODE FINAL
 
 const redis = require("../lib/redis");
 const providerOutageService = require("./providerOutageService");
@@ -8,16 +8,15 @@ const providerLatencyTracker = require("./providerLatencyTracker");
 const KEY = "faxnova:providerHealth";
 const PROVIDERS = ["sinch", "telnyx"];
 
-// Unified strict‑mode health states
 const STATES = {
   HEALTHY: "healthy",
   DEGRADED: "degraded",
   HALF_OPEN: "half_open",
   OPEN: "open",
-  PROBATION: "probation"
+  PROBATION: "probation",
+  NONE: "none"
 };
 
-// Thresholds
 const SCORE_DEGRADED = 40;
 const SCORE_OPEN = 20;
 
@@ -25,24 +24,27 @@ const LATENCY_DEGRADED = 2000;
 const LATENCY_OPEN = 5000;
 
 module.exports = {
-  async getHealth(provider) {
-    const raw = await redis.hget(KEY, provider);
+  async getHealth(provider, region = null) {
+    const key = `${KEY}:${region || "global"}`;
+    const raw = await redis.hget(key, provider);
     return raw || STATES.HEALTHY;
   },
 
-  async evaluate(provider) {
-    const outageState = await providerOutageService.getOutageState(provider);
-    const score = await providerPerformanceService.getScore(provider);
-    const latency = await providerLatencyTracker.getLatency(provider);
+  async evaluate(provider, region = null) {
+    const key = `${KEY}:${region || "global"}`;
+
+    const outage = await providerOutageService.getOutageState(provider, region);
+    const score = await providerPerformanceService.getScore(provider, region);
+    const latency = await providerLatencyTracker.getLatency(provider, region);
 
     let state = STATES.HEALTHY;
 
     // Outage overrides everything
-    if (outageState === STATES.OPEN) {
+    if (outage.outageState === STATES.OPEN) {
       state = STATES.OPEN;
-    } else if (outageState === STATES.HALF_OPEN) {
+    } else if (outage.outageState === STATES.HALF_OPEN) {
       state = STATES.HALF_OPEN;
-    } else if (outageState === STATES.PROBATION) {
+    } else if (outage.outageState === STATES.PROBATION) {
       state = STATES.PROBATION;
     } else {
       // Score-based health
@@ -60,15 +62,18 @@ module.exports = {
       }
     }
 
-    await redis.hset(KEY, provider, state);
+    await redis.hset(key, provider, state);
     return state;
   },
 
-  async getAllHealth() {
+  async getAllHealth(region = null) {
+    const key = `${KEY}:${region || "global"}`;
     const results = {};
+
     for (const provider of PROVIDERS) {
-      results[provider] = await this.getHealth(provider);
+      results[provider] = await this.getHealth(provider, region);
     }
+
     return results;
   }
 };
