@@ -1,5 +1,3 @@
-// src/models/InboundFax.js
-
 const mongoose = require("mongoose");
 
 const InboundFaxSchema = new mongoose.Schema(
@@ -11,6 +9,13 @@ const InboundFaxSchema = new mongoose.Schema(
     },
 
     provider: {
+      type: String,
+      enum: ["sinch", "telnyx"],
+      required: true,
+      index: true
+    },
+
+    providerMessageId: {
       type: String,
       required: true,
       index: true
@@ -27,25 +32,38 @@ const InboundFaxSchema = new mongoose.Schema(
       index: true
     },
 
+    documentUrl: {
+      type: String,
+      required: true
+    },
+
     pages: {
       type: Number,
       default: 1
     },
 
-    mediaUrl: {
-      type: String,
+    rawPayload: {
+      type: Object,
       required: true
     },
 
     residencyZone: {
       type: String,
+      enum: ["us", "eu"],
       required: true,
       index: true
     },
 
     sovereignty: {
       type: String,
+      enum: ["us", "eu"],
       required: true
+    },
+
+    region: {
+      type: String,
+      enum: ["us", "eu"],
+      default: "us"
     },
 
     tenantId: {
@@ -54,10 +72,24 @@ const InboundFaxSchema = new mongoose.Schema(
       index: true
     },
 
+    userId: {
+      type: String
+    },
+
+    status: {
+      type: String,
+      enum: ["received", "processing", "completed", "failed"],
+      default: "received"
+    },
+
     receivedAt: {
       type: Date,
       default: Date.now,
       index: true
+    },
+
+    processedAt: {
+      type: Date
     }
   },
   {
@@ -65,10 +97,7 @@ const InboundFaxSchema = new mongoose.Schema(
   }
 );
 
-// -----------------------------
-// Indexes for analytics + speed
-// -----------------------------
-
+// Indexes
 InboundFaxSchema.index({ tenantId: 1, receivedAt: -1 });
 InboundFaxSchema.index({ provider: 1, receivedAt: -1 });
 InboundFaxSchema.index({ residencyZone: 1, receivedAt: -1 });
