@@ -1,5 +1,3 @@
-// src/models/ProviderOutageState.js
-
 const mongoose = require("mongoose");
 
 const ProviderOutageStateSchema = new mongoose.Schema(
@@ -10,9 +8,14 @@ const ProviderOutageStateSchema = new mongoose.Schema(
       index: true
     },
 
-    state: {
+    region: {
       type: String,
-      enum: ["closed", "open", "half-open"],
+      index: true
+    },
+
+    outageState: {
+      type: String,
+      enum: ["healthy", "degraded", "half_open", "open", "probation"],
       required: true,
       index: true
     },
@@ -30,19 +33,25 @@ const ProviderOutageStateSchema = new mongoose.Schema(
       type: Date
     },
 
-    halfOpenAt: {
+    cooldownUntil: {
       type: Date
     },
 
-    recoveredAt: {
+    probationUntil: {
       type: Date
+    },
+
+    details: {
+      type: Object,
+      default: {}
     }
   },
   { timestamps: true }
 );
 
-ProviderOutageStateSchema.index({ provider: 1, state: 1 });
-ProviderOutageStateSchema.index({ provider: 1, openedAt: -1 });
-ProviderOutageStateSchema.index({ provider: 1, lastFailureAt: -1 });
+// Indexes for routing + diagnostics
+ProviderOutageStateSchema.index({ provider: 1, region: 1 });
+ProviderOutageStateSchema.index({ outageState: 1, updatedAt: -1 });
+ProviderOutageStateSchema.index({ provider: 1, outageState: 1 });
 
 module.exports = mongoose.model("ProviderOutageState", ProviderOutageStateSchema);
