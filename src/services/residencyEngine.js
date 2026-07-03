@@ -1,74 +1,62 @@
-// src/services/residencyEngine.js — STRICT-MODE VERSION
+// src/services/residencyEngine.js — STRICT-MODE FULL VERSION
 
-module.exports = {
-  /**
-   * Resolve residency + sovereignty + routing region for inbound faxes
-   */
-  resolveInboundResidency({ from }) {
-    const normalized = normalizeNumber(from);
+const COUNTRY_MAP = {
+  "1":   { zone: "us",     sovereignty: "us", region: "us" },      // US + NANP
+  "44":  { zone: "eu",     sovereignty: "uk", region: "eu" },      // UK
+  "33":  { zone: "eu",     sovereignty: "fr", region: "eu" },      // France
+  "49":  { zone: "eu",     sovereignty: "de", region: "eu" },      // Germany
+  "34":  { zone: "eu",     sovereignty: "es", region: "eu" },      // Spain
+  "39":  { zone: "eu",     sovereignty: "it", region: "eu" },      // Italy
+  "31":  { zone: "eu",     sovereignty: "nl", region: "eu" },      // Netherlands
+  "32":  { zone: "eu",     sovereignty: "be", region: "eu" },      // Belgium
+  "46":  { zone: "eu",     sovereignty: "se", region: "eu" },      // Sweden
+  "47":  { zone: "eu",     sovereignty: "no", region: "eu" },      // Norway
+  "41":  { zone: "eu",     sovereignty: "ch", region: "eu" },      // Switzerland
 
-    // Residency zone (data residency)
-    const residencyZone = determineResidencyZone(normalized);
+  "61":  { zone: "apac",   sovereignty: "au", region: "apac" },    // Australia
+  "64":  { zone: "apac",   sovereignty: "nz", region: "apac" },    // New Zealand
+  "81":  { zone: "apac",   sovereignty: "jp", region: "apac" },    // Japan
+  "82":  { zone: "apac",   sovereignty: "kr", region: "apac" },    // South Korea
+  "65":  { zone: "apac",   sovereignty: "sg", region: "apac" },    // Singapore
 
-    // Sovereignty (legal jurisdiction)
-    const sovereignty = determineSovereignty(normalized);
+  "55":  { zone: "latam",  sovereignty: "br", region: "latam" },   // Brazil
+  "52":  { zone: "latam",  sovereignty: "mx", region: "latam" },   // Mexico
+  "57":  { zone: "latam",  sovereignty: "co", region: "latam" },   // Colombia
+  "54":  { zone: "latam",  sovereignty: "ar", region: "latam" },   // Argentina
+  "56":  { zone: "latam",  sovereignty: "cl", region: "latam" },   // Chile
 
-    // Routing region (provider routing)
-    const region = residencyZone || sovereignty || "us";
+  "971": { zone: "me",     sovereignty: "ae", region: "me" },      // UAE
+  "966": { zone: "me",     sovereignty: "sa", region: "me" },      // Saudi Arabia
+  "90":  { zone: "me",     sovereignty: "tr", region: "me" },      // Turkey
 
-    return {
-      residencyZone,
-      sovereignty,
-      region
-    };
-  },
-
-  /**
-   * Resolve residency for outbound faxes
-   */
-  resolveOutboundResidency({ to }) {
-    const normalized = normalizeNumber(to);
-
-    const residencyZone = determineResidencyZone(normalized);
-    const sovereignty = determineSovereignty(normalized);
-    const region = residencyZone || sovereignty || "us";
-
-    return {
-      residencyZone,
-      sovereignty,
-      region
-    };
-  }
+  "27":  { zone: "africa", sovereignty: "za", region: "africa" },  // South Africa
+  "234": { zone: "africa", sovereignty: "ng", region: "africa" },  // Nigeria
+  "254": { zone: "africa", sovereignty: "ke", region: "africa" }   // Kenya
 };
 
-/**
- * Normalize phone numbers
- */
 function normalizeNumber(num) {
   if (!num) return "";
   return num.replace(/\D/g, "");
 }
 
-/**
- * Residency zone rules
- * US numbers → us
- * EU numbers → eu
- * Everything else → us (default)
- */
-function determineResidencyZone(number) {
-  if (number.startsWith("1")) return "us"; // NANP
-  if (number.startsWith("3") || number.startsWith("4")) return "eu"; // EU country codes
-  return "us";
+function parseCountryCode(number) {
+  const cleaned = normalizeNumber(number);
+  const candidates = [
+    cleaned.slice(0, 3),
+    cleaned.slice(0, 2),
+    cleaned.slice(0, 1)
+  ];
+  return candidates.find((c) => COUNTRY_MAP[c]) || "1"; // fallback US
 }
 
-/**
- * Sovereignty rules
- * US numbers → us
- * EU numbers → eu
- * Everything else → us (default)
- */
-function determineSovereignty(number) {
-  if (number.startsWith("1")) return "us";
-  if (number.startsWith("3") || number.startsWith("4")) return "eu";
-  return "us";
-}
+module.exports = {
+  resolveInboundResidency({ from }) {
+    const cc = parseCountryCode(from);
+    return COUNTRY_MAP[cc];
+  },
+
+  resolveOutboundResidency({ to }) {
+    const cc = parseCountryCode(to);
+    return COUNTRY_MAP[cc];
+  }
+};
