@@ -1,10 +1,11 @@
-// src/services/retryFaxService.js
+// src/services/retryFaxService.js — STRICT-MODE VERSION
 
 const OutboundFax = require("../models/OutboundFax");
-const providerRouter = require("../providers/providerRouter");
-const providerPerformance = require("../services/providerPerformanceService");
-const providerOutages = require("../services/providerOutageService");
+const providerRoutingEngine = require("./providerRoutingEngine");
+const providerOutageService = require("./providerOutageService");
+const providerPerformanceService = require("./providerPerformanceService");
 const FaxNovaError = require("../errors/FaxNovaError");
+const providerApiService = require("./providerApiService");
 
 async function retryFax(faxId, region) {
   try {
@@ -16,29 +17,28 @@ async function retryFax(faxId, region) {
       });
     }
 
-    const scores = await providerPerformance.getScores();
-    const outages = await providerOutages.getOutageStates();
-
+    // Strict-mode region handling
     const residencyZone = region === "eu" ? "eu" : "us";
+    fax.region = residencyZone;
 
-    // Select provider with retry flag
-    const provider = providerRouter.selectProvider({
-      residencyZone,
-      sovereignty: region,
-      scores,
-      outages,
+    // Strict-mode provider selection
+    const provider = await providerRoutingEngine.selectProviderForFax({
+      faxId,
+      region: residencyZone,
       retry: true
     });
 
-    const adapter = providerRouter.getAdapter(provider);
-
-    const result = await adapter.sendFax({
+    // Send fax using strict-mode provider API
+    const result = await providerApiService.sendFax({
+      provider,
       faxId,
       to: fax.to,
       from: fax.from,
-      documentUrl: fax.documentUrl
+      documentUrl: fax.documentUrl,
+      region: residencyZone
     });
 
+    // Update fax record
     await OutboundFax.updateOne(
       { faxId },
       {
@@ -51,14 +51,22 @@ async function retryFax(faxId, region) {
       }
     );
 
-    await providerOutages.recordSuccess(provider);
+    // Strict-mode outage + performance updates
+    await providerOutageService.recordSuccess(provider);
+    await providerPerformanceService.recordSuccess(provider);
 
     return result;
 
   } catch (err) {
-    await providerOutages.recordFailure(err.provider);
+    const provider = err.provider || "unknown";
+
+    // Strict-mode failure updates
+    await providerOutageService.recordFailure(provider);
+    await providerPerformanceService.recordFailure(provider);
+
     throw new FaxNovaError("retryFax failed", {
       code: "RETRY_FAX_FAILED",
+      provider,
       details: err.message
     });
   }
