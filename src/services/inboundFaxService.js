@@ -1,8 +1,9 @@
-// src/services/inboundFaxService.js
+// src/services/inboundFaxService.js — STRICT-MODE VERSION
 
 const FaxNovaError = require("../errors/FaxNovaError");
 const InboundFax = require("../models/InboundFax");
 const residencyEngine = require("./residencyEngine");
+const { v4: uuid } = require("uuid");
 
 async function processInboundFax({ provider, tenantId, payload }) {
   try {
@@ -13,9 +14,16 @@ async function processInboundFax({ provider, tenantId, payload }) {
     }
 
     // 1. Normalize inbound fax fields (Sinch + Telnyx unified)
-    const { from, to, pages, mediaUrl } = payload;
+    const {
+      fromNumber,
+      toNumber,
+      pages,
+      documentUrl,
+      providerMessageId,
+      rawPayload
+    } = payload;
 
-    if (!from || !to || !mediaUrl) {
+    if (!fromNumber || !toNumber || !documentUrl || !providerMessageId) {
       throw new FaxNovaError("Inbound fax payload incomplete", {
         code: "INBOUND_PAYLOAD_INCOMPLETE",
         details: payload
@@ -23,33 +31,44 @@ async function processInboundFax({ provider, tenantId, payload }) {
     }
 
     // 2. Residency + sovereignty resolution
-    const residency = residencyEngine.resolveInboundResidency({ from });
-    const { zone: residencyZone, sovereignty } = residency;
+    const residency = residencyEngine.resolveInboundResidency({ from: fromNumber });
+    const { zone: residencyZone, sovereignty, region } = residency;
 
-    // 3. Persist inbound fax record
+    // 3. Generate strict-mode faxId
+    const faxId = uuid();
+
+    // 4. Persist inbound fax record
     const fax = await InboundFax.create({
+      faxId,
       tenantId,
       provider,
-      from,
-      to,
+      providerMessageId,
+      fromNumber,
+      toNumber,
       pages,
-      mediaUrl,
+      documentUrl,
+      rawPayload,
       residencyZone,
       sovereignty,
-      status: "received"
+      region,
+      status: "received",
+      receivedAt: new Date()
     });
 
-    // 4. Return normalized + enriched inbound fax result
+    // 5. Return normalized + enriched inbound fax result
     return {
-      faxId: fax._id,
+      faxId,
       provider,
-      from,
-      to,
+      providerMessageId,
+      fromNumber,
+      toNumber,
       pages,
-      mediaUrl,
+      documentUrl,
       residencyZone,
-      sovereignty
+      sovereignty,
+      region
     };
+
   } catch (err) {
     throw new FaxNovaError("InboundFaxService failed", {
       code: "INBOUND_SERVICE_FAILED",
