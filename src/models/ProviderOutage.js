@@ -1,13 +1,11 @@
-// src/models/ProviderOutage.js
-
 const mongoose = require("mongoose");
 
 const ProviderOutageSchema = new mongoose.Schema(
   {
     provider: {
       type: String,
-      index: true,
-      required: true
+      required: true,
+      index: true
     },
 
     region: {
@@ -15,37 +13,45 @@ const ProviderOutageSchema = new mongoose.Schema(
       index: true
     },
 
-    outageType: {
+    outageState: {
       type: String,
-      enum: ["partial", "full", "degraded"],
-      required: true
-    },
-
-    detectedAt: {
-      type: Date,
-      default: Date.now,
+      enum: ["healthy", "degraded", "half_open", "open", "probation"],
+      required: true,
       index: true
     },
 
-    resolvedAt: {
-      type: Date,
-      index: true
+    failures: {
+      type: Number,
+      default: 0
+    },
+
+    lastFailureAt: {
+      type: Date
+    },
+
+    openedAt: {
+      type: Date
+    },
+
+    cooldownUntil: {
+      type: Date
+    },
+
+    probationUntil: {
+      type: Date
     },
 
     details: {
       type: Object,
       default: {}
-    },
-
-    attemptsMade: {
-      type: Number,
-      default: 0
     }
   },
   { timestamps: true }
 );
 
+// Indexes for routing + diagnostics
 ProviderOutageSchema.index({ provider: 1, region: 1 });
-ProviderOutageSchema.index({ outageType: 1, detectedAt: -1 });
+ProviderOutageSchema.index({ outageState: 1, updatedAt: -1 });
+ProviderOutageSchema.index({ provider: 1, outageState: 1 });
 
 module.exports = mongoose.model("ProviderOutage", ProviderOutageSchema);
