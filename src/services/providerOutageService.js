@@ -7,25 +7,27 @@ const PROVIDERS = ["sinch", "telnyx"];
 
 // Circuit breaker timings
 const FAILURE_THRESHOLD = 5;          // failures before OPEN
-const COOLDOWN_MS = 60_000;           // 1 minute cooldown before HALF-OPEN
-const PROBATION_MS = 30_000;          // 30 seconds probation in HALF-OPEN
+const COOLDOWN_MS = 60_000;           // 1 minute cooldown before HALF_OPEN
+const PROBATION_MS = 30_000;          // 30 seconds probation before HEALTHY
 
 module.exports = {
   async getOutageState(provider) {
     const raw = await redis.hget(KEY, provider);
-    if (!raw) return "closed";
+    if (!raw) return "healthy";
 
     const state = JSON.parse(raw);
-    return state.state || "closed";
+    return state.outageState || "healthy";
   },
 
   async getDiagnostics(provider) {
     const raw = await redis.hget(KEY, provider);
     if (!raw) {
       return {
+        outageState: "healthy",
         failures: 0,
         lastFailureAt: null,
         openedAt: null,
+        cooldownUntil: null,
         probationUntil: null,
         cooldownRemaining: 0,
         probationRemaining: 0
@@ -36,12 +38,14 @@ module.exports = {
     const now = Date.now();
 
     return {
+      outageState: state.outageState,
       failures: state.failures || 0,
       lastFailureAt: state.lastFailureAt || null,
       openedAt: state.openedAt || null,
+      cooldownUntil: state.cooldownUntil || null,
       probationUntil: state.probationUntil || null,
-      cooldownRemaining: state.openedAt
-        ? Math.max(0, state.openedAt + COOLDOWN_MS - now)
+      cooldownRemaining: state.cooldownUntil
+        ? Math.max(0, state.cooldownUntil - now)
         : 0,
       probationRemaining: state.probationUntil
         ? Math.max(0, state.probationUntil - now)
@@ -53,37 +57,45 @@ module.exports = {
     const raw = await redis.hget(KEY, provider);
     const now = Date.now();
 
-    let state = raw ? JSON.parse(raw) : {
-      state: "closed",
-      failures: 0,
-      lastFailureAt: null,
-      openedAt: null,
-      probationUntil: null
-    };
+    let state = raw
+      ? JSON.parse(raw)
+      : {
+          outageState: "healthy",
+          failures: 0,
+          lastFailureAt: null,
+          openedAt: null,
+          cooldownUntil: null,
+          probationUntil: null
+        };
 
     state.failures += 1;
     state.lastFailureAt = now;
 
-    // If provider is already OPEN, keep it open
-    if (state.state === "open") {
+    // Already OPEN → stay OPEN
+    if (state.outageState === "open") {
       await redis.hset(KEY, provider, JSON.stringify(state));
       return state;
     }
 
-    // If provider is HALF-OPEN and fails → go back to OPEN
-    if (state.state === "half-open") {
-      state.state = "open";
+    // HALF_OPEN failure → go back to OPEN
+    if (state.outageState === "half_open") {
+      state.outageState = "open";
       state.openedAt = now;
+      state.cooldownUntil = now + COOLDOWN_MS;
       state.probationUntil = null;
       await redis.hset(KEY, provider, JSON.stringify(state));
       return state;
     }
 
-    // CLOSED → check if threshold exceeded
+    // HEALTHY or DEGRADED → threshold exceeded → OPEN
     if (state.failures >= FAILURE_THRESHOLD) {
-      state.state = "open";
+      state.outageState = "open";
       state.openedAt = now;
+      state.cooldownUntil = now + COOLDOWN_MS;
       state.probationUntil = null;
+    } else {
+      // Otherwise degraded
+      state.outageState = "degraded";
     }
 
     await redis.hset(KEY, provider, JSON.stringify(state));
@@ -94,27 +106,30 @@ module.exports = {
     const raw = await redis.hget(KEY, provider);
     const now = Date.now();
 
-    let state = raw ? JSON.parse(raw) : {
-      state: "closed",
-      failures: 0,
-      lastFailureAt: null,
-      openedAt: null,
-      probationUntil: null
-    };
+    let state = raw
+      ? JSON.parse(raw)
+      : {
+          outageState: "healthy",
+          failures: 0,
+          lastFailureAt: null,
+          openedAt: null,
+          cooldownUntil: null,
+          probationUntil: null
+        };
 
-    // CLOSED → success just resets failures
-    if (state.state === "closed") {
+    // HEALTHY → reset failures
+    if (state.outageState === "healthy") {
       state.failures = 0;
       await redis.hset(KEY, provider, JSON.stringify(state));
       return state;
     }
 
-    // OPEN → check cooldown window
-    if (state.state === "open") {
-      const cooldownPassed = now > state.openedAt + COOLDOWN_MS;
+    // OPEN → check cooldown
+    if (state.outageState === "open") {
+      const cooldownPassed = now > state.cooldownUntil;
 
       if (cooldownPassed) {
-        state.state = "half-open";
+        state.outageState = "half_open";
         state.probationUntil = now + PROBATION_MS;
         state.failures = 0;
       }
@@ -123,17 +138,26 @@ module.exports = {
       return state;
     }
 
-    // HALF-OPEN → success during probation closes the breaker
-    if (state.state === "half-open") {
+    // HALF_OPEN → success during probation → HEALTHY
+    if (state.outageState === "half_open") {
       const probationPassed = now > state.probationUntil;
 
       if (probationPassed) {
-        state.state = "closed";
+        state.outageState = "healthy";
         state.failures = 0;
         state.openedAt = null;
+        state.cooldownUntil = null;
         state.probationUntil = null;
       }
 
+      await redis.hset(KEY, provider, JSON.stringify(state));
+      return state;
+    }
+
+    // DEGRADED → success moves toward healthy
+    if (state.outageState === "degraded") {
+      state.failures = 0;
+      state.outageState = "healthy";
       await redis.hset(KEY, provider, JSON.stringify(state));
       return state;
     }
