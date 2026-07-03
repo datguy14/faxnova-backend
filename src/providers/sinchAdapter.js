@@ -1,9 +1,22 @@
-// src/providers/sinchAdapter.js
+// src/providers/sinchAdapter.js — STRICT-MODE VERSION
 
 const axios = require("axios");
 const FaxNovaError = require("../errors/FaxNovaError");
 
-async function sendFax({ faxId, to, from, documentUrl }) {
+/**
+ * Sinch outbound fax adapter
+ * - Pure provider API call
+ * - No routing logic
+ * - No outage/performance logic
+ * - No circuit breaker logic
+ *
+ * All metrics + routing + failover are handled by:
+ * - providerRoutingEngine
+ * - providerCircuitBreaker
+ * - sendFaxService
+ * - retryFaxService
+ */
+async function sendFax({ faxId, to, from, documentUrl, region }) {
   try {
     const response = await axios.post(
       process.env.SINCH_FAX_ENDPOINT,
@@ -11,7 +24,8 @@ async function sendFax({ faxId, to, from, documentUrl }) {
         faxId,
         to,
         from,
-        documentUrl
+        documentUrl,
+        region
       },
       {
         headers: {
@@ -21,6 +35,7 @@ async function sendFax({ faxId, to, from, documentUrl }) {
     );
 
     return {
+      provider: "sinch",
       messageId: response.data.messageId,
       raw: response.data
     };
@@ -34,6 +49,9 @@ async function sendFax({ faxId, to, from, documentUrl }) {
   }
 }
 
+/**
+ * Sinch inbound fax normalization
+ */
 async function handleInboundFax(payload) {
   return {
     provider: "sinch",
