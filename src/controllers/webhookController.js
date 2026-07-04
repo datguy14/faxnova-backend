@@ -1,179 +1,81 @@
-/**
- * src/controllers/webhookController.js
- *
- * Webhook ingestion controller with:
- * - HMAC SHA-256 signature verification (timing-safe)
- * - Idempotency via externalEventId uniqueness
- * - Strict input validation
- * - Batch queuing to webhookWorker
- * - Structured error responses
- */
+// src/controllers/webhookController.js
 
-const crypto = require("crypto");
-const WebhookEvent = require("../models/WebhookEvent");
-const webhookQueue = require("../queues/webhookQueue");
-const FaxNovaError = require("../errors/FaxNovaError");
+const Fax = require("../models/Fax");
+const FaxEvent = require("../models/FaxEvent");
 
-// Constants
-const SIGNATURE_HEADER = "x-provider-signature";
-const SIGNATURE_ALGORITHM = "sha256";
+const idempotencyGuard = require("../guards/idempotencyGuard");
+const auditService = require("../services/auditService");
 
-/**
- * Verify webhook signature using HMAC SHA-256 with timing-safe comparison
- *
- * @param {object} payload - Webhook payload
- * @param {string} signature - Signature from headers (hex format)
- * @param {string} secret - Shared secret for verification
- * @returns {boolean} - True if signature is valid
- * @throws {FaxNovaError} - If secret is missing
- */
-function verifyWebhookSignature(payload, signature, secret) {
-  if (!secret) {
-    throw new FaxNovaError("Webhook secret not configured", {
-      code: "WEBHOOK_SECRET_MISSING"
-    });
-  }
-
-  if (!signature) {
-    return false;
-  }
-
+exports.providerCallback = async (req, res) => {
   try {
-    const expected = crypto
-      .createHmac(SIGNATURE_ALGORITHM, secret)
-      .update(JSON.stringify(payload))
-      .digest("hex");
+    const { tenantId } = req.params;
+    const { providerMessageId, status, provider } = req.body;
 
-    // Timing-safe comparison to prevent timing attacks
-    return crypto.timingSafeEqual(
-      Buffer.from(signature, "hex"),
-      Buffer.from(expected, "hex")
-    );
-  } catch (err) {
-    console.error("[webhookController] Signature verification error:", err);
-    return false;
-  }
-}
-
-/**
- * Validate required webhook event fields
- *
- * @param {object} evt - Event object
- * @throws {FaxNovaError} - If required fields missing
- */
-function validateWebhookEvent(evt) {
-  const required = ["eventId", "provider", "faxId", "status"];
-
-  for (const field of required) {
-    if (!evt[field]) {
-      throw new FaxNovaError(`Missing required field: ${field}`, {
-        code: "INVALID_WEBHOOK_EVENT",
-        details: { field }
-      });
-    }
-  }
-
-  // Validate provider name
-  if (!["sinch", "telnyx"].includes(evt.provider)) {
-    throw new FaxNovaError(`Unknown provider: ${evt.provider}`, {
-      code: "INVALID_PROVIDER"
+    // Idempotency check
+    const idempotent = await idempotencyGuard.check({
+      tenantId,
+      key: `callback:${providerMessageId}:${status}`
     });
-  }
 
-  // Validate status is one of expected values
-  const validStatuses = ["delivered", "failed", "queued", "sending"];
-  if (!validStatuses.includes(evt.status)) {
-    throw new FaxNovaError(`Invalid status: ${evt.status}`, {
-      code: "INVALID_STATUS"
-    });
-  }
-}
-
-/**
- * Handle incoming webhook from provider
- *
- * Workflow:
- * 1. Extract and verify HMAC SHA-256 signature
- * 2. Validate required event fields
- * 3. Check idempotency via externalEventId
- * 4. Queue event batch for webhookWorker
- * 5. Return structured response
- *
- * @param {object} req - Express request
- * @param {object} req.body - Webhook payload
- * @param {string} req.headers['x-provider-signature'] - HMAC signature
- * @param {object} res - Express response
- * @returns {Promise<void>}
- */
-async function handleWebhook(req, res) {
-  try {
-    // Verify HMAC signature
-    const signature = req.headers[SIGNATURE_HEADER];
-    const secret = process.env.PROVIDER_WEBHOOK_SECRET;
-
-    if (!verifyWebhookSignature(req.body, signature, secret)) {
-      console.warn("[webhookController] Signature verification failed");
-      return res.status(401).json({
+    if (!idempotent.ok) {
+      return res.status(409).json({
         success: false,
-        error: "Invalid signature",
-        code: "SIGNATURE_INVALID"
+        error: "Duplicate provider callback"
       });
     }
 
-    // Extract and validate event
-    const evt = {
-      eventId: req.body.eventId,
-      provider: req.body.provider,
-      faxId: req.body.faxId,
-      status: req.body.status,
-      providerStatus: req.body.providerStatus || null,
-      errorCode: req.body.errorCode || null,
-      errorMessage: req.body.errorMessage || null,
-      raw: req.body
-    };
-
-    // Validate required fields
-    validateWebhookEvent(evt);
-
-    // Idempotency check: has this event been processed?
-    const exists = await WebhookEvent.findOne({ externalEventId: evt.eventId });
-    if (exists) {
-      console.info(`[webhookController] Duplicate event: ${evt.eventId}`);
-      return res.status(200).json({
-        success: true,
-        duplicate: true,
-        message: "Event already processed"
-      });
-    }
-
-    // Queue event batch for worker processing
-    await webhookQueue.add({
-      events: [evt]
+    // Find fax by provider message ID
+    const fax = await Fax.findOne({
+      tenantId,
+      providerMessageId
     });
 
-    return res.status(202).json({
+    if (!fax) {
+      return res.status(404).json({
+        success: false,
+        error: "Fax not found for provider callback"
+      });
+    }
+
+    // Update fax status
+    fax.status = status;
+    await fax.save();
+
+    // Log event
+    await auditService.logEvent({
+      tenantId,
+      faxId: fax._id,
+      type: "provider_callback",
+      action: "status_update",
+      details: {
+        provider,
+        providerMessageId,
+        status
+      }
+    });
+
+    return res.json({
       success: true,
-      message: "Webhook queued for processing",
-      eventId: evt.eventId
+      data: { faxId: fax._id, status }
     });
-
   } catch (err) {
-    console.error("[webhookController] Error processing webhook:", err);
-
-    if (err instanceof FaxNovaError) {
-      return res.status(400).json({
-        success: false,
-        error: err.message,
-        code: err.code
-      });
-    }
-
     return res.status(500).json({
       success: false,
-      error: "Internal server error",
-      code: "WEBHOOK_PROCESSING_ERROR"
+      error: err.message
     });
   }
-}
+};
 
-module.exports = { handleWebhook };
+exports.verifyWebhook = async (req, res) => {
+  try {
+    return res.json({
+      success: true,
+      message: "Webhook verified"
+    });
+  } catch (err) {
+    return res.status(500).json({
+      success: false,
+      error: err.message
+    });
+  }
+};
