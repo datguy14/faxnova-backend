@@ -1,107 +1,102 @@
+// src/models/InboundFax.js — STRICT-MODE FINAL
+
 const mongoose = require("mongoose");
 
 const InboundFaxSchema = new mongoose.Schema(
   {
+    // FaxNova internal ID
     faxId: {
       type: String,
       required: true,
       index: true
     },
 
+    // Provider who delivered the inbound fax
     provider: {
       type: String,
-      enum: ["sinch", "telnyx"],
       required: true,
-      index: true
+      enum: ["sinch", "telnyx"]
     },
 
-    providerMessageId: {
-      type: String,
-      required: true,
-      index: true
-    },
-
-    fromNumber: {
+    // Sender (E.164 normalized)
+    from: {
       type: String,
       required: true
     },
 
-    toNumber: {
-      type: String,
-      required: true,
-      index: true
-    },
-
-    documentUrl: {
+    // Recipient (E.164 normalized)
+    to: {
       type: String,
       required: true
     },
 
-    pages: {
-      type: Number,
-      default: 1
-    },
-
-    rawPayload: {
-      type: Object,
-      required: true
-    },
-
+    // Residency + sovereignty + routing region
     residencyZone: {
       type: String,
-      enum: ["us", "eu"],
-      required: true,
-      index: true
+      default: "us"
     },
-
     sovereignty: {
       type: String,
-      enum: ["us", "eu"],
-      required: true
+      default: "us"
     },
-
     region: {
       type: String,
-      enum: ["us", "eu"],
       default: "us"
     },
 
-    tenantId: {
+    // Storage reference (S3 key or local path)
+    mediaKey: {
       type: String,
-      required: true,
-      index: true
+      required: true
     },
 
-    userId: {
-      type: String
-    },
-
+    // Status lifecycle
     status: {
       type: String,
-      enum: ["received", "processing", "completed", "failed"],
+      enum: [
+        "received",
+        "processing",
+        "stored",
+        "delivered",
+        "failed"
+      ],
       default: "received"
     },
 
-    receivedAt: {
-      type: Date,
-      default: Date.now,
-      index: true
+    // Provider metadata
+    providerMessageId: {
+      type: String,
+      default: null
     },
 
+    providerStatus: {
+      type: String,
+      default: null
+    },
+
+    // Error details (if failed)
+    errorMessage: {
+      type: String,
+      default: null
+    },
+
+    // Timestamps
+    receivedAt: {
+      type: Date,
+      default: Date.now
+    },
     processedAt: {
-      type: Date
+      type: Date,
+      default: null
+    },
+    deliveredAt: {
+      type: Date,
+      default: null
     }
   },
   {
     timestamps: true
   }
 );
-
-// Indexes
-InboundFaxSchema.index({ tenantId: 1, receivedAt: -1 });
-InboundFaxSchema.index({ provider: 1, receivedAt: -1 });
-InboundFaxSchema.index({ residencyZone: 1, receivedAt: -1 });
-InboundFaxSchema.index({ faxId: 1 });
-InboundFaxSchema.index({ toNumber: 1 });
 
 module.exports = mongoose.model("InboundFax", InboundFaxSchema);
