@@ -1,31 +1,35 @@
 // src/middleware/requestLogger.js
 
-/**
- * Structured JSON request logger.
- * - Includes correlationId
- * - Measures duration
- * - Logs method, path, status, tier
- */
-
-module.exports = function requestLogger(req, res, next) {
+module.exports = (req, res, next) => {
   const start = Date.now();
-  const correlationId = req.correlationId;
 
-  res.on('finish', () => {
-    const durationMs = Date.now() - start;
+  const correlationId =
+    req.headers["x-correlation-id"] ||
+    req.correlationId ||
+    `cid_${Math.random().toString(36).slice(2)}`;
 
-    const logEntry = {
-      level: "info",
-      message: "HTTP Request",
-      correlationId,
-      method: req.method,
-      path: req.originalUrl,
-      status: res.statusCode,
-      durationMs,
-      tier: req.apiTier || "unknown"
-    };
+  req.correlationId = correlationId;
 
-    console.log(JSON.stringify(logEntry));
+  const identity =
+    req.apiKey?.key ||
+    req.user?._id ||
+    req.ip ||
+    "anonymous";
+
+  res.on("finish", () => {
+    const duration = Date.now() - start;
+
+    console.log(
+      JSON.stringify({
+        correlationId,
+        method: req.method,
+        path: req.originalUrl,
+        status: res.statusCode,
+        durationMs: duration,
+        identity,
+        timestamp: new Date().toISOString()
+      })
+    );
   });
 
   next();
