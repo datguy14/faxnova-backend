@@ -1,58 +1,124 @@
 // src/controllers/inboundFaxController.js
 
-const FaxNovaError = require("../errors/FaxNovaError");
-const inboundFaxService = require("../services/inboundFaxService");
-const audit = require("../audit/auditService");
+const Fax = require("../models/Fax");
+const FaxEvent = require("../models/FaxEvent");
 
-async function inboundFax(req, res) {
+const dataResidencyGuard = require("../guards/dataResidencyGuard");
+const idempotencyGuard = require("../guards/idempotencyGuard");
+
+const auditService = require("../services/auditService");
+const faxStorageService = require("../services/faxStorageService");
+
+exports.receiveInboundFax = async (req, res) => {
   try {
-    const provider = req.provider;          // set by inbound adapter middleware
-    const payload = req.body;               // normalized inbound fax payload
-    const tenantId = req.tenantId;          // resolved by inbound number → tenant mapping
+    const { tenantId } = req.params;
+    const { from, region, storageKey, provider, providerMessageId } = req.body;
 
-    if (!provider || !tenantId) {
-      throw new FaxNovaError("Inbound fax missing provider or tenant context", {
-        code: "INBOUND_CONTEXT_MISSING"
+    // Idempotency check
+    const idempotent = await idempotencyGuard.check({
+      tenantId,
+      key: providerMessageId
+    });
+
+    if (!idempotent.ok) {
+      return res.status(409).json({
+        success: false,
+        error: "Duplicate inbound fax"
       });
     }
 
-    const result = await inboundFaxService.processInboundFax({
+    // Residency guard
+    const residency = await dataResidencyGuard.validateInbound({
+      tenantId,
+      region
+    });
+
+    if (!residency.allowed) {
+      return res.status(403).json({
+        success: false,
+        error: "Inbound fax blocked by residency rules"
+      });
+    }
+
+    // Create fax record
+    const fax = await Fax.create({
+      tenantId,
+      direction: "inbound",
+      from,
+      region,
+      storageKey,
       provider,
-      tenantId,
-      payload
+      providerMessageId,
+      status: "received"
     });
 
-    audit.logEvent({
+    // Log event
+    await auditService.logEvent({
       tenantId,
+      faxId: fax._id,
       type: "fax_inbound",
-      action: "received",
-      details: {
-        faxId: result.faxId,
-        provider,
-        from: result.from,
-        to: result.to,
-        pages: result.pages,
-        mediaUrl: result.mediaUrl,
-        residencyZone: result.residencyZone,
-        sovereignty: result.sovereignty
-      }
+      action: "fax_received",
+      details: { providerMessageId }
     });
 
-    return res.status(200).json({
+    return res.json({
       success: true,
-      ...result
+      data: fax
     });
   } catch (err) {
-    const error = new FaxNovaError("Inbound fax controller failed", {
-      code: "INBOUND_CONTROLLER_FAILED",
-      details: err.message
-    });
-
-    return res.status(400).json({
+    return res.status(500).json({
       success: false,
-      error: error.serialize()
+      error: err.message
     });
   }
-}
+};
 
-module.exports = { inboundFax };
+exports.getInboundFax = async (req, res) => {
+  try {
+    const { tenantId, faxId } = req.params;
+
+    const fax = await Fax.findOne({
+      _id: faxId,
+      tenantId,
+      direction: "inbound"
+    });
+
+    if (!fax) {
+      return res.status(404).json({
+        success: false,
+        error: "Inbound fax not found"
+      });
+    }
+
+    return res.json({
+      success: true,
+      data: fax
+    });
+  } catch (err) {
+    return res.status(500).json({
+      success: false,
+      error: err.message
+    });
+  }
+};
+
+exports.listInboundFaxes = async (req, res) => {
+  try {
+    const { tenantId } = req.params;
+
+    const faxes = await Fax.find({
+      tenantId,
+      direction: "inbound"
+    }).sort({ createdAt: -1 });
+
+    return res.json({
+      success: true,
+      data: faxes
+    });
+  } catch (err) {
+    return res.status(500).json({
+      success: false,
+      error: err.message
+    });
+  }
+};
