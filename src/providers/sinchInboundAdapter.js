@@ -1,16 +1,33 @@
 // src/providers/sinchInboundAdapter.js
 
-module.exports = {
-  /**
-   * Normalize Sinch inbound webhook payload
-   */
-  normalize(payload) {
+exports.normalizeInboundFax = (payload) => {
+  try {
+    const {
+      id,
+      from,
+      mediaUrl,
+      region,
+      direction,
+      status
+    } = payload;
+
+    if (direction !== "inbound") {
+      return { ok: false, error: "Not an inbound fax event" };
+    }
+
     return {
-      faxId: payload?.id,
-      from: payload?.from,
-      to: payload?.to,
-      pages: payload?.pages || 1,
-      mediaUrl: payload?.mediaUrl
+      ok: true,
+      providerFaxId: id,
+      from,
+      storageKey: mediaUrl,
+      region,
+      status,
+      raw: payload
+    };
+  } catch (err) {
+    return {
+      ok: false,
+      error: err.message
     };
   }
 };
