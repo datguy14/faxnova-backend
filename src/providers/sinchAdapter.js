@@ -1,32 +1,43 @@
-// src/providers/sinchAdapter.js — STRICT-MODE VERSION
+// src/providers/sinchAdapter.js
 
 const axios = require("axios");
-const FaxNovaError = require("../errors/FaxNovaError");
 
-/**
- * Sinch outbound fax adapter
- * - Pure provider API call
- * - No routing logic
- * - No outage/performance logic
- * - No circuit breaker logic
- *
- * All metrics + routing + failover are handled by:
- * - providerRoutingEngine
- * - providerCircuitBreaker
- * - sendFaxService
- * - retryFaxService
- */
-async function sendFax({ faxId, to, from, documentUrl, region }) {
+const SINCH_BASE_URL = "https://fax.api.sinch.com/v1";
+
+exports.sendFax = async ({ to, storageKey, region }) => {
   try {
     const response = await axios.post(
-      process.env.SINCH_FAX_ENDPOINT,
+      `${SINCH_BASE_URL}/outbound/faxes`,
       {
-        faxId,
         to,
-        from,
-        documentUrl,
+        mediaUrl: storageKey,
         region
       },
+      {
+        headers: {
+          Authorization: `Bearer ${process.env.SINCH_API_KEY}`,
+          "Content-Type": "application/json"
+        }
+      }
+    );
+
+    return {
+      ok: true,
+      providerFaxId: response.data.id,
+      raw: response.data
+    };
+  } catch (err) {
+    return {
+      ok: false,
+      error: err.response?.data?.message || err.message
+    };
+  }
+};
+
+exports.getFaxStatus = async (providerFaxId) => {
+  try {
+    const response = await axios.get(
+      `${SINCH_BASE_URL}/outbound/faxes/${providerFaxId}`,
       {
         headers: {
           Authorization: `Bearer ${process.env.SINCH_API_KEY}`
@@ -35,31 +46,14 @@ async function sendFax({ faxId, to, from, documentUrl, region }) {
     );
 
     return {
-      provider: "sinch",
-      messageId: response.data.messageId,
+      ok: true,
+      status: response.data.status,
       raw: response.data
     };
-
   } catch (err) {
-    throw new FaxNovaError("Sinch sendFax failed", {
-      code: "SINCH_SEND_FAILED",
-      provider: "sinch",
-      details: err.message
-    });
+    return {
+      ok: false,
+      error: err.response?.data?.message || err.message
+    };
   }
-}
-
-/**
- * Sinch inbound fax normalization
- */
-async function handleInboundFax(payload) {
-  return {
-    provider: "sinch",
-    payload
-  };
-}
-
-module.exports = {
-  sendFax,
-  handleInboundFax
 };
