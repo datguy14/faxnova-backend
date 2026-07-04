@@ -1,17 +1,56 @@
 // src/controllers/faxController.js
 
-const FaxNovaError = require("../errors/FaxNovaError");
-const { createFaxSchema } = require("../schemas/faxSchemas");
-const faxService = require("../services/faxService");
+const Fax = require("../models/Fax");
+const auditService = require("../services/auditService");
 
-exports.createFax = async (req, res, next) => {
+exports.listFaxes = async (req, res) => {
   try {
-    const data = createFaxSchema.parse(req.body);
+    const { tenantId } = req.params;
 
-    const fax = await faxService.createFaxJob(data);
-    res.json(fax);
+    const faxes = await Fax.find({ tenantId }).sort({ createdAt: -1 });
 
+    return res.json({ success: true, data: faxes });
   } catch (err) {
-    next(new FaxNovaError(err.errors?.[0]?.message || "Invalid fax payload", 400));
+    return res.status(500).json({ success: false, error: err.message });
+  }
+};
+
+exports.getFax = async (req, res) => {
+  try {
+    const { tenantId, faxId } = req.params;
+
+    const fax = await Fax.findOne({ _id: faxId, tenantId });
+
+    if (!fax) {
+      return res.status(404).json({ success: false, error: "Fax not found" });
+    }
+
+    return res.json({ success: true, data: fax });
+  } catch (err) {
+    return res.status(500).json({ success: false, error: err.message });
+  }
+};
+
+exports.deleteFax = async (req, res) => {
+  try {
+    const { tenantId, faxId } = req.params;
+
+    const fax = await Fax.findOneAndDelete({ _id: faxId, tenantId });
+
+    if (!fax) {
+      return res.status(404).json({ success: false, error: "Fax not found" });
+    }
+
+    await auditService.logEvent({
+      tenantId,
+      faxId,
+      type: "fax_outbound",
+      action: "fax_deleted",
+      details: { faxId }
+    });
+
+    return res.json({ success: true, message: "Fax deleted" });
+  } catch (err) {
+    return res.status(500).json({ success: false, error: err.message });
   }
 };
