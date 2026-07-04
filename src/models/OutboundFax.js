@@ -1,78 +1,103 @@
-// src/models/OutboundFax.js
+// src/models/OutboundFax.js — STRICT-MODE FINAL
 
 const mongoose = require("mongoose");
 
 const OutboundFaxSchema = new mongoose.Schema(
   {
+    // FaxNova internal ID
     faxId: {
-      type: String,
-      required: true,
-      index: true,          // UUID used across workers/webhooks
-      unique: true
-    },
-
-    toNumber: {
       type: String,
       required: true,
       index: true
     },
 
-    fromNumber: {
+    // Sender (E.164 normalized)
+    from: {
       type: String,
       required: true
     },
 
+    // Recipient (E.164 normalized)
+    to: {
+      type: String,
+      required: true
+    },
+
+    // Residency + sovereignty + routing region
+    residencyZone: {
+      type: String,
+      default: "us"
+    },
+    sovereignty: {
+      type: String,
+      default: "us"
+    },
+    region: {
+      type: String,
+      default: "us"
+    },
+
+    // Provider selected by providerRoutingEngine
     provider: {
       type: String,
       required: true,
-      index: true           // sinch, telnyx, etc.
+      enum: ["sinch", "telnyx"]
     },
 
-    providerMessageId: {
+    // Storage reference (S3 key or local path)
+    mediaKey: {
       type: String,
-      index: true           // provider’s own ID
+      required: true
     },
 
+    // Status lifecycle
     status: {
       type: String,
       enum: [
         "queued",
+        "processing",
         "sending",
         "delivered",
         "failed",
-        "canceled"
+        "retrying"
       ],
-      default: "queued",
-      index: true
+      default: "queued"
     },
 
-    attempts: {
-      type: Number,
-      default: 0            // incremented by outbound/retry workers
+    // Provider delivery metadata
+    providerMessageId: {
+      type: String,
+      default: null
     },
 
-    lastAttemptAt: {
-      type: Date
+    providerStatus: {
+      type: String,
+      default: null
     },
 
-    errorCode: {
-      type: String
-    },
-
+    // Error details (if failed)
     errorMessage: {
-      type: String
+      type: String,
+      default: null
     },
 
-    metadata: {
-      type: Object
+    // Timestamps
+    queuedAt: {
+      type: Date,
+      default: Date.now
+    },
+    sentAt: {
+      type: Date,
+      default: null
+    },
+    deliveredAt: {
+      type: Date,
+      default: null
     }
   },
   {
     timestamps: true
   }
 );
-
-OutboundFaxSchema.index({ provider: 1, status: 1 });
-OutboundFaxSchema.index({ faxId: 1, provider: 1 });
 
 module.exports = mongoose.model("OutboundFax", OutboundFaxSchema);
