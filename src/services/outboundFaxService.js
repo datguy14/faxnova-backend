@@ -1,111 +1,98 @@
-// src/services/outboundFaxService.js — STRICT-MODE FINAL VERSION
+// src/services/outboundFaxService.js
 
-const OutboundFax = require("../models/OutboundFax");
-const providerRoutingEngine = require("./providerRoutingEngine");
-const FaxNovaError = require("../errors/FaxNovaError");
-const audit = require("../utils/auditLogger");
-const { v4: uuid } = require("uuid");
+const faxStorageService = require("./faxStorageService");
+const providerApiService = require("./providerApiService");
+const dataResidencyGuard = require("./dataResidencyGuard");
+const idempotencyGuard = require("./idempotencyGuard");
+const audit = require("../audit/auditService");
+const Fax = require("../models/Fax");
 
 module.exports = {
   /**
-   * Create a new outbound fax (strict‑mode)
+   * Main outbound fax pipeline.
    */
-  async createFax({ to, from, mediaUrl, callbackUrl, userId, residencyZone, sovereignty }) {
-    if (!to || !from || !mediaUrl) {
-      throw new FaxNovaError("Missing required fax fields", {
-        code: "FAX_FIELDS_REQUIRED"
-      });
-    }
-
-    // Normalize residency + sovereignty
-    const region = residencyZone || sovereignty || "us";
-
-    // Generate faxId if model doesn't auto-generate it
-    const faxId = uuid();
-
-    // Strict‑mode provider selection
-    const provider = await providerRoutingEngine.selectProviderForFax({
-      faxId,
-      toNumber: to,
-      fromNumber: from,
-      region,
-      residencyZone,
-      sovereignty,
-      userId,
-      retry: false
+  async sendOutboundFax({
+    tenantId,
+    idempotencyKey,
+    targetRegion,
+    to,
+    pdfBuffer,
+    metadata,
+    correlationId,
+    ip,
+    path,
+    method,
+    apiTier
+  }) {
+    // 1. Residency guard
+    await dataResidencyGuard.enforceOutboundResidency({
+      tenantId,
+      targetRegion
     });
 
-    // Create fax record
-    const fax = await OutboundFax.create({
-      faxId,
-      toNumber: to,
-      fromNumber: from,
-      documentUrl: mediaUrl,
-      callbackUrl,
-      userId,
-      residencyZone,
-      sovereignty,
-      provider,
+    // 2. Idempotency guard
+    await idempotencyGuard.check({
+      tenantId,
+      idempotencyKey
+    });
+
+    // 3. Store PDF
+    const storageResult = await faxStorageService.storeOutboundFax({
+      tenantId,
+      pdfBuffer
+    });
+
+    // 4. Create fax record
+    const faxRecord = await Fax.create({
+      tenantId,
+      to,
+      region: targetRegion,
+      storageKey: storageResult.storageKey,
       status: "queued",
+      metadata,
       createdAt: new Date()
     });
 
-    audit.log("outboundFaxCreated", {
-      faxId,
-      provider,
-      userId,
-      region
+    // 5. Send fax via provider
+    const providerResult = await providerApiService.sendFax({
+      tenantId,
+      to,
+      pdfUrl: storageResult.url,
+      region: targetRegion,
+      faxId: faxRecord._id
     });
 
-    return fax;
-  },
+    // 6. Update fax record with provider response
+    faxRecord.status = providerResult.status;
+    faxRecord.provider = providerResult.provider;
+    faxRecord.providerMessageId = providerResult.messageId;
+    faxRecord.updatedAt = new Date();
+    await faxRecord.save();
 
-  /**
-   * Update fax status (strict‑mode)
-   */
-  async updateStatus(faxId, status) {
-    if (!faxId) {
-      throw new FaxNovaError("faxId is required to update status", {
-        code: "FAX_ID_REQUIRED"
-      });
-    }
-
-    const fax = await OutboundFax.findOneAndUpdate(
-      { faxId },
-      {
-        status,
-        lastEventAt: new Date()
-      },
-      { new: true }
-    );
-
-    audit.log("outboundFaxStatusUpdated", {
-      faxId,
-      status
+    // 7. Audit event
+    audit.logEvent({
+      tenantId,
+      type: "fax_outbound",
+      action: "fax_sent",
+      correlationId,
+      ip,
+      path,
+      method,
+      tier: apiTier,
+      details: {
+        faxId: faxRecord._id,
+        provider: providerResult.provider,
+        region: targetRegion,
+        to
+      }
     });
 
-    return fax;
-  },
-
-  /**
-   * Get fax by ID
-   */
-  async getFax(faxId) {
-    const fax = await OutboundFax.findOne({ faxId });
-    if (!fax) {
-      throw new FaxNovaError("Fax not found", {
-        code: "FAX_NOT_FOUND"
-      });
-    }
-    return fax;
-  },
-
-  /**
-   * List faxes for a user
-   */
-  async listFaxes(userId, limit = 100) {
-    return OutboundFax.find({ userId })
-      .sort({ createdAt: -1 })
-      .limit(limit);
+    return {
+      success: true,
+      faxId: faxRecord._id,
+      provider: providerResult.provider,
+      status: providerResult.status,
+      correlationId
+    };
   }
 };
