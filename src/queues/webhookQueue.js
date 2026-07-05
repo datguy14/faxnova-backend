@@ -1,30 +1,34 @@
 // src/queues/webhookQueue.js
 
 const { Queue } = require("bullmq");
-const connection = require("../lib/redis");
+const WebhookError = require("../errors/WebhookError");
 
-module.exports = new Queue("webhookQueue", {
-  connection,
-  defaultJobOptions: {
-    attempts: 5, // bounded retries
-    backoff: {
-      type: "exponential",
-      delay: 500, // base delay
-    },
+const connection = {
+  host: process.env.REDIS_HOST,
+  port: Number(process.env.REDIS_PORT)
+};
 
-    // Priority tiers:
-    // 1 = highest (provider failures)
-    // 5 = lowest (normal webhook events)
-    priority: 5,
+if (!connection.host || !connection.port) {
+  throw new Error("Missing Redis configuration for webhookQueue");
+}
 
-    // Cleanup rules
-    removeOnComplete: {
-      age: 3600, // keep for 1 hour
-      count: 5000, // max 5k completed jobs
-    },
-    removeOnFail: {
-      age: 86400, // keep failed jobs for 24 hours
-      count: 10000, // max 10k failed jobs
-    },
-  },
-});
+/**
+ * Webhook Queue — Strict‑Mode Edition
+ *
+ * Enqueues normalized inbound fax events for worker processing.
+ */
+
+const webhookQueue = new Queue("inboundFaxQueue", { connection });
+
+exports.addInboundFax = async (normalized) => {
+  try {
+    await webhookQueue.add("inboundFaxJob", normalized, {
+      attempts: 3,
+      backoff: { type: "exponential", delay: 2000 }
+    });
+  } catch (err) {
+    throw new WebhookError(`Failed to enqueue inbound fax job: ${err.message}`);
+  }
+};
+
+module.exports = webhookQueue;
