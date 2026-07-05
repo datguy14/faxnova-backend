@@ -1,61 +1,61 @@
-/**
- * src/workers/outboundFaxWorker.js
- *
- * Worker for initial outbound fax processing.
- * - Validates input data
- * - Increments attempt counter and records timestamp
- * - Delegates to sendFaxService for unified provider stack handling
- * - Propagates errors for queue retry/failure handling
- */
+// src/workers/outboundFaxWorker.js
 
-const OutboundFax = require("../models/OutboundFax");
-const { sendFax } = require("../services/sendFaxService");
-const FaxNovaError = require("../errors/FaxNovaError");
+const { Worker } = require("bullmq");
 
-/**
- * Process outbound fax job
- *
- * @param {object} job - Bull queue job
- * @param {string} job.data.faxId - Unique fax identifier
- * @returns {Promise<object>} - Provider send result
- * @throws {FaxNovaError} - Propagates to queue for retry/failure handling
- */
-async function processOutboundFax(job) {
-  const { faxId } = job.data;
+const FaxEventService = require("../services/FaxEventService");
 
-  // Validate input
-  if (!faxId) {
-    throw new FaxNovaError("faxId is required", {
-      code: "INVALID_JOB_DATA"
-    });
-  }
+const telnyxAdapter = require("../providers/telnyxAdapter");
+const sinchAdapter = require("../providers/sinchAdapter");
 
-  try {
-    // Increment attempt counter and record timestamp
-    await OutboundFax.updateOne(
-      { faxId },
-      {
-        $inc: { attempts: 1 },
-        $set: { lastAttemptAt: new Date() }
-      }
-    );
+const ProviderError = require("../errors/ProviderError");
+const FaxError = require("../errors/FaxError");
 
-    // Send through unified provider stack
-    const result = await sendFax(faxId);
+const connection = {
+  host: process.env.REDIS_HOST,
+  port: Number(process.env.REDIS_PORT)
+};
 
-    return result;
-
-  } catch (err) {
-    // Re-throw with context for queue error handling
-    throw new FaxNovaError("Outbound fax processing failed", {
-      code: "OUTBOUND_FAX_FAILED",
-      details: {
-        faxId,
-        originalError: err.message,
-        originalCode: err.code
-      }
-    });
-  }
+if (!connection.host || !connection.port) {
+  throw new Error("Missing Redis configuration for outboundFaxWorker");
 }
 
-module.exports = processOutboundFax;
+/**
+ * Outbound Fax Worker — Strict‑Mode Edition
+ *
+ * Processes outbound fax jobs from outboundFaxQueue.
+ * Sends fax → records event → handles provider errors.
+ */
+
+const outboundFaxWorker = new Worker(
+  "outboundFaxQueue",
+  async (job) => {
+    const { provider, to, storageKey, region } = job.data;
+
+    // Provider selection
+    let adapter;
+    if (provider === "telnyx") adapter = telnyxAdapter;
+    else if (provider === "sinch") adapter = sinchAdapter;
+    else throw new ProviderError(`Unknown provider: ${provider}`);
+
+    // Send fax
+    const result = await adapter.sendFax({ to, storageKey, region });
+
+    if (!result.ok) {
+      throw new FaxError(result.error);
+    }
+
+    // Persist outbound fax event
+    await FaxEventService.recordOutbound({
+      provider,
+      providerFaxId: result.providerFaxId,
+      to,
+      storageKey,
+      region
+    });
+
+    return { ok: true, providerFaxId: result.providerFaxId };
+  },
+  { connection }
+);
+
+module.exports = outboundFaxWorker;
