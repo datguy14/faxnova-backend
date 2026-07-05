@@ -1,54 +1,117 @@
 // tests/sovereigntyIntegration.test.js
+//
+// Strict‑Mode Replacement:
+// There is NO sovereignty routing engine.
+// Sovereignty = residencyGuard + normalized region fields.
 
-const providerRouter = require("../src/providers/providerRouter");
+const residencyGuard = require("../src/guards/residencyGuard");
 
-describe("Full Sovereignty Integration", () => {
-  const scores = { sinch: 60, telnyx: 85 };
+const telnyxInboundAdapter = require("../src/providers/telnyxInboundAdapter");
+const sinchInboundAdapter = require("../src/providers/sinchInboundAdapter");
 
-  const outages = {
-    sinch: { state: "closed" },
-    telnyx: { state: "closed" }
-  };
+const telnyxAdapter = require("../src/providers/telnyxAdapter");
+const sinchAdapter = require("../src/providers/sinchAdapter");
 
-  test("US job → US provider order → correct adapter", () => {
-    const provider = providerRouter.selectProvider({
-      residencyZone: "us",
-      sovereignty: "us",
-      scores,
-      outages,
-      retry: false
+const ResidencyError = require("../src/errors/ResidencyError");
+
+describe("Strict‑Mode Sovereignty Integration", () => {
+  describe("Residency Guard Enforcement", () => {
+    test("allows permitted outbound region", () => {
+      expect(() => {
+        residencyGuard.ensureOutboundRegion("us-east");
+      }).not.toThrow();
     });
 
-    const adapter = providerRouter.getAdapter(provider);
+    test("blocks disallowed outbound region", () => {
+      expect(() => {
+        residencyGuard.ensureOutboundRegion("eu-west");
+      }).toThrow(ResidencyError);
+    });
 
-    expect(provider).toBe("telnyx");
-    expect(adapter).toBeDefined();
+    test("allows permitted inbound region", () => {
+      expect(() => {
+        residencyGuard.ensureInboundRegion("us-east");
+      }).not.toThrow();
+    });
+
+    test("blocks disallowed inbound region", () => {
+      expect(() => {
+        residencyGuard.ensureInboundRegion("eu-west");
+      }).toThrow(ResidencyError);
+    });
   });
 
-  test("EU job → EU provider order → correct adapter", () => {
-    const provider = providerRouter.selectProvider({
-      residencyZone: "eu",
-      sovereignty: "eu",
-      scores,
-      outages,
-      retry: false
+  describe("Inbound Region Normalization", () => {
+    test("Telnyx inbound payload preserves region", () => {
+      const payload = {
+        data: {
+          event_type: "fax.received",
+          payload: {
+            fax_id: "tx_777",
+            from: "+15550001111",
+            media_url: "fax.pdf",
+            region: "us-east",
+            status: "received"
+          }
+        }
+      };
+
+      const normalized = telnyxInboundAdapter.normalizeInboundFax(payload);
+
+      expect(normalized.ok).toBe(true);
+      expect(normalized.region).toBe("us-east");
     });
 
-    const adapter = providerRouter.getAdapter(provider);
+    test("Sinch inbound payload preserves region", () => {
+      const payload = {
+        event: { type: "fax.received" },
+        fax: {
+          id: "sn_888",
+          from: "+15550002222",
+          mediaUrl: "fax.pdf",
+          region: "us-east",
+          status: "received"
+        }
+      };
 
-    expect(provider).toBe("telnyx");
-    expect(adapter).toBeDefined();
+      const normalized = sinchInboundAdapter.normalizeInboundFax(payload);
+
+      expect(normalized.ok).toBe(true);
+      expect(normalized.region).toBe("us-east");
+    });
   });
 
-  test("Global job → global fallback order", () => {
-    const provider = providerRouter.selectProvider({
-      residencyZone: "global",
-      sovereignty: "global",
-      scores,
-      outages,
-      retry: false
+  describe("Outbound Provider Region Handling", () => {
+    test("Telnyx outbound preserves region", async () => {
+      jest.spyOn(telnyxAdapter, "sendFax").mockResolvedValue({
+        ok: true,
+        providerFaxId: "tx_999"
+      });
+
+      const result = await telnyxAdapter.sendFax({
+        to: "+15551234567",
+        storageKey: "fax.pdf",
+        region: "us-east"
+      });
+
+      expect(result.ok).toBe(true);
+      expect(result.providerFaxId).toBe("tx_999");
     });
 
-    expect(provider).toBe("telnyx");
+    test("Sinch outbound preserves region", async () => {
+      jest.spyOn(sinchAdapter, "sendFax").mockResolvedValue({
+        ok: true,
+        providerFaxId: "sn_999"
+      });
+
+      const result = await sinchAdapter.sendFax({
+        to: "+15551234567",
+        storageKey: "fax.pdf",
+        region: "us-east"
+      });
+
+      expect(result.ok).toBe(true);
+      expect(result.providerFaxId).toBe("sn_999");
+    });
   });
 });
