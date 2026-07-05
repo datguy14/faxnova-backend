@@ -1,159 +1,55 @@
-/**
- * src/workers/webhookWorker.js
- *
- * Worker for processing batched webhook events from providers.
- * - Validates idempotency (externalEventId unique)
- * - Records all webhook events
- * - Applies provider performance/outage feedback
- * - Batch updates fax statuses for efficiency
- * - Evaluates provider health after events processed
- */
+// src/workers/webhookWorker.js
 
-const WebhookEvent = require("../models/WebhookEvent");
-const OutboundFax = require("../models/OutboundFax");
-const providerPerformanceService = require("../services/providerPerformanceService");
-const providerOutageService = require("../services/providerOutageService");
-const providerHealthService = require("../services/providerHealthService");
-const FaxNovaError = require("../errors/FaxNovaError");
+const { Worker } = require("bullmq");
 
-/**
- * Apply provider feedback based on webhook status
- *
- * @param {string} provider - Provider name
- * @param {string} status - Webhook status (delivered | failed | etc)
- */
-async function applyProviderFeedback(provider, status) {
-  if (status === "delivered") {
-    await Promise.all([
-      providerPerformanceService.applySuccessBoost(provider),
-      providerOutageService.recordSuccess(provider)
-    ]);
-  } else if (status === "failed") {
-    await Promise.all([
-      providerPerformanceService.applyFailurePenalty(provider),
-      providerOutageService.recordFailure(provider)
-    ]);
-  }
+const FaxEventService = require("../services/FaxEventService");
 
-  // Evaluate health after feedback
-  await providerHealthService.evaluate(provider);
+const telnyxInboundAdapter = require("../providers/telnyxInboundAdapter");
+const sinchInboundAdapter = require("../providers/sinchInboundAdapter");
+
+const ProviderError = require("../errors/ProviderError");
+const WebhookError = require("../errors/WebhookError");
+
+const connection = {
+  host: process.env.REDIS_HOST,
+  port: Number(process.env.REDIS_PORT)
+};
+
+if (!connection.host || !connection.port) {
+  throw new Error("Missing Redis configuration for webhookWorker");
 }
 
 /**
- * Process batch of webhook events
+ * Webhook Worker — Strict‑Mode Edition
  *
- * @param {object} job - Bull queue job
- * @param {array} job.data.events - Array of webhook payloads
- * @returns {Promise<object>} - Processing summary
- * @throws {FaxNovaError} - If batch processing fails
+ * Processes inbound fax jobs from inboundFaxQueue.
+ * Normalizes → validates → persists inbound fax events.
  */
-async function processWebhookBatch(job) {
-  const events = job.data.events;
 
-  // Validate input
-  if (!Array.isArray(events) || events.length === 0) {
-    throw new FaxNovaError("No events to process", {
-      code: "INVALID_WEBHOOK_BATCH"
-    });
-  }
+const webhookWorker = new Worker(
+  "inboundFaxQueue",
+  async (job) => {
+    const { provider, raw } = job.data;
 
-  const webhookDocs = [];
-  const faxUpdates = [];
-  const processedProviders = new Set();
+    // Provider selection
+    let adapter;
+    if (provider === "telnyx") adapter = telnyxInboundAdapter;
+    else if (provider === "sinch") adapter = sinchInboundAdapter;
+    else throw new ProviderError(`Unknown provider: ${provider}`);
 
-  try {
-    for (const evt of events) {
-      const { externalEventId, provider, faxId, status, raw } = evt;
+    // Normalize inbound fax payload
+    const normalized = adapter.normalizeInboundFax(raw);
 
-      // Validate event has required fields
-      if (!externalEventId || !provider || !faxId || !status) {
-        console.warn("[webhookWorker] Skipping malformed event:", evt);
-        continue;
-      }
-
-      // Idempotency check: skip if event already processed
-      const exists = await WebhookEvent.findOne({ externalEventId });
-      if (exists) {
-        console.info(
-          `[webhookWorker] Event already processed: ${externalEventId}`
-        );
-        continue;
-      }
-
-      // Build webhook document
-      webhookDocs.push({
-        externalEventId,
-        provider,
-        faxId,
-        status,
-        providerStatus: evt.providerStatus || null,
-        errorCode: evt.errorCode || null,
-        errorMessage: evt.errorMessage || null,
-        raw,
-        processedAt: new Date(),
-        createdAt: new Date()
-      });
-
-      // Apply provider feedback
-      await applyProviderFeedback(provider, status);
-      processedProviders.add(provider);
-
-      // Build fax status update
-      faxUpdates.push({
-        updateOne: {
-          filter: { faxId },
-          update: {
-            $set: {
-              status,
-              errorCode: evt.errorCode || null,
-              errorMessage: evt.errorMessage || null
-            }
-          }
-        }
-      });
+    if (!normalized.ok) {
+      throw new WebhookError(normalized.error);
     }
 
-    // Batch insert webhook events (idempotency enforced by unique index)
-    if (webhookDocs.length > 0) {
-      try {
-        await WebhookEvent.insertMany(webhookDocs);
-      } catch (insertErr) {
-        if (insertErr.code === 11000) {
-          // Duplicate key error - some events were duplicates
-          console.warn(
-            "[webhookWorker] Some events were duplicates, continuing with unique events"
-          );
-        } else {
-          throw insertErr;
-        }
-      }
-    }
+    // Persist inbound fax event
+    await FaxEventService.recordInbound(normalized);
 
-    // Batch update fax statuses
-    if (faxUpdates.length > 0) {
-      await OutboundFax.bulkWrite(faxUpdates);
-    }
+    return { ok: true, providerFaxId: normalized.providerFaxId };
+  },
+  { connection }
+);
 
-    const result = {
-      processed: webhookDocs.length,
-      updated: faxUpdates.length,
-      providersAffected: Array.from(processedProviders)
-    };
-
-    console.info("[webhookWorker] Batch processing complete:", result);
-
-    return result;
-
-  } catch (err) {
-    console.error("[webhookWorker] Error processing webhook batch:", err);
-    throw new FaxNovaError("Failed to process webhook batch", {
-      code: "WEBHOOK_BATCH_FAILED",
-      details: {
-        eventCount: events.length,
-        error: err.message
-      }
-    });
-  }
-}
-
-module.exports = processWebhookBatch;
+module.exports = webhookWorker;
