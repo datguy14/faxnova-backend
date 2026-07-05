@@ -1,107 +1,67 @@
-/**
- * src/workers/retryFaxWorker.js
- *
- * Retry worker for failed faxes with outage-aware gating.
- * - Validates fax exists
- * - Gates retries during provider full outages
- * - Implements exponential backoff (2^attempts, capped at 60s)
- * - Skips if backoff window not elapsed
- * - Delegates to sendFaxService via unified provider stack
- */
+// src/workers/retryFaxWorker.js
 
-const OutboundFax = require("../models/OutboundFax");
-const { sendFax } = require("../services/sendFaxService");
-const providerOutageService = require("../services/providerOutageService");
-const FaxNovaError = require("../errors/FaxNovaError");
+const { Worker } = require("bullmq");
 
-// Constants for exponential backoff
-const MAX_BACKOFF_MS = 60_000; // 60 seconds
-const BACKOFF_BASE = 2; // 2^attempts * 1000ms
+const FaxEventService = require("../services/FaxEventService");
 
-/**
- * Calculate exponential backoff delay
- *
- * @param {number} attempts - Number of previous attempts
- * @returns {number} - Delay in milliseconds (capped at MAX_BACKOFF_MS)
- */
-function calculateBackoffDelay(attempts) {
-  const exponential = Math.pow(BACKOFF_BASE, attempts) * 1000;
-  return Math.min(MAX_BACKOFF_MS, exponential);
+const telnyxAdapter = require("../providers/telnyxAdapter");
+const sinchAdapter = require("../providers/sinchAdapter");
+
+const ProviderError = require("../errors/ProviderError");
+const FaxError = require("../errors/FaxError");
+
+const connection = {
+  host: process.env.REDIS_HOST,
+  port: Number(process.env.REDIS_PORT)
+};
+
+if (!connection.host || !connection.port) {
+  throw new Error("Missing Redis configuration for retryFaxWorker");
 }
 
 /**
- * Process retry fax job with outage-aware gating
+ * Retry Fax Worker — Strict‑Mode Edition
  *
- * @param {object} job - Bull queue job
- * @param {string} job.data.faxId - Unique fax identifier
- * @returns {Promise<object>} - Provider send result or undefined if skipped
- * @throws {Error} - Propagates to queue for retry/failure handling
+ * Processes failed outbound fax jobs from retryFaxQueue.
+ * Retries fax → records event → escalates errors if still failing.
  */
-async function processRetryFax(job) {
-  const { faxId } = job.data;
 
-  // Validate input
-  if (!faxId) {
-    throw new FaxNovaError("faxId is required", {
-      code: "INVALID_JOB_DATA"
-    });
-  }
+const retryFaxWorker = new Worker(
+  "retryFaxQueue",
+  async (job) => {
+    const { provider, to, storageKey, region, attempt } = job.data;
 
-  try {
-    // Validate fax still exists
-    const fax = await OutboundFax.findOne({ faxId });
-    if (!fax) {
-      console.warn(`[retryFaxWorker] Fax not found: ${faxId}`);
-      return; // Silently skip if fax was deleted
-    }
+    // Provider selection
+    let adapter;
+    if (provider === "telnyx") adapter = telnyxAdapter;
+    else if (provider === "sinch") adapter = sinchAdapter;
+    else throw new ProviderError(`Unknown provider: ${provider}`);
 
-    // Gate: Check if provider is in full outage
-    if (fax.provider) {
-      const outageState = await providerOutageService.getOutageState(fax.provider);
-      if (outageState === "open") {
-        console.info(
-          `[retryFaxWorker] Provider ${fax.provider} in full outage, skipping retry for ${faxId}`
-        );
-        return; // Skip retry during full outage
-      }
-    }
+    // Retry send
+    const result = await adapter.sendFax({ to, storageKey, region });
 
-    // Calculate backoff delay based on attempt count
-    const attempts = fax.attempts || 0;
-    const delayMs = calculateBackoffDelay(attempts);
-
-    // Check if backoff window has elapsed
-    const now = Date.now();
-    const lastAttemptTime = fax.lastAttemptAt ? fax.lastAttemptAt.getTime() : 0;
-    const nextAllowedTime = lastAttemptTime + delayMs;
-
-    if (now < nextAllowedTime) {
-      const remainingMs = nextAllowedTime - now;
-      console.info(
-        `[retryFaxWorker] Backoff not elapsed for ${faxId}: ${remainingMs}ms remaining`
+    if (!result.ok) {
+      throw new FaxError(
+        `Retry attempt ${attempt} failed: ${result.error}`
       );
-      return; // Not ready yet - queue will retry this job later
     }
 
-    // Increment attempt counter and record timestamp
-    await OutboundFax.updateOne(
-      { faxId },
-      {
-        $inc: { attempts: 1 },
-        $set: { lastAttemptAt: new Date() }
-      }
-    );
+    // Persist retry event
+    await FaxEventService.recordOutbound({
+      provider,
+      providerFaxId: result.providerFaxId,
+      to,
+      storageKey,
+      region
+    });
 
-    // Send through unified provider stack
-    const result = await sendFax(faxId);
+    return {
+      ok: true,
+      providerFaxId: result.providerFaxId,
+      attempt
+    };
+  },
+  { connection }
+);
 
-    return result;
-
-  } catch (err) {
-    console.error(`[retryFaxWorker] Error processing retry for ${faxId}:`, err);
-    // Re-throw to let queue handle the error
-    throw err;
-  }
-}
-
-module.exports = processRetryFax;
+module.exports = retryFaxWorker;
