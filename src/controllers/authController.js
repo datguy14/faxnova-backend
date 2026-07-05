@@ -1,7 +1,10 @@
+// src/controllers/authController.js
+
 const bcrypt = require("bcrypt");
 const jwt = require("jsonwebtoken");
 const FaxNovaError = require("../errors/FaxNovaError");
 const User = require("../models/User");
+const Tenant = require("../models/Tenant");
 
 module.exports = {
   async register(email, password) {
@@ -14,20 +17,30 @@ module.exports = {
     // Hash password
     const hashed = await bcrypt.hash(password, 10);
 
-    // Create user
+    // Create user (assign tenant automatically or later)
     const user = await User.create({
       email,
       password: hashed,
+      active: true
     });
 
-    // Issue JWT
+    // Load tenant (or assign default)
+    const tenant = await Tenant.findById(user.tenantId);
+    if (!tenant) {
+      throw new FaxNovaError("Tenant not found for user", 400);
+    }
+
+    // Correct JWT payload for your middleware
     const token = jwt.sign(
-      { id: user._id },
+      {
+        userId: user._id.toString(),
+        tenantId: tenant._id.toString()
+      },
       process.env.JWT_SECRET,
       { expiresIn: "7d" }
     );
 
-    return { token };
+    return { success: true, token };
   },
 
   async login(email, password) {
@@ -43,13 +56,22 @@ module.exports = {
       throw new FaxNovaError("Invalid credentials", 400);
     }
 
-    // Issue JWT
+    // Load tenant
+    const tenant = await Tenant.findById(user.tenantId);
+    if (!tenant) {
+      throw new FaxNovaError("Tenant not found", 400);
+    }
+
+    // Correct JWT payload for your middleware
     const token = jwt.sign(
-      { id: user._id },
+      {
+        userId: user._id.toString(),
+        tenantId: tenant._id.toString()
+      },
       process.env.JWT_SECRET,
       { expiresIn: "7d" }
     );
 
-    return { token };
+    return { success: true, token };
   }
 };
