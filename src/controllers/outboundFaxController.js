@@ -1,167 +1,62 @@
 // src/controllers/outboundFaxController.js
 
-const Fax = require("../models/Fax");
-const FaxEvent = require("../models/FaxEvent");
-
-const dataResidencyGuard = require("../guards/dataResidencyGuard");
 const idempotencyGuard = require("../guards/idempotencyGuard");
+const residencyGuard = require("../guards/residencyGuard");
 
-const providerApiService = require("../services/providerApiService");
-const auditService = require("../services/auditService");
-const faxStorageService = require("../services/faxStorageService");
+const FaxEventService = require("../services/FaxEventService");
 
-exports.sendFax = async (req, res) => {
+const telnyxAdapter = require("../providers/telnyxAdapter");
+const sinchAdapter = require("../providers/sinchAdapter");
+
+const ProviderError = require("../errors/ProviderError");
+const FaxError = require("../errors/FaxError");
+
+/**
+ * Outbound Fax Controller — Strict‑Mode Edition
+ *
+ * Handles outbound fax sending using provider adapters.
+ * Guards: idempotency + residency
+ * Provider: Telnyx or Sinch (explicit selection)
+ */
+
+exports.sendFax = async (req, res, next) => {
   try {
-    const { tenantId } = req.params;
-    const { to, region, storageKey } = req.body;
+    const { to, storageKey, region, provider } = req.body;
 
-    // Idempotency check
-    const idempotent = await idempotencyGuard.check({
-      tenantId,
-      key: `${tenantId}:${to}:${storageKey}`
-    });
+    // Guard: idempotency
+    idempotencyGuard.ensureUnique(req);
 
-    if (!idempotent.ok) {
-      return res.status(409).json({
-        success: false,
-        error: "Duplicate outbound fax request"
-      });
+    // Guard: residency
+    residencyGuard.ensureOutboundRegion(region);
+
+    // Provider selection
+    let adapter;
+    if (provider === "telnyx") adapter = telnyxAdapter;
+    else if (provider === "sinch") adapter = sinchAdapter;
+    else throw new ProviderError(`Unknown provider: ${provider}`);
+
+    // Send fax
+    const result = await adapter.sendFax({ to, storageKey, region });
+
+    if (!result.ok) {
+      throw new FaxError(result.error);
     }
 
-    // Residency guard
-    const residency = await dataResidencyGuard.validateOutbound({
-      tenantId,
-      region
-    });
-
-    if (!residency.allowed) {
-      return res.status(403).json({
-        success: false,
-        error: "Outbound fax blocked by residency rules"
-      });
-    }
-
-    // Send fax via provider API
-    const providerResult = await providerApiService.sendFax({
+    // Persist fax event
+    await FaxEventService.recordOutbound({
+      provider,
+      providerFaxId: result.providerFaxId,
       to,
       storageKey,
       region
     });
 
-    // Create fax record
-    const fax = await Fax.create({
-      tenantId,
-      direction: "outbound",
-      to,
-      region,
-      storageKey,
-      provider: providerResult.provider,
-      providerMessageId: providerResult.messageId,
-      status: "queued"
-    });
-
-    // Log event
-    await auditService.logEvent({
-      tenantId,
-      faxId: fax._id,
-      type: "fax_outbound",
-      action: "fax_queued",
-      details: {
-        provider: providerResult.provider,
-        providerMessageId: providerResult.messageId
-      }
-    });
-
-    return res.json({
-      success: true,
-      data: fax
+    return res.status(200).json({
+      ok: true,
+      provider,
+      providerFaxId: result.providerFaxId
     });
   } catch (err) {
-    return res.status(500).json({
-      success: false,
-      error: err.message
-    });
-  }
-};
-
-exports.getFaxStatus = async (req, res) => {
-  try {
-    const { tenantId, faxId } = req.params;
-
-    const fax = await Fax.findOne({
-      _id: faxId,
-      tenantId,
-      direction: "outbound"
-    });
-
-    if (!fax) {
-      return res.status(404).json({
-        success: false,
-        error: "Outbound fax not found"
-      });
-    }
-
-    return res.json({
-      success: true,
-      data: { status: fax.status }
-    });
-  } catch (err) {
-    return res.status(500).json({
-      success: false,
-      error: err.message
-    });
-  }
-};
-
-exports.retryFax = async (req, res) => {
-  try {
-    const { tenantId, faxId } = req.params;
-
-    const fax = await Fax.findOne({
-      _id: faxId,
-      tenantId,
-      direction: "outbound"
-    });
-
-    if (!fax) {
-      return res.status(404).json({
-        success: false,
-        error: "Outbound fax not found"
-      });
-    }
-
-    // Retry via provider API
-    const providerResult = await providerApiService.sendFax({
-      to: fax.to,
-      storageKey: fax.storageKey,
-      region: fax.region
-    });
-
-    fax.status = "queued";
-    fax.provider = providerResult.provider;
-    fax.providerMessageId = providerResult.messageId;
-    await fax.save();
-
-    // Log event
-    await auditService.logEvent({
-      tenantId,
-      faxId: fax._id,
-      type: "fax_outbound",
-      action: "fax_retried",
-      details: {
-        provider: providerResult.provider,
-        providerMessageId: providerResult.messageId
-      }
-    });
-
-    return res.json({
-      success: true,
-      data: fax
-    });
-  } catch (err) {
-    return res.status(500).json({
-      success: false,
-      error: err.message
-    });
+    next(err);
   }
 };
