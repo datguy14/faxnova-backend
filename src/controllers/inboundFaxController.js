@@ -1,124 +1,49 @@
 // src/controllers/inboundFaxController.js
 
-const Fax = require("../models/Fax");
-const FaxEvent = require("../models/FaxEvent");
+const residencyGuard = require("../guards/residencyGuard");
+const webhookQueue = require("../queues/webhookQueue");
 
-const dataResidencyGuard = require("../guards/dataResidencyGuard");
-const idempotencyGuard = require("../guards/idempotencyGuard");
+const telnyxInboundAdapter = require("../providers/telnyxInboundAdapter");
+const sinchInboundAdapter = require("../providers/sinchInboundAdapter");
 
-const auditService = require("../services/auditService");
-const faxStorageService = require("../services/faxStorageService");
+const ProviderError = require("../errors/ProviderError");
+const WebhookError = require("../errors/WebhookError");
 
-exports.receiveInboundFax = async (req, res) => {
+/**
+ * Inbound Fax Controller — Strict‑Mode Edition
+ *
+ * Handles inbound fax webhooks from providers.
+ * Normalizes payloads → validates residency → enqueues for worker processing.
+ */
+
+exports.receiveFax = async (req, res, next) => {
   try {
-    const { tenantId } = req.params;
-    const { from, region, storageKey, provider, providerMessageId } = req.body;
+    const { provider } = req.params;
+    const payload = req.body;
 
-    // Idempotency check
-    const idempotent = await idempotencyGuard.check({
-      tenantId,
-      key: providerMessageId
-    });
+    // Provider selection
+    let adapter;
+    if (provider === "telnyx") adapter = telnyxInboundAdapter;
+    else if (provider === "sinch") adapter = sinchInboundAdapter;
+    else throw new ProviderError(`Unknown provider: ${provider}`);
 
-    if (!idempotent.ok) {
-      return res.status(409).json({
-        success: false,
-        error: "Duplicate inbound fax"
-      });
+    // Normalize inbound fax payload
+    const normalized = adapter.normalizeInboundFax(payload);
+
+    if (!normalized.ok) {
+      throw new WebhookError(normalized.error);
     }
 
-    // Residency guard
-    const residency = await dataResidencyGuard.validateInbound({
-      tenantId,
-      region
-    });
+    const { region } = normalized;
 
-    if (!residency.allowed) {
-      return res.status(403).json({
-        success: false,
-        error: "Inbound fax blocked by residency rules"
-      });
-    }
+    // Guard: residency
+    residencyGuard.ensureInboundRegion(region);
 
-    // Create fax record
-    const fax = await Fax.create({
-      tenantId,
-      direction: "inbound",
-      from,
-      region,
-      storageKey,
-      provider,
-      providerMessageId,
-      status: "received"
-    });
+    // Enqueue for worker processing
+    await webhookQueue.addInboundFax(normalized);
 
-    // Log event
-    await auditService.logEvent({
-      tenantId,
-      faxId: fax._id,
-      type: "fax_inbound",
-      action: "fax_received",
-      details: { providerMessageId }
-    });
-
-    return res.json({
-      success: true,
-      data: fax
-    });
+    return res.status(200).json({ ok: true });
   } catch (err) {
-    return res.status(500).json({
-      success: false,
-      error: err.message
-    });
-  }
-};
-
-exports.getInboundFax = async (req, res) => {
-  try {
-    const { tenantId, faxId } = req.params;
-
-    const fax = await Fax.findOne({
-      _id: faxId,
-      tenantId,
-      direction: "inbound"
-    });
-
-    if (!fax) {
-      return res.status(404).json({
-        success: false,
-        error: "Inbound fax not found"
-      });
-    }
-
-    return res.json({
-      success: true,
-      data: fax
-    });
-  } catch (err) {
-    return res.status(500).json({
-      success: false,
-      error: err.message
-    });
-  }
-};
-
-exports.listInboundFaxes = async (req, res) => {
-  try {
-    const { tenantId } = req.params;
-
-    const faxes = await Fax.find({
-      tenantId,
-      direction: "inbound"
-    }).sort({ createdAt: -1 });
-
-    return res.json({
-      success: true,
-      data: faxes
-    });
-  } catch (err) {
-    return res.status(500).json({
-      success: false,
-      error: err.message
-    });
+    next(err);
   }
 };
