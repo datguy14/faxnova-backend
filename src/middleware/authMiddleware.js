@@ -3,25 +3,42 @@
 const jwt = require("jsonwebtoken");
 const User = require("../models/User");
 const Tenant = require("../models/Tenant");
+const FaxNovaError = require("../errors/FaxNovaError");
 
 module.exports = async (req, res, next) => {
   try {
-    const token = req.headers.authorization?.replace("Bearer ", "");
+    const header = req.headers.authorization;
+    if (!header) {
+      return next(new FaxNovaError("Missing authorization header", 401));
+    }
 
+    const token = header.replace("Bearer ", "").trim();
     if (!token) {
-      return res.status(401).json({ success: false, error: "Missing token" });
+      return next(new FaxNovaError("Missing token", 401));
     }
 
-    const decoded = jwt.verify(token, process.env.JWT_SECRET);
-
-    const user = await User.findById(decoded.userId);
-    if (!user || !user.active) {
-      return res.status(401).json({ success: false, error: "Invalid user" });
+    let decoded;
+    try {
+      decoded = jwt.verify(token, process.env.JWT_SECRET);
+    } catch (err) {
+      return next(new FaxNovaError("Invalid or expired token", 401));
     }
 
-    const tenant = await Tenant.findById(user.tenantId);
+    // Expecting { userId, tenantId } inside JWT
+    const { userId, tenantId } = decoded;
+
+    if (!userId) {
+      return next(new FaxNovaError("Malformed token payload", 401));
+    }
+
+    const user = await User.findById(userId);
+    if (!user || user.active === false) {
+      return next(new FaxNovaError("Invalid or inactive user", 401));
+    }
+
+    const tenant = await Tenant.findById(tenantId || user.tenantId);
     if (!tenant) {
-      return res.status(401).json({ success: false, error: "Invalid tenant" });
+      return next(new FaxNovaError("Tenant not found", 401));
     }
 
     req.user = user;
@@ -29,6 +46,6 @@ module.exports = async (req, res, next) => {
 
     next();
   } catch (err) {
-    return res.status(401).json({ success: false, error: "Unauthorized" });
+    next(new FaxNovaError("Unauthorized", 401));
   }
 };
