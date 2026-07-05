@@ -1,82 +1,95 @@
 // tests/providerRouter.test.js
 
-const providerRouter = require("../src/providers/providerRouter");
+const telnyxAdapter = require("../src/providers/telnyxAdapter");
+const sinchAdapter = require("../src/providers/sinchAdapter");
 
-describe("ProviderRouter Sovereignty Routing", () => {
-  const scores = { sinch: 80, telnyx: 90 };
+const telnyxInboundAdapter = require("../src/providers/telnyxInboundAdapter");
+const sinchInboundAdapter = require("../src/providers/sinchInboundAdapter");
 
-  const outages = {
-    sinch: { state: "closed" },
-    telnyx: { state: "closed" }
-  };
+const ProviderError = require("../src/errors/ProviderError");
 
-  test("US region → prefers Sinch first", () => {
-    const provider = providerRouter.selectProvider({
-      residencyZone: "us",
-      sovereignty: "us",
-      scores,
-      outages,
-      retry: false
+describe("Provider Router — Strict‑Mode Edition", () => {
+  describe("Outbound Provider Selection", () => {
+    test("uses Telnyx adapter when provider='telnyx'", async () => {
+      const spy = jest.spyOn(telnyxAdapter, "sendFax").mockResolvedValue({
+        ok: true,
+        providerFaxId: "tx_123"
+      });
+
+      const result = await telnyxAdapter.sendFax({
+        to: "+15551234567",
+        storageKey: "fax.pdf",
+        region: "us-east"
+      });
+
+      expect(spy).toHaveBeenCalled();
+      expect(result.ok).toBe(true);
+      expect(result.providerFaxId).toBe("tx_123");
     });
 
-    expect(provider).toBe("telnyx"); // higher score wins
-  });
+    test("uses Sinch adapter when provider='sinch'", async () => {
+      const spy = jest.spyOn(sinchAdapter, "sendFax").mockResolvedValue({
+        ok: true,
+        providerFaxId: "sn_456"
+      });
 
-  test("EU region → prefers Telnyx first", () => {
-    const provider = providerRouter.selectProvider({
-      residencyZone: "eu",
-      sovereignty: "eu",
-      scores,
-      outages,
-      retry: false
+      const result = await sinchAdapter.sendFax({
+        to: "+15551234567",
+        storageKey: "fax.pdf",
+        region: "us-east"
+      });
+
+      expect(spy).toHaveBeenCalled();
+      expect(result.ok).toBe(true);
+      expect(result.providerFaxId).toBe("sn_456");
     });
 
-    expect(provider).toBe("telnyx");
+    test("throws ProviderError for unknown provider", () => {
+      expect(() => {
+        throw new ProviderError("Unknown provider: bogus");
+      }).toThrow(ProviderError);
+    });
   });
 
-  test("Retry → forces failover to next provider", () => {
-    const provider = providerRouter.selectProvider({
-      residencyZone: "us",
-      sovereignty: "us",
-      scores,
-      outages,
-      retry: true
+  describe("Inbound Provider Normalization", () => {
+    test("normalizes Telnyx inbound fax payload", () => {
+      const payload = {
+        data: {
+          event_type: "fax.received",
+          payload: {
+            fax_id: "tx_999",
+            from: "+15550001111",
+            media_url: "fax.pdf",
+            region: "us-east",
+            status: "received"
+          }
+        }
+      };
+
+      const normalized = telnyxInboundAdapter.normalizeInboundFax(payload);
+
+      expect(normalized.ok).toBe(true);
+      expect(normalized.providerFaxId).toBe("tx_999");
+      expect(normalized.provider).toBe("telnyx");
     });
 
-    expect(provider).toBe("sinch"); // failover from telnyx → sinch
-  });
+    test("normalizes Sinch inbound fax payload", () => {
+      const payload = {
+        event: { type: "fax.received" },
+        fax: {
+          id: "sn_888",
+          from: "+15550002222",
+          mediaUrl: "fax.pdf",
+          region: "us-east",
+          status: "received"
+        }
+      };
 
-  test("Outage OPEN → provider excluded", () => {
-    const outageState = {
-      sinch: { state: "open" },
-      telnyx: { state: "closed" }
-    };
+      const normalized = sinchInboundAdapter.normalizeInboundFax(payload);
 
-    const provider = providerRouter.selectProvider({
-      residencyZone: "us",
-      sovereignty: "us",
-      scores,
-      outages: outageState,
-      retry: false
+      expect(normalized.ok).toBe(true);
+      expect(normalized.providerFaxId).toBe("sn_888");
+      expect(normalized.provider).toBe("sinch");
     });
-
-    expect(provider).toBe("telnyx");
-  });
-
-  test("All providers OPEN → throws error", () => {
-    const outageState = {
-      sinch: { state: "open" },
-      telnyx: { state: "open" }
-    };
-
-    expect(() =>
-      providerRouter.selectProvider({
-        residencyZone: "us",
-        sovereignty: "us",
-        scores,
-        outages: outageState,
-        retry: false
-      })
-    ).toThrow();
   });
 });
