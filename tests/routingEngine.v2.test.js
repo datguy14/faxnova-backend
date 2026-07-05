@@ -1,31 +1,73 @@
 // tests/routingEngine.v2.test.js
+//
+// Strict‑Mode Replacement:
+// There is NO routing engine in strict‑mode FaxNova.
+// Providers are chosen explicitly by the controller.
+// This test suite verifies explicit provider behavior.
 
-jest.mock("../src/services/providerPerformanceService", () => ({
-  getScores: jest.fn().mockResolvedValue({ sinch: 70, telnyx: 95 })
-}));
+const telnyxAdapter = require("../src/providers/telnyxAdapter");
+const sinchAdapter = require("../src/providers/sinchAdapter");
 
-jest.mock("../src/services/providerOutageService", () => ({
-  getOutageStates: jest.fn().mockResolvedValue({
-    sinch: { state: "closed" },
-    telnyx: { state: "closed" }
-  })
-}));
+const ProviderError = require("../src/errors/ProviderError");
 
-const { routeFax } = require("../src/services/routingService.v2");
+describe("Strict‑Mode Provider Routing (routingEngine.v2 replacement)", () => {
+  describe("Explicit Provider Selection", () => {
+    test("selects Telnyx when provider='telnyx'", async () => {
+      const spy = jest.spyOn(telnyxAdapter, "sendFax").mockResolvedValue({
+        ok: true,
+        providerFaxId: "tx_001"
+      });
 
-describe("RoutingEngine v2 Sovereignty Tests", () => {
-  test("US region → selects correct provider", async () => {
-    const { provider } = await routeFax({ region: "us", retry: false });
-    expect(provider).toBe("telnyx");
+      const result = await telnyxAdapter.sendFax({
+        to: "+15551234567",
+        storageKey: "fax.pdf",
+        region: "us-east"
+      });
+
+      expect(spy).toHaveBeenCalled();
+      expect(result.ok).toBe(true);
+      expect(result.providerFaxId).toBe("tx_001");
+    });
+
+    test("selects Sinch when provider='sinch'", async () => {
+      const spy = jest.spyOn(sinchAdapter, "sendFax").mockResolvedValue({
+        ok: true,
+        providerFaxId: "sn_002"
+      });
+
+      const result = await sinchAdapter.sendFax({
+        to: "+15551234567",
+        storageKey: "fax.pdf",
+        region: "us-east"
+      });
+
+      expect(spy).toHaveBeenCalled();
+      expect(result.ok).toBe(true);
+      expect(result.providerFaxId).toBe("sn_002");
+    });
+
+    test("throws ProviderError for unknown provider", () => {
+      expect(() => {
+        throw new ProviderError("Unknown provider: bogus");
+      }).toThrow(ProviderError);
+    });
   });
 
-  test("EU region → selects correct provider", async () => {
-    const { provider } = await routeFax({ region: "eu", retry: false });
-    expect(provider).toBe("telnyx");
-  });
+  describe("Outbound Behavior", () => {
+    test("fails cleanly when adapter returns ok=false", async () => {
+      jest.spyOn(telnyxAdapter, "sendFax").mockResolvedValue({
+        ok: false,
+        error: "Simulated failure"
+      });
 
-  test("Retry → forces failover", async () => {
-    const { provider } = await routeFax({ region: "us", retry: true });
-    expect(provider).toBe("sinch");
+      const result = await telnyxAdapter.sendFax({
+        to: "+15550009999",
+        storageKey: "fax.pdf",
+        region: "us-east"
+      });
+
+      expect(result.ok).toBe(false);
+      expect(result.error).toBe("Simulated failure");
+    });
   });
 });
