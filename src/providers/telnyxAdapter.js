@@ -1,32 +1,43 @@
-// src/providers/telnyxAdapter.js — STRICT-MODE VERSION
+// src/providers/telnyxAdapter.js
 
 const axios = require("axios");
-const FaxNovaError = require("../errors/FaxNovaError");
 
-/**
- * Telnyx outbound fax adapter
- * - Pure provider API call
- * - No routing logic
- * - No outage/performance logic
- * - No circuit breaker logic
- *
- * All metrics + routing + failover are handled by:
- * - providerRoutingEngine
- * - providerCircuitBreaker
- * - sendFaxService
- * - retryFaxService
- */
-async function sendFax({ faxId, to, from, documentUrl, region }) {
+const TELNYX_BASE_URL = "https://api.telnyx.com/v2";
+
+exports.sendFax = async ({ to, storageKey, region }) => {
   try {
     const response = await axios.post(
-      process.env.TELNYX_FAX_ENDPOINT,
+      `${TELNYX_BASE_URL}/faxes`,
       {
-        faxId,
         to,
-        from,
-        documentUrl,
+        media_url: storageKey,
         region
       },
+      {
+        headers: {
+          Authorization: `Bearer ${process.env.TELNYX_API_KEY}`,
+          "Content-Type": "application/json"
+        }
+      }
+    );
+
+    return {
+      ok: true,
+      providerFaxId: response.data.data.id,
+      raw: response.data
+    };
+  } catch (err) {
+    return {
+      ok: false,
+      error: err.response?.data?.errors?.[0]?.detail || err.message
+    };
+  }
+};
+
+exports.getFaxStatus = async (providerFaxId) => {
+  try {
+    const response = await axios.get(
+      `${TELNYX_BASE_URL}/faxes/${providerFaxId}`,
       {
         headers: {
           Authorization: `Bearer ${process.env.TELNYX_API_KEY}`
@@ -35,31 +46,14 @@ async function sendFax({ faxId, to, from, documentUrl, region }) {
     );
 
     return {
-      provider: "telnyx",
-      messageId: response.data.data.id,
+      ok: true,
+      status: response.data.data.status,
       raw: response.data
     };
-
   } catch (err) {
-    throw new FaxNovaError("Telnyx sendFax failed", {
-      code: "TELNYX_SEND_FAILED",
-      provider: "telnyx",
-      details: err.message
-    });
+    return {
+      ok: false,
+      error: err.response?.data?.errors?.[0]?.detail || err.message
+    };
   }
-}
-
-/**
- * Telnyx inbound fax normalization
- */
-async function handleInboundFax(payload) {
-  return {
-    provider: "telnyx",
-    payload
-  };
-}
-
-module.exports = {
-  sendFax,
-  handleInboundFax
 };
