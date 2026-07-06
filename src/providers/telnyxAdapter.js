@@ -1,59 +1,31 @@
 // src/providers/telnyxAdapter.js
 
 const axios = require("axios");
+const OutboundFax = require("../models/OutboundFax");
 
-const TELNYX_BASE_URL = "https://api.telnyx.com/v2";
-
-exports.sendFax = async ({ to, storageKey, region }) => {
-  try {
-    const response = await axios.post(
-      `${TELNYX_BASE_URL}/faxes`,
-      {
-        to,
-        media_url: storageKey,
-        region
-      },
-      {
-        headers: {
-          Authorization: `Bearer ${process.env.TELNYX_API_KEY}`,
-          "Content-Type": "application/json"
-        }
+exports.sendFax = async fax => {
+  const response = await axios.post(
+    "https://api.telnyx.com/v2/faxes",
+    {
+      to: fax.to,
+      media_url: fax.storageKey
+    },
+    {
+      headers: {
+        Authorization: `Bearer ${process.env.TELNYX_API_KEY}`
       }
-    );
+    }
+  );
 
-    return {
-      ok: true,
-      providerFaxId: response.data.data.id,
-      raw: response.data
-    };
-  } catch (err) {
-    return {
-      ok: false,
-      error: err.response?.data?.errors?.[0]?.detail || err.message
-    };
-  }
-};
+  const providerFaxId = response.data.data.id;
 
-exports.getFaxStatus = async (providerFaxId) => {
-  try {
-    const response = await axios.get(
-      `${TELNYX_BASE_URL}/faxes/${providerFaxId}`,
-      {
-        headers: {
-          Authorization: `Bearer ${process.env.TELNYX_API_KEY}`
-        }
-      }
-    );
+  fax.providerFaxId = providerFaxId;
+  fax.status = "processing";
+  await fax.save();
 
-    return {
-      ok: true,
-      status: response.data.data.status,
-      raw: response.data
-    };
-  } catch (err) {
-    return {
-      ok: false,
-      error: err.response?.data?.errors?.[0]?.detail || err.message
-    };
-  }
+  return {
+    provider: "telnyx",
+    providerFaxId,
+    status: "processing"
+  };
 };
