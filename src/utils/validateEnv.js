@@ -1,17 +1,20 @@
-const REQUIRED_ENV = [
-  'JWT_SECRET',
-  'MONGO_URI',
-  'REDIS_HOST',
-  'REDIS_PORT',
-  'REDIS_PASSWORD',
-  'WEBHOOK_SECRET'
-];
+// src/utils/validateEnv.js
 
 module.exports = function validateEnv() {
-  const missing = REQUIRED_ENV.filter((key) => !process.env[key]);
+  const required = [
+    "MONGO_URI",
+    "JWT_SECRET",
+    "REDIS_HOST",
+    "REDIS_PORT",
+    "TELNYX_API_KEY",
+    "SINCH_API_KEY"
+  ];
+
+  const missing = required.filter((key) => !process.env[key]);
 
   if (missing.length > 0) {
-    console.error("Missing required environment variables:", missing);
+    console.error("❌ Missing required environment variables:");
+    missing.forEach((key) => console.error(`- ${key}`));
     process.exit(1);
   }
 };
