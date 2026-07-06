@@ -1,17 +1,10 @@
 // src/controllers/faxController.js
 
+const OutboundFax = require("../models/OutboundFax");
 const outboundFaxQueue = require("../queues/outboundFaxQueue");
+
 const residencyGuard = require("../guards/residencyGuard");
 const idempotencyGuard = require("../guards/idempotencyGuard");
-
-/**
- * Fax Controller — Strict‑Mode Edition
- *
- * Outbound fax submission:
- * - idempotency guard
- * - residency guard
- * - enqueue outbound fax job
- */
 
 exports.sendFax = async (req, res, next) => {
   try {
@@ -20,14 +13,25 @@ exports.sendFax = async (req, res, next) => {
     idempotencyGuard.ensureUnique(req);
     residencyGuard.ensureOutboundRegion(region);
 
-    await outboundFaxQueue.addOutboundFax({
+    // Persist outbound fax request
+    const fax = await OutboundFax.create({
       provider,
+      providerFaxId: null, // filled later by worker
       to,
       storageKey,
       region
     });
 
-    return res.status(200).json({ ok: true });
+    // Enqueue job
+    await outboundFaxQueue.addOutboundFax({
+      provider,
+      to,
+      storageKey,
+      region,
+      faxId: fax._id.toString()
+    });
+
+    return res.status(200).json({ ok: true, faxId: fax._id });
   } catch (err) {
     next(err);
   }
