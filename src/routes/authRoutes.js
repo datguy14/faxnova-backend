@@ -1,49 +1,35 @@
-// src/routes/authRoutes.js
+// src/routes/authRoutes.js — Strict‑Mode CommonJS Version
 
 const express = require("express");
 const router = express.Router();
-
+const User = require("../models/User");
 const bcrypt = require("bcryptjs");
 const jwt = require("jsonwebtoken");
 
-const User = require("../models/User");
+const JWT_ADMIN_SECRET = process.env.JWT_ADMIN_SECRET;
 
-router.post("/register", async (req, res, next) => {
+router.post("/admin/login", express.json(), async (req, res) => {
   try {
     const { email, password } = req.body;
 
-    const exists = await User.findOne({ email });
-    if (exists) return res.status(400).json({ error: "Email already registered" });
-
-    const hash = await bcrypt.hash(password, 12);
-
-    const user = await User.create({ email, password: hash });
-
-    res.json({ ok: true, userId: user._id });
-  } catch (err) {
-    next(err);
-  }
-});
-
-router.post("/login", async (req, res, next) => {
-  try {
-    const { email, password } = req.body;
-
+    // Look up admin user
     const user = await User.findOne({ email });
-    if (!user) return res.status(400).json({ error: "Invalid credentials" });
+    if (!user) return res.status(401).json({ error: "Invalid credentials" });
 
-    const match = await bcrypt.compare(password, user.password);
-    if (!match) return res.status(400).json({ error: "Invalid credentials" });
+    // Validate password
+    const valid = await bcrypt.compare(password, user.passwordHash);
+    if (!valid) return res.status(401).json({ error: "Invalid credentials" });
 
+    // Issue admin token
     const token = jwt.sign(
-      { userId: user._id },
-      process.env.JWT_SECRET,
-      { expiresIn: "7d" }
+      { role: user.role, userId: user._id },
+      JWT_ADMIN_SECRET,
+      { expiresIn: "1h" }
     );
 
-    res.json({ ok: true, token });
+    res.json({ token });
   } catch (err) {
-    next(err);
+    res.status(500).json({ error: err.message });
   }
 });
 
