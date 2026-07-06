@@ -1,40 +1,17 @@
 // src/services/providerApiService.js
 
-const axios = require("axios");
+const telnyxAdapter = require("../providers/telnyxAdapter");
+const sinchAdapter = require("../providers/sinchAdapter");
 
-exports.sendFax = async ({ to, storageKey, region }) => {
-  try {
-    // Provider endpoint selection (simple, stable)
-    const endpoint = process.env.PROVIDER_API_URL;
+exports.sendFax = async fax => {
+  switch (fax.provider) {
+    case "telnyx":
+      return await telnyxAdapter.sendFax(fax);
 
-    const response = await axios.post(`${endpoint}/send`, {
-      to,
-      storageKey,
-      region
-    });
+    case "sinch":
+      return await sinchAdapter.sendFax(fax);
 
-    return {
-      provider: response.data.provider || "default",
-      messageId: response.data.messageId
-    };
-  } catch (err) {
-    throw new Error(`Provider API error: ${err.message}`);
-  }
-};
-
-exports.getStatus = async (providerMessageId) => {
-  try {
-    const endpoint = process.env.PROVIDER_API_URL;
-
-    const response = await axios.get(
-      `${endpoint}/status/${providerMessageId}`
-    );
-
-    return {
-      status: response.data.status,
-      provider: response.data.provider || "default"
-    };
-  } catch (err) {
-    throw new Error(`Provider API error: ${err.message}`);
+    default:
+      throw new Error(`Unknown provider: ${fax.provider}`);
   }
 };
