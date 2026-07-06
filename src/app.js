@@ -1,34 +1,28 @@
-// src/app.js — CommonJS Strict‑Mode Version
+// src/app.js
 
 const express = require("express");
 const cors = require("cors");
-const helmet = require("helmet");
-const dotenv = require("dotenv");
 
-dotenv.config();
+const faxController = require("./controllers/faxController");
+const inboundFaxController = require("./controllers/inboundFaxController");
+const webhookController = require("./controllers/webhookController");
+const authController = require("./controllers/authController");
 
 const app = express();
 
-// Security middleware
-app.use(helmet());
-app.use(
-  cors({
-    origin: (origin, cb) => {
-      if (!origin) return cb(null, true);
-      const allowed = [
-        "https://app.faxnova.com",
-        "https://admin.faxnova.com",
-        "http://localhost:3000"
-      ];
-      if (allowed.includes(origin) || origin.endsWith(".faxnova.com")) {
-        return cb(null, true);
-      }
-      cb(new Error("CORS: Origin not allowed"));
-    },
-    credentials: true
-  })
-);
+app.use(cors());
+app.use(express.json());
 
-app.use(express.json({ limit: "10mb" }));
+// Auth
+app.post("/admin/login", authController.adminLogin);
+
+// Outbound fax
+app.post("/fax/outbound", faxController.createFax);
+
+// Inbound fax
+app.post("/fax/inbound", inboundFaxController.receiveInboundFax);
+
+// Provider webhooks
+app.post("/webhook/provider", webhookController.handleWebhook);
 
 module.exports = app;
