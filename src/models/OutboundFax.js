@@ -1,4 +1,4 @@
-// src/models/OutboundFax.js — CommonJS Strict‑Mode Version
+// src/models/OutboundFax.js
 
 const mongoose = require("mongoose");
 
@@ -8,9 +8,12 @@ const OutboundFaxSchema = new mongoose.Schema(
     provider: { type: String, required: true },
     providerFaxId: { type: String },
     storageKey: { type: String, required: true },
-    region: { type: String, required: true },
-    status: { type: String, default: "pending" },
-    attempts: { type: Number, default: 0 }
+    status: {
+      type: String,
+      enum: ["queued", "processing", "sent", "failed"],
+      default: "queued"
+    },
+    region: { type: String }
   },
   { timestamps: true }
 );
