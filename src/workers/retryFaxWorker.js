@@ -2,64 +2,75 @@
 
 const { Worker } = require("bullmq");
 
+const OutboundFax = require("../models/OutboundFax");
 const FaxEventService = require("../services/FaxEventService");
+
+const ProviderRouter = require("../services/providerRouter.v2");
 
 const telnyxAdapter = require("../providers/telnyxAdapter");
 const sinchAdapter = require("../providers/sinchAdapter");
 
-const ProviderError = require("../errors/ProviderError");
 const FaxError = require("../errors/FaxError");
+const { connection } = require("../lib/redis");
 
-const connection = {
-  host: process.env.REDIS_HOST,
-  port: Number(process.env.REDIS_PORT)
-};
-
-if (!connection.host || !connection.port) {
-  throw new Error("Missing Redis configuration for retryFaxWorker");
+function getAdapter(provider) {
+  return provider === "telnyx" ? telnyxAdapter : sinchAdapter;
 }
 
-/**
- * Retry Fax Worker — Strict‑Mode Edition
- *
- * Processes failed outbound fax jobs from retryFaxQueue.
- * Retries fax → records event → escalates errors if still failing.
- */
+function getFailoverProvider(provider) {
+  return provider === "telnyx" ? "sinch" : "telnyx";
+}
 
 const retryFaxWorker = new Worker(
   "retryFaxQueue",
   async (job) => {
-    const { provider, to, storageKey, region, attempt } = job.data;
+    const { faxId } = job.data;
 
-    // Provider selection
-    let adapter;
-    if (provider === "telnyx") adapter = telnyxAdapter;
-    else if (provider === "sinch") adapter = sinchAdapter;
-    else throw new ProviderError(`Unknown provider: ${provider}`);
+    const fax = await OutboundFax.findById(faxId);
+    if (!fax) throw new FaxError("Outbound fax not found");
 
-    // Retry send
-    const result = await adapter.sendFax({ to, storageKey, region });
+    const provider = ProviderRouter.pickOutboundProvider(fax.provider);
+    const adapter = getAdapter(provider);
 
-    if (!result.ok) {
-      throw new FaxError(
-        `Retry attempt ${attempt} failed: ${result.error}`
-      );
-    }
-
-    // Persist retry event
-    await FaxEventService.recordOutbound({
-      provider,
-      providerFaxId: result.providerFaxId,
-      to,
-      storageKey,
-      region
+    // First retry attempt
+    let result = await adapter.sendFax({
+      to: fax.to,
+      storageKey: fax.storageKey,
+      region: fax.region
     });
 
-    return {
-      ok: true,
+    // Failover if needed
+    if (!result.ok) {
+      const failoverProvider = getFailoverProvider(provider);
+      const failoverAdapter = getAdapter(failoverProvider);
+
+      result = await failoverAdapter.sendFax({
+        to: fax.to,
+        storageKey: fax.storageKey,
+        region: fax.region
+      });
+
+      if (!result.ok) {
+        throw new FaxError(`Retry + failover failed: ${result.error}`);
+      }
+
+      fax.provider = failoverProvider;
+    }
+
+    // Update fax record
+    fax.providerFaxId = result.providerFaxId;
+    await fax.save();
+
+    // Record event
+    await FaxEventService.recordOutbound({
+      provider: fax.provider,
       providerFaxId: result.providerFaxId,
-      attempt
-    };
+      to: fax.to,
+      storageKey: fax.storageKey,
+      region: fax.region
+    });
+
+    return { ok: true, providerFaxId: result.providerFaxId };
   },
   { connection }
 );
