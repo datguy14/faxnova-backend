@@ -1,56 +1,34 @@
 // src/controllers/faxController.js
 
-const Fax = require("../models/Fax");
-const auditService = require("../services/auditService");
+const outboundFaxQueue = require("../queues/outboundFaxQueue");
+const residencyGuard = require("../guards/residencyGuard");
+const idempotencyGuard = require("../guards/idempotencyGuard");
 
-exports.listFaxes = async (req, res) => {
+/**
+ * Fax Controller — Strict‑Mode Edition
+ *
+ * Outbound fax submission:
+ * - idempotency guard
+ * - residency guard
+ * - enqueue outbound fax job
+ */
+
+exports.sendFax = async (req, res, next) => {
   try {
-    const { tenantId } = req.params;
+    const { to, storageKey, region, provider } = req.body;
 
-    const faxes = await Fax.find({ tenantId }).sort({ createdAt: -1 });
+    idempotencyGuard.ensureUnique(req);
+    residencyGuard.ensureOutboundRegion(region);
 
-    return res.json({ success: true, data: faxes });
-  } catch (err) {
-    return res.status(500).json({ success: false, error: err.message });
-  }
-};
-
-exports.getFax = async (req, res) => {
-  try {
-    const { tenantId, faxId } = req.params;
-
-    const fax = await Fax.findOne({ _id: faxId, tenantId });
-
-    if (!fax) {
-      return res.status(404).json({ success: false, error: "Fax not found" });
-    }
-
-    return res.json({ success: true, data: fax });
-  } catch (err) {
-    return res.status(500).json({ success: false, error: err.message });
-  }
-};
-
-exports.deleteFax = async (req, res) => {
-  try {
-    const { tenantId, faxId } = req.params;
-
-    const fax = await Fax.findOneAndDelete({ _id: faxId, tenantId });
-
-    if (!fax) {
-      return res.status(404).json({ success: false, error: "Fax not found" });
-    }
-
-    await auditService.logEvent({
-      tenantId,
-      faxId,
-      type: "fax_outbound",
-      action: "fax_deleted",
-      details: { faxId }
+    await outboundFaxQueue.addOutboundFax({
+      provider,
+      to,
+      storageKey,
+      region
     });
 
-    return res.json({ success: true, message: "Fax deleted" });
+    return res.status(200).json({ ok: true });
   } catch (err) {
-    return res.status(500).json({ success: false, error: err.message });
+    next(err);
   }
 };
