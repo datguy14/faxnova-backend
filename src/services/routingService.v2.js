@@ -1,11 +1,8 @@
 // src/services/routingService.v2.js
-//
-// Strict‑Mode Stub:
-// Routing engine removed. Providers are chosen explicitly by controllers.
 
-exports.pickProvider = (provider) => {
-  if (provider !== "telnyx" && provider !== "sinch") {
-    throw new Error(`Unknown provider: ${provider}`);
-  }
-  return provider;
+const providerRouter = require("./providerRouter.v2");
+
+exports.selectProvider = async ({ residencyZone, tier, region }) => {
+  const provider = await providerRouter.routeProvider({ provider: tier, region });
+  return { primary: provider.provider };
 };
