@@ -1,62 +1,14 @@
 // src/controllers/outboundFaxController.js
 
-const idempotencyGuard = require("../guards/idempotencyGuard");
-const residencyGuard = require("../guards/residencyGuard");
+const OutboundFax = require("../models/OutboundFax");
 
-const FaxEventService = require("../services/FaxEventService");
-
-const telnyxAdapter = require("../providers/telnyxAdapter");
-const sinchAdapter = require("../providers/sinchAdapter");
-
-const ProviderError = require("../errors/ProviderError");
-const FaxError = require("../errors/FaxError");
-
-/**
- * Outbound Fax Controller — Strict‑Mode Edition
- *
- * Handles outbound fax sending using provider adapters.
- * Guards: idempotency + residency
- * Provider: Telnyx or Sinch (explicit selection)
- */
-
-exports.sendFax = async (req, res, next) => {
+exports.getOutboundFax = async (req, res) => {
   try {
-    const { to, storageKey, region, provider } = req.body;
+    const fax = await OutboundFax.findById(req.params.id);
+    if (!fax) return res.status(404).json({ error: "Fax not found" });
 
-    // Guard: idempotency
-    idempotencyGuard.ensureUnique(req);
-
-    // Guard: residency
-    residencyGuard.ensureOutboundRegion(region);
-
-    // Provider selection
-    let adapter;
-    if (provider === "telnyx") adapter = telnyxAdapter;
-    else if (provider === "sinch") adapter = sinchAdapter;
-    else throw new ProviderError(`Unknown provider: ${provider}`);
-
-    // Send fax
-    const result = await adapter.sendFax({ to, storageKey, region });
-
-    if (!result.ok) {
-      throw new FaxError(result.error);
-    }
-
-    // Persist fax event
-    await FaxEventService.recordOutbound({
-      provider,
-      providerFaxId: result.providerFaxId,
-      to,
-      storageKey,
-      region
-    });
-
-    return res.status(200).json({
-      ok: true,
-      provider,
-      providerFaxId: result.providerFaxId
-    });
+    res.json(fax);
   } catch (err) {
-    next(err);
+    res.status(500).json({ error: err.message });
   }
 };
