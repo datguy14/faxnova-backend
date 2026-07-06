@@ -1,12 +1,19 @@
-// src/lib/redis.js
+// src/lib/redis.js — Strict‑Mode Redis Connection
 
-const connection = {
-  host: process.env.REDIS_HOST,
-  port: Number(process.env.REDIS_PORT)
-};
+const { Redis } = require("ioredis");
 
-if (!connection.host || !connection.port) {
-  throw new Error("Missing Redis configuration");
+const host = process.env.REDIS_HOST;
+const port = process.env.REDIS_PORT;
+
+if (!host || !port) {
+  throw new Error("Missing Redis configuration: REDIS_HOST or REDIS_PORT");
 }
+
+const connection = new Redis({
+  host,
+  port: Number(port),
+  maxRetriesPerRequest: null,
+  enableReadyCheck: false
+});
 
 module.exports = { connection };
