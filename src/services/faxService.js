@@ -1,22 +1,27 @@
-// src/services/faxService.js
+// src/services/faxService.js — Strict‑Mode CommonJS Version
 
 const OutboundFax = require("../models/OutboundFax");
-const FaxEventService = require("./FaxEventService");
 
-exports.attachProviderResult = async ({ faxId, providerFaxId }) => {
-  const fax = await OutboundFax.findById(faxId);
-  if (!fax) throw new Error("Outbound fax not found");
-
-  fax.providerFaxId = providerFaxId;
-  await fax.save();
-
-  await FaxEventService.recordOutbound({
-    provider: fax.provider,
-    providerFaxId,
-    to: fax.to,
-    storageKey: fax.storageKey,
-    region: fax.region
+exports.createOutboundFax = async data => {
+  return await OutboundFax.create({
+    to: data.to,
+    provider: data.provider,
+    storageKey: data.storageKey,
+    region: data.region
   });
+};
 
-  return fax;
+exports.getOutboundFaxById = async faxId => {
+  return await OutboundFax.findById(faxId);
+};
+
+exports.getOutboundFaxByProviderId = async providerFaxId => {
+  return await OutboundFax.findOne({ providerFaxId });
+};
+
+exports.updateOutboundFaxStatus = async (providerFaxId, status) => {
+  return await OutboundFax.updateOne(
+    { providerFaxId },
+    { status }
+  );
 };
