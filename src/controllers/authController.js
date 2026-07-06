@@ -1,77 +1,27 @@
 // src/controllers/authController.js
 
-const bcrypt = require("bcrypt");
-const jwt = require("jsonwebtoken");
-const FaxNovaError = require("../errors/FaxNovaError");
 const User = require("../models/User");
-const Tenant = require("../models/Tenant");
+const bcrypt = require("bcryptjs");
+const jwt = require("jsonwebtoken");
 
-module.exports = {
-  async register(email, password) {
-    // Check if user exists
-    const existing = await User.findOne({ email });
-    if (existing) {
-      throw new FaxNovaError("Email already registered", 400);
-    }
+exports.adminLogin = async (req, res) => {
+  try {
+    const { email, password } = req.body;
 
-    // Hash password
-    const hashed = await bcrypt.hash(password, 10);
-
-    // Create user (assign tenant automatically or later)
-    const user = await User.create({
-      email,
-      password: hashed,
-      active: true
-    });
-
-    // Load tenant (or assign default)
-    const tenant = await Tenant.findById(user.tenantId);
-    if (!tenant) {
-      throw new FaxNovaError("Tenant not found for user", 400);
-    }
-
-    // Correct JWT payload for your middleware
-    const token = jwt.sign(
-      {
-        userId: user._id.toString(),
-        tenantId: tenant._id.toString()
-      },
-      process.env.JWT_SECRET,
-      { expiresIn: "7d" }
-    );
-
-    return { success: true, token };
-  },
-
-  async login(email, password) {
-    // Find user
     const user = await User.findOne({ email });
-    if (!user) {
-      throw new FaxNovaError("Invalid credentials", 400);
-    }
+    if (!user) return res.status(401).json({ error: "Invalid credentials" });
 
-    // Compare password
-    const match = await bcrypt.compare(password, user.password);
-    if (!match) {
-      throw new FaxNovaError("Invalid credentials", 400);
-    }
+    const valid = await bcrypt.compare(password, user.passwordHash);
+    if (!valid) return res.status(401).json({ error: "Invalid credentials" });
 
-    // Load tenant
-    const tenant = await Tenant.findById(user.tenantId);
-    if (!tenant) {
-      throw new FaxNovaError("Tenant not found", 400);
-    }
-
-    // Correct JWT payload for your middleware
     const token = jwt.sign(
-      {
-        userId: user._id.toString(),
-        tenantId: tenant._id.toString()
-      },
-      process.env.JWT_SECRET,
-      { expiresIn: "7d" }
+      { role: user.role, userId: user._id },
+      process.env.JWT_ADMIN_SECRET,
+      { expiresIn: "1h" }
     );
 
-    return { success: true, token };
+    res.json({ token });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
   }
 };
