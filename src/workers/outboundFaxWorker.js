@@ -2,51 +2,43 @@
 
 const { Worker } = require("bullmq");
 
+const OutboundFax = require("../models/OutboundFax");
 const FaxEventService = require("../services/FaxEventService");
 
+const ProviderRouter = require("../services/providerRouter.v2");
 const telnyxAdapter = require("../providers/telnyxAdapter");
 const sinchAdapter = require("../providers/sinchAdapter");
 
-const ProviderError = require("../errors/ProviderError");
+const { connection } = require("../lib/redis");
 const FaxError = require("../errors/FaxError");
-
-const connection = {
-  host: process.env.REDIS_HOST,
-  port: Number(process.env.REDIS_PORT)
-};
-
-if (!connection.host || !connection.port) {
-  throw new Error("Missing Redis configuration for outboundFaxWorker");
-}
-
-/**
- * Outbound Fax Worker — Strict‑Mode Edition
- *
- * Processes outbound fax jobs from outboundFaxQueue.
- * Sends fax → records event → handles provider errors.
- */
 
 const outboundFaxWorker = new Worker(
   "outboundFaxQueue",
   async (job) => {
-    const { provider, to, storageKey, region } = job.data;
+    const { provider, to, storageKey, region, faxId } = job.data;
 
-    // Provider selection
-    let adapter;
-    if (provider === "telnyx") adapter = telnyxAdapter;
-    else if (provider === "sinch") adapter = sinchAdapter;
-    else throw new ProviderError(`Unknown provider: ${provider}`);
+    const selected = ProviderRouter.pickOutboundProvider(provider);
 
-    // Send fax
+    const adapter =
+      selected === "telnyx"
+        ? telnyxAdapter
+        : sinchAdapter;
+
     const result = await adapter.sendFax({ to, storageKey, region });
 
     if (!result.ok) {
       throw new FaxError(result.error);
     }
 
-    // Persist outbound fax event
+    // Update OutboundFax record
+    const fax = await OutboundFax.findById(faxId);
+    if (fax) {
+      fax.providerFaxId = result.providerFaxId;
+      await fax.save();
+    }
+
     await FaxEventService.recordOutbound({
-      provider,
+      provider: selected,
       providerFaxId: result.providerFaxId,
       to,
       storageKey,
