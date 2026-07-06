@@ -1,70 +1,26 @@
-// src/server.js — FINAL VERSION
+// src/server.js
+
 require("dotenv").config();
 const express = require("express");
-const helmet = require("helmet");
-const cors = require("cors");
-const mongoose = require("mongoose");
-
-const validateEnv = require("./utils/validateEnv");
-const errorHandler = require("./middleware/errorHandler");
-
-// Validate before starting
-validateEnv();
-
 const app = express();
 
-// Security middleware
-app.use(helmet());
-app.use(cors({
-  origin: (origin, cb) => {
-    if (!origin) return cb(null, true);
-    const allowed = [
-      "https://app.faxnova.com",
-      "https://admin.faxnova.com",
-      "http://localhost:3000"
-    ];
-    if (allowed.includes(origin) || origin.endsWith(".faxnova.com")) {
-      return cb(null, true);
-    }
-    cb(new Error("CORS: Origin not allowed"));
-  },
-  credentials: true
-}));
+app.use(express.json());
 
-app.use(express.json({ limit: "10mb" }));
+// Controllers
+const faxController = require("./controllers/faxController");
+const inboundFaxController = require("./controllers/inboundFaxController");
 
-// Webhooks — NO AUTH (must be before protected routes)
-const webhookRoutes = require("./routes/webhookRoutes");
-app.use("/webhooks", webhookRoutes);
-
-// Protected API routes
-app.use("/api", require("./middleware/authMiddleware"));
-app.use("/api/auth", require("./routes/authRoutes"));
-app.use("/api/faxes", require("./routes/faxRoutes"));
-app.use("/api/providers", require("./routes/providerRoutes"));
-
-// Health check
-app.get("/health", (req, res) => {
-  res.json({ status: "ok", timestamp: new Date().toISOString() });
-});
-
-// Error handler — MUST be last
-app.use(errorHandler);
-
-// Start workers
+// Workers (auto-start)
 require("./workers/outboundFaxWorker");
-require("./workers/retryFaxWorker");
 require("./workers/webhookWorker");
+require("./workers/retryFaxWorker");
 
-// Database + Server
-mongoose.connect(process.env.MONGO_URI)
-  .then(() => {
-    const PORT = process.env.PORT || 3000;
-    app.listen(PORT, () => {
-      console.log(`🚀 FaxNova backend running on port ${PORT}`);
-    });
-  })
-  .catch(err => {
-    console.error("❌ MongoDB connection error:", err);
-    process.exit(1);
-  });
+// Routes
+app.post("/fax/send", faxController.sendFax);
+app.post("/fax/inbound/:provider", inboundFaxController.receiveFax);
+
+const PORT = process.env.PORT || 3000;
+
+app.listen(PORT, () => {
+  console.log(`FaxNova strict-mode backend running on port ${PORT}`);
+});
