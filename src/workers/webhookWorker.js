@@ -22,8 +22,10 @@ if (!connection.host || !connection.port) {
 /**
  * Webhook Worker — Strict‑Mode Edition
  *
- * Processes inbound fax jobs from inboundFaxQueue.
- * Normalizes → validates → persists inbound fax events.
+ * Processes inbound fax jobs:
+ * - provider selection
+ * - normalization
+ * - persistence
  */
 
 const webhookWorker = new Worker(
@@ -31,20 +33,23 @@ const webhookWorker = new Worker(
   async (job) => {
     const { provider, raw } = job.data;
 
-    // Provider selection
-    let adapter;
-    if (provider === "telnyx") adapter = telnyxInboundAdapter;
-    else if (provider === "sinch") adapter = sinchInboundAdapter;
-    else throw new ProviderError(`Unknown provider: ${provider}`);
+    const adapter =
+      provider === "telnyx"
+        ? telnyxInboundAdapter
+        : provider === "sinch"
+        ? sinchInboundAdapter
+        : null;
 
-    // Normalize inbound fax payload
+    if (!adapter) {
+      throw new ProviderError(`Unknown provider: ${provider}`);
+    }
+
     const normalized = adapter.normalizeInboundFax(raw);
 
     if (!normalized.ok) {
       throw new WebhookError(normalized.error);
     }
 
-    // Persist inbound fax event
     await FaxEventService.recordInbound(normalized);
 
     return { ok: true, providerFaxId: normalized.providerFaxId };
