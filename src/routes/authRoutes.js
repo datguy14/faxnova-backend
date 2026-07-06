@@ -2,52 +2,46 @@
 
 const express = require("express");
 const router = express.Router();
-const { z } = require("zod");
 
-const FaxNovaError = require("../errors/FaxNovaError");
-const authController = require("../controllers/authController");
+const bcrypt = require("bcryptjs");
+const jwt = require("jsonwebtoken");
 
-// Zod validation schema
-const authSchema = z.object({
-  email: z.string()
-    .email("Invalid email format")
-    .min(5, "Email too short")
-    .max(254, "Email too long")
-    .transform(e => e.toLowerCase().trim()),
+const User = require("../models/User");
 
-  password: z.string()
-    .min(8, "Password must be at least 8 characters")
-    .max(128, "Password too long")
-    .regex(/^\S+$/, "Password cannot contain spaces")
-});
-
-// Wrapper to validate input
-function validateAuth(req, res, next) {
-  try {
-    req.body = authSchema.parse(req.body);
-    next();
-  } catch (err) {
-    next(new FaxNovaError(err.errors?.[0]?.message || "Invalid credentials", 400));
-  }
-}
-
-// Register
-router.post("/register", validateAuth, async (req, res, next) => {
+router.post("/register", async (req, res, next) => {
   try {
     const { email, password } = req.body;
-    const result = await authController.register(email, password);
-    res.json(result);
+
+    const exists = await User.findOne({ email });
+    if (exists) return res.status(400).json({ error: "Email already registered" });
+
+    const hash = await bcrypt.hash(password, 12);
+
+    const user = await User.create({ email, password: hash });
+
+    res.json({ ok: true, userId: user._id });
   } catch (err) {
     next(err);
   }
 });
 
-// Login
-router.post("/login", validateAuth, async (req, res, next) => {
+router.post("/login", async (req, res, next) => {
   try {
     const { email, password } = req.body;
-    const result = await authController.login(email, password);
-    res.json(result);
+
+    const user = await User.findOne({ email });
+    if (!user) return res.status(400).json({ error: "Invalid credentials" });
+
+    const match = await bcrypt.compare(password, user.password);
+    if (!match) return res.status(400).json({ error: "Invalid credentials" });
+
+    const token = jwt.sign(
+      { userId: user._id },
+      process.env.JWT_SECRET,
+      { expiresIn: "7d" }
+    );
+
+    res.json({ ok: true, token });
   } catch (err) {
     next(err);
   }
