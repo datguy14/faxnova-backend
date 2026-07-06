@@ -1,25 +1,34 @@
-const allowedOrigins = [
-  "https://app.faxnova.com",
-  "https://admin.faxnova.com",
-  "http://localhost:3000"
-];
+// src/app.js — CommonJS Strict‑Mode Version
 
-const corsOptions = {
-  origin(origin, callback) {
-    // Allow workers, CLI tools, health checks, webhooks
-    if (!origin) return callback(null, true);
+const express = require("express");
+const cors = require("cors");
+const helmet = require("helmet");
+const dotenv = require("dotenv");
 
-    // Allow exact matches
-    if (allowedOrigins.includes(origin)) return callback(null, true);
+dotenv.config();
 
-    // Allow *.faxnova.com (Render previews, staging, future subdomains)
-    if (origin.endsWith(".faxnova.com")) return callback(null, true);
+const app = express();
 
-    return callback(new Error("CORS: Origin not allowed"));
-  },
-  credentials: true,
-  methods: ["GET", "POST", "PUT", "DELETE"],
-  allowedHeaders: ["Content-Type", "Authorization"]
-};
+// Security middleware
+app.use(helmet());
+app.use(
+  cors({
+    origin: (origin, cb) => {
+      if (!origin) return cb(null, true);
+      const allowed = [
+        "https://app.faxnova.com",
+        "https://admin.faxnova.com",
+        "http://localhost:3000"
+      ];
+      if (allowed.includes(origin) || origin.endsWith(".faxnova.com")) {
+        return cb(null, true);
+      }
+      cb(new Error("CORS: Origin not allowed"));
+    },
+    credentials: true
+  })
+);
 
-app.use(cors(corsOptions));
+app.use(express.json({ limit: "10mb" }));
+
+module.exports = app;
