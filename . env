@@ -1,0 +1,47 @@
+# -----------------------------
+# Core Application
+# -----------------------------
+NODE_ENV=development
+PORT=3000
+
+# -----------------------------
+# MongoDB
+# -----------------------------
+MONGO_URI=mongodb://localhost:27017/faxnova
+
+# -----------------------------
+# Redis (Codespaces / Local)
+# -----------------------------
+REDIS_HOST=localhost
+REDIS_PORT=6379
+
+# -----------------------------
+# Authentication
+# -----------------------------
+JWT_SECRET=supersecretjwtkey
+
+# -----------------------------
+# Telnyx Provider
+# -----------------------------
+TELNYX_API_KEY=your_telnyx_api_key
+TELNYX_WEBHOOK_SECRET=your_telnyx_webhook_secret
+
+# -----------------------------
+# Sinch Provider
+# -----------------------------
+SINCH_API_KEY=your_sinch_api_key
+SINCH_WEBHOOK_SECRET=your_sinch_webhook_secret
+
+# -----------------------------
+# Storage (S3 or Local)
+# -----------------------------
+S3_ACCESS_KEY=your_s3_access_key
+S3_SECRET_KEY=your_s3_secret_key
+S3_BUCKET=faxnova
+S3_REGION=us-east-1
+
+# -----------------------------
+# FaxNova Strict‑Mode
+# -----------------------------
+DEFAULT_REGION=us-east
+ALLOW_TEST_MODE=true
