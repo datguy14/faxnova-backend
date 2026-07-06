@@ -1,21 +1,40 @@
-// src/services/providerRouter.v2.js
+// src/services/providerRouter.v2.js — Strict‑Mode CommonJS Version
 
-const ProviderError = require("../errors/ProviderError");
+const providerOutageService = require("../services/providerOutageService");
+const providerPerformanceService = require("../services/providerPerformanceService");
 
-class ProviderRouter {
-  static pickOutboundProvider(provider) {
-    if (provider !== "telnyx" && provider !== "sinch") {
-      throw new ProviderError(`Unknown provider: ${provider}`);
-    }
-    return provider;
-  }
+exports.routeProvider = async ({ provider, region }) => {
+  // 1. Get provider health (UP, DOWN, DEGRADED)
+  const health = await providerOutageService.getProviderHealth(provider);
 
-  static pickInboundProvider(provider) {
-    if (provider !== "telnyx" && provider !== "sinch") {
-      throw new ProviderError(`Unknown provider: ${provider}`);
-    }
-    return provider;
-  }
-}
+  // 2. Convert health → outage penalty
+  const outagePenalty =
+    health.status === "DOWN"
+      ? 999
+      : health.status === "DEGRADED"
+      ? 1.5
+      : 0;
 
-module.exports = ProviderRouter;
+  // 3. Calculate provider performance score
+  const perf = await providerPerformanceService.calculateProviderPerformance({
+    logs: [],
+    billing: [],
+    health,
+    region
+  });
+
+  // 4. Convert performance → boost factor
+  const performanceBoost = perf.performanceScore / 50;
+
+  // 5. Final routing score
+  const score = outagePenalty + performanceBoost;
+
+  return {
+    provider,
+    region,
+    health,
+    outagePenalty,
+    performanceBoost,
+    score
+  };
+};
