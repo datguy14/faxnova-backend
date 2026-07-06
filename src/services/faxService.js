@@ -1,54 +1,22 @@
-// src/services/faxService.js — STRICT-MODE FINAL
+// src/services/faxService.js
 
-const inboundFaxService = require("./inboundFaxService");
-const outboundFaxService = require("./outboundFaxService");
-const faxStorageService = require("./faxStorageService");
-const faxQueueService = require("./faxQueueService");
+const OutboundFax = require("../models/OutboundFax");
+const FaxEventService = require("./FaxEventService");
 
-module.exports = {
-  /**
-   * Handle inbound fax (from provider → FaxNova)
-   */
-  async handleInboundFax(payload) {
-    // Normalize inbound fax
-    const normalized = await inboundFaxService.normalizeInbound(payload);
+exports.attachProviderResult = async ({ faxId, providerFaxId }) => {
+  const fax = await OutboundFax.findById(faxId);
+  if (!fax) throw new Error("Outbound fax not found");
 
-    // Store metadata + media
-    const stored = await faxStorageService.storeInbound(normalized);
+  fax.providerFaxId = providerFaxId;
+  await fax.save();
 
-    // Queue for processing
-    await faxQueueService.enqueueInbound(stored);
+  await FaxEventService.recordOutbound({
+    provider: fax.provider,
+    providerFaxId,
+    to: fax.to,
+    storageKey: fax.storageKey,
+    region: fax.region
+  });
 
-    return stored;
-  },
-
-  /**
-   * Handle outbound fax (FaxNova → provider)
-   */
-  async sendOutboundFax(payload) {
-    // Normalize outbound fax
-    const normalized = await outboundFaxService.normalizeOutbound(payload);
-
-    // Store metadata + media
-    const stored = await faxStorageService.storeOutbound(normalized);
-
-    // Queue for provider delivery
-    await faxQueueService.enqueueOutbound(stored);
-
-    return stored;
-  },
-
-  /**
-   * Retrieve fax metadata (from storage layer)
-   */
-  async getFax(id) {
-    return faxStorageService.getFax(id);
-  },
-
-  /**
-   * Delete fax (metadata + media)
-   */
-  async deleteFax(id) {
-    return faxStorageService.deleteFax(id);
-  }
+  return fax;
 };
