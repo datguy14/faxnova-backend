@@ -3,46 +3,25 @@
 const { Worker } = require("bullmq");
 
 const FaxEventService = require("../services/FaxEventService");
+const ProviderRouter = require("../services/providerRouter.v2");
 
 const telnyxInboundAdapter = require("../providers/telnyxInboundAdapter");
 const sinchInboundAdapter = require("../providers/sinchInboundAdapter");
 
-const ProviderError = require("../errors/ProviderError");
+const { connection } = require("../lib/redis");
 const WebhookError = require("../errors/WebhookError");
-
-const connection = {
-  host: process.env.REDIS_HOST,
-  port: Number(process.env.REDIS_PORT)
-};
-
-if (!connection.host || !connection.port) {
-  throw new Error("Missing Redis configuration for webhookWorker");
-}
-
-/**
- * Webhook Worker — Strict‑Mode Edition
- *
- * Processes inbound fax jobs:
- * - provider selection
- * - normalization
- * - persistence
- */
 
 const webhookWorker = new Worker(
   "inboundFaxQueue",
   async (job) => {
     const { provider, raw } = job.data;
 
-    const adapter =
-      provider === "telnyx"
-        ? telnyxInboundAdapter
-        : provider === "sinch"
-        ? sinchInboundAdapter
-        : null;
+    const selected = ProviderRouter.pickInboundProvider(provider);
 
-    if (!adapter) {
-      throw new ProviderError(`Unknown provider: ${provider}`);
-    }
+    const adapter =
+      selected === "telnyx"
+        ? telnyxInboundAdapter
+        : sinchInboundAdapter;
 
     const normalized = adapter.normalizeInboundFax(raw);
 
