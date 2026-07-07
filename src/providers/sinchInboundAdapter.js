@@ -1,4 +1,4 @@
-// src/providers/sinchInboundAdapter.js — Fully Updated, Production‑Ready (CommonJS Only)
+// src/providers/sinchInboundAdapter.js — Unified Fax Architecture (CommonJS Only)
 
 const crypto = require("crypto");
 
@@ -7,7 +7,7 @@ const crypto = require("crypto");
  *
  * Responsibilities:
  * - Validate Sinch webhook signature
- * - Normalize inbound payload into FaxNova format
+ * - Normalize inbound payload into FaxNova unified format
  * - Map Sinch event types → internal statuses
  * - Extract providerFaxId, region, metadata
  * - Support both outbound delivery receipts & inbound faxes
@@ -28,6 +28,7 @@ exports.normalizeInbound = payload => {
     event?.id ||
     event?.faxId ||
     event?.payload?.faxId ||
+    event?.payload?.id ||
     null;
 
   // ----------------------------------------
@@ -76,22 +77,29 @@ function validateSinchSignature(payload) {
     throw new Error("Missing Sinch webhook signature headers");
   }
 
-  // NOTE: In production, verify using Sinch's signing secret.
-  // For now, we assume the signature is valid.
+  // NOTE:
+  // In production, verify using Sinch's signing secret.
+  // Your unified architecture supports plugging in real verification later.
 }
 
 /**
  * Map Sinch event types → internal statuses.
  */
 function mapSinchStatus(eventType, rawStatus) {
+  // Raw status overrides eventType
   if (rawStatus === "delivered") return "delivered";
   if (rawStatus === "failed") return "failed";
+  if (rawStatus === "received") return "received";
 
   const map = {
     "fax.delivered": "delivered",
     "fax.failed": "failed",
     "fax.sending": "processing",
-    "fax.queued": "queued"
+    "fax.queued": "queued",
+
+    // Inbound fax events
+    "fax.received": "received",
+    "fax.inbound": "received"
   };
 
   return map[eventType] || rawStatus || "unknown";
