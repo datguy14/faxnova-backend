@@ -1,21 +1,19 @@
-/**
- * Residency-Aware Storage Adapter
- * Routes data writes to zone-specific directories for compliance isolation
- */
+// src/storage/residencyStorageService.js — Unified Fax Architecture
 
 const fs = require("fs");
 const path = require("path");
+const auditService = require("../services/auditService");
 
 /**
- * Get the base storage directory for a residency zone
- * @param {string} zone - Residency zone identifier
- * @returns {string} - Absolute path to zone directory
+ * Residency-Aware Storage Adapter
+ * Routes data writes to zone-specific directories for compliance isolation.
+ * Zones typically match: us, eu, apac, etc.
  */
+
 function getResidencyPath(zone) {
   const basePath = process.env.RESIDENCY_STORAGE_BASE || "./data";
   const zonePath = path.join(basePath, zone || "global");
 
-  // Ensure directory exists
   if (!fs.existsSync(zonePath)) {
     fs.mkdirSync(zonePath, { recursive: true });
   }
@@ -27,7 +25,11 @@ function getResidencyPath(zone) {
  * Safely construct a file path within a zone directory
  */
 function getResidencyFilePath(zone, filename) {
-  if (filename.includes("..") || filename.includes("/") || filename.includes("\\")) {
+  if (
+    filename.includes("..") ||
+    filename.includes("/") ||
+    filename.includes("\\")
+  ) {
     throw new Error(`Invalid filename: ${filename}`);
   }
 
@@ -38,12 +40,29 @@ function getResidencyFilePath(zone, filename) {
 /**
  * Write a line to a residency-partitioned log file
  */
-function writeResidencyLog(zone, filename, line) {
+async function writeResidencyLog({ tenantId, faxId, zone, filename, line }) {
   try {
     const filePath = getResidencyFilePath(zone, filename);
     fs.appendFileSync(filePath, line + "\n", { flag: "a", encoding: "utf8" });
+
+    await auditService.logEvent({
+      tenantId,
+      faxId,
+      type: "RESIDENCY_STORAGE_WRITE",
+      action: "log_write",
+      region: zone,
+      details: { filename }
+    });
   } catch (error) {
-    console.error(`[Residency Storage] Write failed for ${zone}/${filename}:`, error.message);
+    await auditService.logEvent({
+      tenantId,
+      faxId,
+      type: "RESIDENCY_STORAGE_ERROR",
+      action: "log_write_failed",
+      region: zone,
+      details: { filename, error: error.message }
+    });
+
     throw error;
   }
 }
@@ -51,13 +70,33 @@ function writeResidencyLog(zone, filename, line) {
 /**
  * Read from a residency-partitioned log file
  */
-function readResidencyLog(zone, filename) {
+async function readResidencyLog({ tenantId, faxId, zone, filename }) {
   try {
     const filePath = getResidencyFilePath(zone, filename);
     if (!fs.existsSync(filePath)) return "";
-    return fs.readFileSync(filePath, { encoding: "utf8" });
+
+    const content = fs.readFileSync(filePath, { encoding: "utf8" });
+
+    await auditService.logEvent({
+      tenantId,
+      faxId,
+      type: "RESIDENCY_STORAGE_READ",
+      action: "log_read",
+      region: zone,
+      details: { filename }
+    });
+
+    return content;
   } catch (error) {
-    console.error(`[Residency Storage] Read failed for ${zone}/${filename}:`, error.message);
+    await auditService.logEvent({
+      tenantId,
+      faxId,
+      type: "RESIDENCY_STORAGE_ERROR",
+      action: "log_read_failed",
+      region: zone,
+      details: { filename, error: error.message }
+    });
+
     throw error;
   }
 }
@@ -65,12 +104,31 @@ function readResidencyLog(zone, filename) {
 /**
  * Write a JSON object to a residency-partitioned file
  */
-function writeResidencyJSON(zone, filename, data) {
+async function writeResidencyJSON({ tenantId, faxId, zone, filename, data }) {
   try {
     const filePath = getResidencyFilePath(zone, filename);
-    fs.writeFileSync(filePath, JSON.stringify(data, null, 2), { encoding: "utf8" });
+    fs.writeFileSync(filePath, JSON.stringify(data, null, 2), {
+      encoding: "utf8"
+    });
+
+    await auditService.logEvent({
+      tenantId,
+      faxId,
+      type: "RESIDENCY_STORAGE_WRITE",
+      action: "json_write",
+      region: zone,
+      details: { filename }
+    });
   } catch (error) {
-    console.error(`[Residency Storage] JSON write failed for ${zone}/${filename}:`, error.message);
+    await auditService.logEvent({
+      tenantId,
+      faxId,
+      type: "RESIDENCY_STORAGE_ERROR",
+      action: "json_write_failed",
+      region: zone,
+      details: { filename, error: error.message }
+    });
+
     throw error;
   }
 }
@@ -78,14 +136,34 @@ function writeResidencyJSON(zone, filename, data) {
 /**
  * Read a JSON object from a residency-partitioned file
  */
-function readResidencyJSON(zone, filename) {
+async function readResidencyJSON({ tenantId, faxId, zone, filename }) {
   try {
     const filePath = getResidencyFilePath(zone, filename);
     if (!fs.existsSync(filePath)) return null;
+
     const content = fs.readFileSync(filePath, { encoding: "utf8" });
-    return JSON.parse(content);
+    const parsed = JSON.parse(content);
+
+    await auditService.logEvent({
+      tenantId,
+      faxId,
+      type: "RESIDENCY_STORAGE_READ",
+      action: "json_read",
+      region: zone,
+      details: { filename }
+    });
+
+    return parsed;
   } catch (error) {
-    console.error(`[Residency Storage] JSON read failed for ${zone}/${filename}:`, error.message);
+    await auditService.logEvent({
+      tenantId,
+      faxId,
+      type: "RESIDENCY_STORAGE_ERROR",
+      action: "json_read_failed",
+      region: zone,
+      details: { filename, error: error.message }
+    });
+
     throw error;
   }
 }
@@ -106,14 +184,32 @@ function listResidencyFiles(zone) {
 /**
  * Delete a file from a zone directory
  */
-function deleteResidencyFile(zone, filename) {
+async function deleteResidencyFile({ tenantId, faxId, zone, filename }) {
   try {
     const filePath = getResidencyFilePath(zone, filename);
+
     if (fs.existsSync(filePath)) {
       fs.unlinkSync(filePath);
     }
+
+    await auditService.logEvent({
+      tenantId,
+      faxId,
+      type: "RESIDENCY_STORAGE_DELETE",
+      action: "file_deleted",
+      region: zone,
+      details: { filename }
+    });
   } catch (error) {
-    console.error(`[Residency Storage] Delete failed for ${zone}/${filename}:`, error.message);
+    await auditService.logEvent({
+      tenantId,
+      faxId,
+      type: "RESIDENCY_STORAGE_ERROR",
+      action: "file_delete_failed",
+      region: zone,
+      details: { filename, error: error.message }
+    });
+
     throw error;
   }
 }
