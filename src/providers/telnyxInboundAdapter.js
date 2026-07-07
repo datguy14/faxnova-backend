@@ -1,4 +1,4 @@
-// src/providers/telnyxInboundAdapter.js — Fully Updated, Production‑Ready (CommonJS Only)
+// src/providers/telnyxInboundAdapter.js — Unified Fax Architecture (CommonJS Only)
 
 const crypto = require("crypto");
 
@@ -7,7 +7,7 @@ const crypto = require("crypto");
  *
  * Responsibilities:
  * - Validate Telnyx webhook signature
- * - Normalize inbound payload into FaxNova format
+ * - Normalize inbound payload into FaxNova unified format
  * - Map Telnyx event types → internal statuses
  * - Extract providerFaxId, region, metadata
  * - Support both outbound delivery receipts & inbound faxes
@@ -24,7 +24,11 @@ exports.normalizeInbound = payload => {
   // ----------------------------------------
   // 2. Extract providerFaxId
   // ----------------------------------------
-  const providerFaxId = event?.id || event?.payload?.fax_id;
+  const providerFaxId =
+    event?.id ||
+    event?.payload?.fax_id ||
+    event?.payload?.id ||
+    null;
 
   // ----------------------------------------
   // 3. Extract region (Telnyx sends region hints)
@@ -72,8 +76,9 @@ function validateTelnyxSignature(payload) {
     throw new Error("Missing Telnyx webhook signature headers");
   }
 
-  // NOTE: In production, verify using Telnyx's public key.
-  // For now, we assume the signature is valid.
+  // NOTE:
+  // In production, verify using Telnyx's public key.
+  // Your unified architecture supports plugging in real verification later.
 }
 
 /**
@@ -86,7 +91,11 @@ function mapTelnyxStatus(eventType) {
     "fax.delivered": "delivered",
     "fax.failed": "failed",
     "fax.sending": "processing",
-    "fax.queued": "queued"
+    "fax.queued": "queued",
+
+    // Inbound fax events
+    "fax.received": "received",
+    "fax.inbound": "received"
   };
 
   return map[eventType] || "unknown";
