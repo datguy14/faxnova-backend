@@ -1,13 +1,13 @@
-// src/services/webhookService.js — Fully Updated, Production‑Ready (CommonJS Only)
+// src/services/webhookService.js — Updated for Unified Fax Model (CommonJS Only)
 
-const OutboundFax = require("../models/OutboundFax");
-const InboundFax = require("../models/InboundFax");
+const Fax = require("../models/Fax");
 
 const telnyxInbound = require("../providers/telnyxInboundAdapter");
 const sinchInbound = require("../providers/sinchInboundAdapter");
 
 const idempotencyService = require("./idempotencyService");
 const auditService = require("./auditService");
+const retryFaxService = require("./retryFaxService");
 
 /**
  * Process inbound webhook from Telnyx or Sinch.
@@ -15,8 +15,8 @@ const auditService = require("./auditService");
  * Responsibilities:
  * - Validate provider signature
  * - Normalize provider payload
- * - Update outbound fax status
- * - Create inbound fax record
+ * - Update unified Fax record (inbound + outbound)
+ * - Trigger failover if outbound failed
  * - Update idempotency state
  * - Audit logging
  */
@@ -44,48 +44,80 @@ exports.processWebhook = async payload => {
   } = normalized;
 
   // ----------------------------------------
-  // 2. Update outbound fax by providerFaxId
+  // 2. Load unified Fax record
+  //    Prefer internal faxId → fallback to providerFaxId
   // ----------------------------------------
-  const outbound = await OutboundFax.findOne({ providerFaxId });
+  let fax = null;
 
-  if (outbound) {
-    outbound.webhookStatus = providerStatus;
-    outbound.webhookRaw = raw;
+  if (faxId) {
+    fax = await Fax.findById(faxId);
+  }
 
-    // Status mapping
-    if (providerStatus === "delivered") outbound.status = "sent";
-    if (providerStatus === "failed") outbound.status = "failed";
+  if (!fax) {
+    fax = await Fax.findOne({ providerFaxId });
+  }
 
-    await outbound.save();
+  if (!fax) {
+    throw new Error(`Webhook received for unknown fax: ${providerFaxId}`);
+  }
 
-    // Idempotency update
-    await idempotencyService.updateStatus(outbound._id, outbound.status);
+  // ----------------------------------------
+  // 3. Update unified Fax record with webhook data
+  // ----------------------------------------
+  fax.webhookRaw = raw;
+  fax.webhookStatus = providerStatus;
 
-    // Audit log
+  // Status mapping
+  if (providerStatus === "delivered") fax.status = "delivered";
+  if (providerStatus === "failed") fax.status = "failed";
+  if (providerStatus === "queued") fax.status = "queued";
+  if (providerStatus === "processing") fax.status = "processing";
+
+  await fax.save();
+
+  // ----------------------------------------
+  // 4. Idempotency update
+  // ----------------------------------------
+  await idempotencyService.updateStatus(fax._id, fax.status);
+
+  // ----------------------------------------
+  // 5. Audit log
+  // ----------------------------------------
+  await auditService.logEvent({
+    type: "PROVIDER_WEBHOOK_RECEIVED",
+    faxId: fax._id,
+    provider,
+    providerStatus,
+    region,
+    tenantId: fax.tenantId
+  });
+
+  // ----------------------------------------
+  // 6. Failover trigger (outbound only)
+  // ----------------------------------------
+  if (
+    fax.direction === "outbound" &&
+    providerStatus === "failed" &&
+    fax.failoverProvider
+  ) {
+    await retryFaxService.enqueueFailoverSend({
+      faxId: fax._id,
+      failoverProvider: fax.failoverProvider,
+      region: fax.region
+    });
+
     await auditService.logEvent({
-      type: "OUTBOUND_WEBHOOK_UPDATE",
-      faxId: outbound._id,
+      type: "OUTBOUND_FAX_FAILOVER_TRIGGERED_BY_WEBHOOK",
+      faxId: fax._id,
       provider,
-      providerStatus,
-      region,
-      tenantId: outbound.tenantId
+      failoverProvider: fax.failoverProvider,
+      region: fax.region,
+      tenantId: fax.tenantId
     });
   }
 
   // ----------------------------------------
-  // 3. Store inbound fax (delivery receipt or inbound fax)
-  // ----------------------------------------
-  await InboundFax.create({
-    faxId,
-    provider,
-    providerFaxId,
-    providerStatus,
-    region,
-    raw
-  });
-
-  // ----------------------------------------
-  // 4. Return normalized webhook for worker
+  // 7. Return normalized webhook for worker
   // ----------------------------------------
   return normalized;
 };
