@@ -1,4 +1,4 @@
-// src/services/inboundFaxService.js
+// src/services/inboundFaxService.js — Updated for Unified Fax Model (CommonJS Only)
 
 const faxStorageService = require("./faxStorageService");
 const dataResidencyGuard = require("./dataResidencyGuard");
@@ -24,25 +24,33 @@ module.exports = {
     method,
     apiTier
   }) {
+    // ----------------------------------------
     // 1. Residency guard
+    // ----------------------------------------
     await dataResidencyGuard.enforceInboundResidency({
       tenantId,
       sourceRegion
     });
 
-    // 2. Idempotency guard (optional but recommended)
+    // ----------------------------------------
+    // 2. Idempotency guard
+    // ----------------------------------------
     await idempotencyGuard.check({
       tenantId,
       idempotencyKey
     });
 
+    // ----------------------------------------
     // 3. Store inbound PDF
+    // ----------------------------------------
     const storageResult = await faxStorageService.storeInboundFax({
       tenantId,
       pdfBuffer
     });
 
-    // 4. Create fax record
+    // ----------------------------------------
+    // 4. Create unified Fax record (direction: inbound)
+    // ----------------------------------------
     const faxRecord = await Fax.create({
       tenantId,
       from,
@@ -54,7 +62,9 @@ module.exports = {
       createdAt: new Date()
     });
 
+    // ----------------------------------------
     // 5. Audit event
+    // ----------------------------------------
     audit.logEvent({
       tenantId,
       type: "fax_inbound",
@@ -71,6 +81,9 @@ module.exports = {
       }
     });
 
+    // ----------------------------------------
+    // 6. Return unified response
+    // ----------------------------------------
     return {
       success: true,
       faxId: faxRecord._id,
