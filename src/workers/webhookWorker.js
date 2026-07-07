@@ -1,10 +1,10 @@
-// src/workers/webhookWorker.js — Fully Updated, Production‑Ready (CommonJS Only)
+// src/workers/webhookWorker.js — Updated for Unified Fax Model (CommonJS Only)
 
 const { Worker } = require("bullmq");
 const { connection } = require("../lib/redis");
 
 const webhookService = require("../services/webhookService");
-const OutboundFax = require("../models/OutboundFax");
+const Fax = require("../models/Fax");
 const idempotencyService = require("../services/idempotencyService");
 const auditService = require("../services/auditService");
 const billingService = require("../services/billingService");
@@ -24,9 +24,9 @@ module.exports = new Worker(
       const { faxId, providerStatus, provider, raw } = normalized;
 
       // ----------------------------------------
-      // 2. Load fax record
+      // 2. Load unified Fax record
       // ----------------------------------------
-      const fax = await OutboundFax.findById(faxId);
+      const fax = await Fax.findById(faxId);
       if (!fax) {
         throw new Error(`Webhook received for unknown fax ${faxId}`);
       }
@@ -38,15 +38,12 @@ module.exports = new Worker(
       fax.webhookStatus = providerStatus;
 
       // ----------------------------------------
-      // 4. Status transitions
+      // 4. Status transitions (unified model)
       // ----------------------------------------
-      if (providerStatus === "delivered") {
-        fax.status = "sent";
-      }
-
-      if (providerStatus === "failed") {
-        fax.status = "failed";
-      }
+      if (providerStatus === "delivered") fax.status = "delivered";
+      if (providerStatus === "failed") fax.status = "failed";
+      if (providerStatus === "queued") fax.status = "queued";
+      if (providerStatus === "processing") fax.status = "processing";
 
       await fax.save();
 
@@ -77,9 +74,13 @@ module.exports = new Worker(
       });
 
       // ----------------------------------------
-      // 8. Failover trigger (provider-level failure)
+      // 8. Failover trigger (outbound only)
       // ----------------------------------------
-      if (providerStatus === "failed" && fax.failoverProvider) {
+      if (
+        fax.direction === "outbound" &&
+        providerStatus === "failed" &&
+        fax.failoverProvider
+      ) {
         await retryFaxService.enqueueFailoverSend({
           faxId,
           failoverProvider: fax.failoverProvider,
