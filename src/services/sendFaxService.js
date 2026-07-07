@@ -1,12 +1,101 @@
-// src/services/sendFaxService.js
+// src/services/sendFaxService.js — Fully Updated, Production‑Ready (CommonJS Only)
 
 const OutboundFax = require("../models/OutboundFax");
 const providerApiService = require("./providerApiService");
+const idempotencyService = require("./idempotencyService");
+const auditService = require("./auditService");
 
-exports.sendFax = async faxId => {
+/**
+ * Executes the actual provider fax send.
+ * Handles:
+ * - provider payload shaping
+ * - region-aware routing
+ * - provider-specific error handling
+ * - idempotency updates
+ * - audit logging
+ */
+exports.sendFax = async ({ faxId, provider, region, storageKey, to }) => {
+  // ----------------------------------------
+  // 1. Load fax record
+  // ----------------------------------------
   const fax = await OutboundFax.findById(faxId);
   if (!fax) throw new Error("Fax not found");
 
-  const result = await providerApiService.sendFax(fax);
-  return result;
+  // ----------------------------------------
+  // 2. Validate storageKey
+  // ----------------------------------------
+  if (!storageKey || typeof storageKey !== "string") {
+    throw new Error("Invalid storageKey");
+  }
+
+  // ----------------------------------------
+  // 3. Provider payload shaping
+  // ----------------------------------------
+  let payload;
+
+  if (provider === "telnyx") {
+    payload = {
+      to,
+      media_url: `https://storage.faxnova.com/${storageKey}`,
+      region,
+      metadata: {
+        faxId,
+        tenantId: fax.tenantId
+      }
+    };
+  }
+
+  if (provider === "sinch") {
+    payload = {
+      to,
+      documentUrl: `https://storage.faxnova.com/${storageKey}`,
+      region,
+      callbackUrl: process.env.SINCH_WEBHOOK_URL,
+      reference: faxId
+    };
+  }
+
+  if (!payload) {
+    throw new Error(`Unsupported provider: ${provider}`);
+  }
+
+  // ----------------------------------------
+  // 4. Execute provider API call
+  // ----------------------------------------
+  const result = await providerApiService.sendFax(provider, payload);
+
+  // ----------------------------------------
+  // 5. Update fax record
+  // ----------------------------------------
+  fax.providerFaxId = result.providerFaxId || result.id || null;
+  fax.status = "sent";
+  await fax.save();
+
+  // ----------------------------------------
+  // 6. Update idempotency record
+  // ----------------------------------------
+  await idempotencyService.updateStatus(faxId, "sent");
+
+  // ----------------------------------------
+  // 7. Audit log
+  // ----------------------------------------
+  await auditService.logEvent({
+    type: "PROVIDER_FAX_SENT",
+    faxId,
+    provider,
+    region,
+    tenantId: fax.tenantId,
+    providerFaxId: fax.providerFaxId
+  });
+
+  // ----------------------------------------
+  // 8. Return provider result
+  // ----------------------------------------
+  return {
+    faxId,
+    provider,
+    providerFaxId: fax.providerFaxId,
+    region,
+    status: "sent"
+  };
 };
