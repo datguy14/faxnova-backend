@@ -1,6 +1,6 @@
-// src/services/sendFaxService.js — Fully Updated, Production‑Ready (CommonJS Only)
+// src/services/sendFaxService.js — Updated for Unified Fax Model (CommonJS Only)
 
-const OutboundFax = require("../models/OutboundFax");
+const Fax = require("../models/Fax");
 const providerApiService = require("./providerApiService");
 const idempotencyService = require("./idempotencyService");
 const auditService = require("./auditService");
@@ -16,9 +16,9 @@ const auditService = require("./auditService");
  */
 exports.sendFax = async ({ faxId, provider, region, storageKey, to }) => {
   // ----------------------------------------
-  // 1. Load fax record
+  // 1. Load unified Fax record
   // ----------------------------------------
-  const fax = await OutboundFax.findById(faxId);
+  const fax = await Fax.findById(faxId);
   if (!fax) throw new Error("Fax not found");
 
   // ----------------------------------------
@@ -65,10 +65,13 @@ exports.sendFax = async ({ faxId, provider, region, storageKey, to }) => {
   const result = await providerApiService.sendFax(provider, payload);
 
   // ----------------------------------------
-  // 5. Update fax record
+  // 5. Update unified Fax record
   // ----------------------------------------
   fax.providerFaxId = result.providerFaxId || result.id || null;
   fax.status = "sent";
+  fax.provider = provider;
+  fax.region = region;
+
   await fax.save();
 
   // ----------------------------------------
