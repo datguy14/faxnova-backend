@@ -3,92 +3,39 @@ const mongoose = require("mongoose");
 const FaxEventSchema = new mongoose.Schema(
   {
     // Multi‑tenant SaaS
-    tenantId: {
-      type: String,
-      required: true,
-      index: true
-    },
+    tenantId: { type: String, required: true, index: true },
 
-    // Reference to unified Fax model
-    faxId: {
-      type: mongoose.Schema.Types.ObjectId,
-      ref: "Fax",
-      required: true,
-      index: true
-    },
+    // Optional link to Fax record
+    faxId: { type: String, index: true },
 
-    // High‑level event category
-    type: {
-      type: String,
-      required: true,
-      index: true
-      // Examples:
-      // PROVIDER_WEBHOOK_RECEIVED
-      // OUTBOUND_FAX_SENT
-      // INBOUND_FAX_RECEIVED
-      // OUTBOUND_FAX_FAILOVER_TRIGGERED
-      // BILLING_USAGE_EVENT
-      // RESIDENCY_CHECK
-      // IDEMPOTENCY_CHECK
-    },
+    // Event type (billing, webhook, failover, inbound, outbound, etc.)
+    type: { type: String, required: true, index: true },
 
-    // Optional fine‑grained action
-    action: {
-      type: String,
-      default: null
-      // Examples:
-      // fax_sent
-      // fax_received
-      // failover_triggered
-      // webhook_processed
-    },
+    // Optional action (fax_sent, fax_received, webhook_event, etc.)
+    action: { type: String, default: null },
 
-    // Provider context (optional)
-    provider: {
-      type: String,
-      default: null,
-      index: true
-      // telnyx | sinch | null
-    },
+    // Provider (telnyx | sinch)
+    provider: { type: String, default: null, index: true },
 
-    // Provider status (optional)
-    providerStatus: {
-      type: String,
-      default: null,
-      index: true
-      // delivered | failed | queued | processing | received | null
-    },
+    // Provider status (delivered, failed, queued, processing, received)
+    providerStatus: { type: String, default: null, index: true },
 
-    // Region context (optional)
-    region: {
-      type: String,
-      default: null,
-      index: true
-      // us | eu | apac | etc.
-    },
+    // Region (us, eu, apac, etc.)
+    region: { type: String, default: null, index: true },
 
-    // Arbitrary JSON payload
-    details: {
-      type: mongoose.Schema.Types.Mixed,
-      default: {}
-    },
+    // Arbitrary details (metadata, raw webhook, failover info, etc.)
+    details: { type: mongoose.Schema.Types.Mixed, default: {} },
 
-    createdAt: {
-      type: Date,
-      default: () => new Date(),
-      index: true
-    }
+    // Timestamp of event
+    timestamp: { type: Date, default: Date.now, index: true }
   },
-  {
-    versionKey: false,
-    timestamps: false // we use createdAt only
-  }
+  { timestamps: false }
 );
 
-// High‑performance indexes for analytics + SLA dashboards
-FaxEventSchema.index({ tenantId: 1, type: 1, createdAt: -1 });
-FaxEventSchema.index({ faxId: 1, type: 1 });
-FaxEventSchema.index({ provider: 1, providerStatus: 1 });
-FaxEventSchema.index({ region: 1, type: 1 });
+// High‑performance indexes for analytics, SLA dashboards, billing
+FaxEventSchema.index({ tenantId: 1, type: 1, timestamp: -1 });
+FaxEventSchema.index({ faxId: 1, type: 1, timestamp: -1 });
+FaxEventSchema.index({ provider: 1, providerStatus: 1, timestamp: -1 });
+FaxEventSchema.index({ region: 1, type: 1, timestamp: -1 });
 
 module.exports = mongoose.model("FaxEvent", FaxEventSchema);
