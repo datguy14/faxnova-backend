@@ -1,121 +1,96 @@
 // src/services/sendFaxService.js — Unified Fax Architecture (CommonJS Only)
 
-const residencyGuard = require("../guards/residencyGuard");
-const idempotencyGuard = require("../guards/idempotencyGuard");
+const OutboundFax = require("../models/OutboundFax");
 const faxStorageService = require("../storage/faxStorageService");
 const providerApiService = require("../providers/providerApiService");
 const auditService = require("./auditService");
 const billingService = require("./billingService");
-const Fax = require("../models/Fax");
 
 module.exports = {
   /**
-   * Unified outbound fax pipeline.
-   * Called by outboundFaxController or outboundFaxQueue worker.
+   * Unified outbound fax send pipeline.
+   * Called ONLY by outboundFaxWorker.
+   *
+   * Responsibilities:
+   * - load PDF from storageKey
+   * - send via provider API
+   * - update OutboundFax record
+   * - audit + billing
    */
   async sendFax({
+    faxId,
     tenantId,
-    idempotencyKey,
-    to,
-    from,
-    region,
     provider,
-    failoverProvider,
-    pdfBuffer,
-    metadata = {}
+    region,
+    storageKey,
+    idempotencyKey,
+    to
   }) {
-    // ----------------------------------------
-    // 1. Residency guard
-    // ----------------------------------------
-    await residencyGuard.ensureOutboundRegion({
-      tenantId,
-      region
-    });
+    // ---------------------------------------------------------
+    // 1. Load outbound fax record
+    // ---------------------------------------------------------
+    const fax = await OutboundFax.findById(faxId);
+    if (!fax) {
+      throw new Error(`sendFaxService: Fax not found: ${faxId}`);
+    }
 
-    // ----------------------------------------
-    // 2. Idempotency guard
-    // ----------------------------------------
-    await idempotencyGuard.ensureUnique({
-      tenantId,
-      faxId: null, // fax not created yet
-      idempotencyKey
-    });
+    // ---------------------------------------------------------
+    // 2. Load PDF from storage
+    // ---------------------------------------------------------
+    const pdfBuffer = await faxStorageService.loadFax(storageKey);
+    if (!pdfBuffer) {
+      throw new Error(`sendFaxService: Failed to load PDF for ${faxId}`);
+    }
 
-    // ----------------------------------------
-    // 3. Store outbound PDF
-    // ----------------------------------------
-    const storageResult = await faxStorageService.storeFax({
-      tenantId,
-      faxId: null,
-      buffer: pdfBuffer,
-      filename: `outbound_${Date.now()}.pdf`,
-      region
-    });
-
-    // ----------------------------------------
-    // 4. Create unified Fax record (direction: outbound)
-    // ----------------------------------------
-    const faxRecord = await Fax.create({
-      tenantId,
-      to,
-      from,
-      provider,
-      failoverProvider,
-      region,
-      direction: "outbound",
-      storageKey: storageResult.storageKey,
-      status: "queued",
-      metadata,
-      createdAt: new Date()
-    });
-
-    // ----------------------------------------
-    // 5. Send fax via provider API
-    // ----------------------------------------
+    // ---------------------------------------------------------
+    // 3. Send fax via provider API
+    // ---------------------------------------------------------
     const providerResult = await providerApiService.sendFax({
       provider,
       to,
-      from,
-      storageKey: faxRecord.storageKey,
-      faxId: faxRecord._id.toString(), // embed internal faxId in metadata
+      storageKey,
+      buffer: pdfBuffer,
+      faxId: faxId.toString(),
       region
     });
 
-    faxRecord.providerFaxId = providerResult.providerFaxId;
-    faxRecord.status = "processing";
-    await faxRecord.save();
+    // ---------------------------------------------------------
+    // 4. Update fax record
+    // ---------------------------------------------------------
+    fax.providerFaxId = providerResult.providerFaxId;
+    fax.status = "processing";
+    await fax.save();
 
-    // ----------------------------------------
-    // 6. Billing hook (outbound send)
-    // ----------------------------------------
+    // ---------------------------------------------------------
+    // 5. Billing hook (outbound send)
+    // ---------------------------------------------------------
     await billingService.trackOutboundSend({
-      faxId: faxRecord._id
+      faxId
     });
 
-    // ----------------------------------------
-    // 7. Audit log
-    // ----------------------------------------
+    // ---------------------------------------------------------
+    // 6. Audit log
+    // ---------------------------------------------------------
     await auditService.logEvent({
       tenantId,
-      faxId: faxRecord._id,
+      faxId,
       type: "OUTBOUND_FAX_SENT",
-      action: "fax_sent",
       provider,
       providerStatus: "queued",
       region,
       details: {
         to,
-        from,
-        providerFaxId: providerResult.providerFaxId
+        providerFaxId: providerResult.providerFaxId,
+        storageKey
       }
     });
 
-    // ----------------------------------------
-    // 8. Return unified response
-    // ----------------------------------------
+    // ---------------------------------------------------------
+    // 7. Unified response
+    // ---------------------------------------------------------
     return {
       success: true,
-      faxId: faxRecord._id,
+      faxId,
       provider,
       providerFaxId: providerResult.providerFaxId,
       status: "processing"
