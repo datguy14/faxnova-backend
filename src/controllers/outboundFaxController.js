@@ -1,97 +1,59 @@
 // src/controllers/outboundFaxController.js — Unified Fax Architecture (CommonJS Only)
 
-const outboundFaxQueue = require("../queues/outboundFaxQueue");
-const auditService = require("../services/auditService");
+const outboundFaxService = require("../services/outboundFaxService");
+const OutboundFax = require("../models/OutboundFax");
 
 module.exports = {
-  /**
-   * HTTP endpoint → enqueue outbound fax job
-   *
-   * Responsibilities:
-   * - Validate request payload
-   * - Push job into outboundFaxQueue
-   * - Log audit event
-   * - Return unified response
-   */
-  async send(req, res) {
+  async sendFax(req, res) {
     try {
+      const tenantId = req.tenantId; // from apiKeyGuard
       const {
-        tenantId,
-        idempotencyKey,
         to,
-        from,
+        storageKey,
+        residencyZone,
+        tier,
         region,
-        provider,
-        failoverProvider,
-        metadata
+        providerOverride,
+        idempotencyKey
       } = req.body;
 
-      const pdfBuffer = req.file?.buffer;
-
-      if (!pdfBuffer) {
-        return res.status(400).json({
-          success: false,
-          error: "Missing PDF file buffer"
-        });
-      }
-
-      // ----------------------------------------
-      // 1. Enqueue outbound fax job
-      // ----------------------------------------
-      const job = await outboundFaxQueue.add("sendFax", {
-        tenantId,
-        idempotencyKey,
+      const result = await outboundFaxService.processOutboundFax({
         to,
-        from,
+        storageKey,
+        residencyZone,
+        tier,
         region,
-        provider,
-        failoverProvider,
-        pdfBuffer,
-        metadata
-      });
-
-      // ----------------------------------------
-      // 2. Audit log
-      // ----------------------------------------
-      await auditService.logEvent({
+        providerOverride,
         tenantId,
-        type: "OUTBOUND_FAX_ENQUEUED",
-        action: "controller_enqueue",
-        provider,
-        region,
-        details: {
-          to,
-          from,
-          failoverProvider,
-          jobId: job.id
-        }
+        idempotencyKey
       });
 
-      // ----------------------------------------
-      // 3. Unified response
-      // ----------------------------------------
-      return res.json({
-        success: true,
-        queued: true,
-        jobId: job.id,
-        provider,
-        region
+      res.json(result);
+    } catch (err) {
+      res.status(500).json({ error: err.message });
+    }
+  },
+
+  async getFaxStatus(req, res) {
+    try {
+      const { faxId } = req.params;
+      const fax = await OutboundFax.findById(faxId);
+      if (!fax) return res.status(404).json({ error: "Fax not found" });
+
+      res.json({
+        _id: fax._id,
+        status: fax.status,
+        provider: fax.provider,
+        providerFaxId: fax.providerFaxId,
+        region: fax.region
       });
     } catch (err) {
-      console.error("OutboundFaxController error:", err.message);
-
-      await auditService.logEvent({
-        type: "OUTBOUND_FAX_CONTROLLER_ERROR",
-        tenantId: req.body?.tenantId || null,
-        provider: req.body?.provider || null,
-        region: req.body?.region || null,
-        details: { error: err.message }
-      });
-
-      return res.status(500).json({
-        success: false,
-        error: err.message
-      });
+      res.status(500).json({ error: err.message });
     }
+  },
+
+  async retryFax(req, res) {
+    // optional: can hook into retryFaxService if you want manual retries
+    res.status(501).json({ error: "Retry not implemented yet" });
   }
 };
