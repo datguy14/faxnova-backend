@@ -1,50 +1,23 @@
-// src/providers/telnyxWebhookAdapter.js — Unified Fax Architecture (CommonJS Only)
+// src/providers/telnyxWebhookAdapter.js
+// Telnyx Webhook Adapter — Strict‑Mode
 
-module.exports = {
-  normalize(raw) {
-    try {
-      const event = raw.data.event_type;
-      const payload = raw.data.payload;
+const webhookQueue = require("../queues/webhookQueue");
+const signatureGuard = require("../middleware/webhookSignatureGuard");
 
-      let eventType = null;
+module.exports = async function telnyxWebhook(req, res) {
+  try {
+    signatureGuard(req, res, () => {});
 
-      switch (event) {
-        case "fax.delivered":
-          eventType = "outbound_delivered";
-          break;
+    const event = req.body;
 
-        case "fax.failed":
-          eventType = "outbound_failed";
-          break;
+    await webhookQueue.add("webhook", {
+      provider: "telnyx",
+      event
+    });
 
-        case "fax.error":
-          eventType = "provider_error";
-          break;
-
-        case "fax.delivery_receipt":
-          eventType = "delivery_receipt";
-          break;
-
-        case "fax.failover":
-          eventType = "failover_trigger";
-          break;
-
-        default:
-          return null;
-      }
-
-      return {
-        eventType,
-        provider: "telnyx",
-        faxId: payload.customer_reference || null,
-        tenantId: payload.customer_reference || null,
-        providerStatus: event,
-        failoverProvider: payload.failover_provider || null,
-        region: "us",
-        raw
-      };
-    } catch (err) {
-      return null;
-    }
+    res.json({ ok: true });
+  } catch (err) {
+    console.error("❌ Telnyx webhook error:", err);
+    res.status(400).json({ ok: false, error: err.message });
   }
 };
