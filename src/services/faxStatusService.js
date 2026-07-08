@@ -1,48 +1,49 @@
 // src/services/faxStatusService.js
+// Unified Fax Status Service — Strict‑Mode
 
-const OutboundFax = require("../models/OutboundFax");
-const providerOutageService = require("./providerOutageService");
-const providerPerformanceService = require("./providerPerformanceService");
-const FaxNovaError = require("../errors/FaxNovaError");
+const telnyx = require("../providers/telnyxProvider");
+const sinch = require("../providers/sinchProvider");
+const normalizeStatus = require("../utils/normalizeStatus");
 
-async function updateFaxStatus({ faxId, provider, providerStatus, unifiedStatus }) {
-  try {
-    const fax = await OutboundFax.findOne({ faxId });
-    if (!fax) {
-      throw new FaxNovaError("OutboundFax not found", {
-        code: "FAX_NOT_FOUND",
-        faxId
-      });
-    }
+/**
+ * Detect provider based on faxId format
+ * telnyx-123 → telnyx
+ * sinch-123  → sinch
+ */
+function detectProvider(faxId) {
+  if (faxId.startsWith("telnyx-")) return "telnyx";
+  if (faxId.startsWith("sinch-")) return "sinch";
+  return null;
+}
 
-    // Update fax record
-    fax.status = unifiedStatus;
-    fax.providerStatus = providerStatus;
-    fax.updatedAt = new Date();
-    await fax.save();
+/**
+ * Fetch fax status from the correct provider
+ */
+async function getFaxStatus(faxId) {
+  const provider = detectProvider(faxId);
 
-    // Provider performance tracking
-    if (unifiedStatus === "failed") {
-      await providerOutageService.recordFailure(provider);
-      await providerPerformanceService.applyFailurePenalty(provider);
-    } else if (["sent", "delivered"].includes(unifiedStatus)) {
-      await providerOutageService.recordSuccess(provider);
-      await providerPerformanceService.applySuccessBoost(provider);
-    }
-
-    return {
-      success: true,
-      faxId,
-      status: unifiedStatus
-    };
-  } catch (err) {
-    throw new FaxNovaError("Failed to update fax status", {
-      code: "FAX_STATUS_UPDATE_FAILED",
-      details: err.message
-    });
+  if (!provider) {
+    throw new Error(`Unable to detect provider for faxId: ${faxId}`);
   }
+
+  let rawStatus;
+
+  if (provider === "telnyx") {
+    rawStatus = await telnyx.getFaxStatus(faxId);
+  }
+
+  if (provider === "sinch") {
+    rawStatus = await sinch.getFaxStatus(faxId);
+  }
+
+  return {
+    provider,
+    faxId,
+    status: normalizeStatus(rawStatus),
+    raw: rawStatus
+  };
 }
 
 module.exports = {
-  updateFaxStatus
+  getFaxStatus
 };
