@@ -1,3 +1,4 @@
+WEBHOOK_SECRET=supersecret_12345
 # -----------------------------
 # Core Application
 # -----------------------------
