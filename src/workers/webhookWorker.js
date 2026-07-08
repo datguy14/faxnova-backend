@@ -1,125 +1,59 @@
-// src/workers/webhookWorker.js — Unified Fax Model (CommonJS Only)
+// src/workers/webhookWorker.js — Unified Fax Architecture (CommonJS Only)
 
-const { Worker } = require("bullmq");
-const { connection } = require("../lib/redis");
-
+const webhookQueue = require("../queues/webhookQueue");
+const inboundFaxService = require("../services/inboundFaxService");
 const webhookService = require("../services/webhookService");
-const Fax = require("../models/Fax");
-const auditService = require("../services/auditService");
 const billingService = require("../services/billingService");
+const auditService = require("../services/auditService");
 const retryFaxService = require("../services/retryFaxService");
 
-module.exports = new Worker(
-  "webhookQueue",
-  async job => {
-    const data = job.data;
+webhookQueue.process(async (job) => {
+  const normalized = job.data;
 
-    try {
-      // ----------------------------------------
-      // 1. Process webhook payload (provider → normalized)
-      //    This handles inbound fax creation automatically.
-      // ----------------------------------------
-      const normalized = await webhookService.processWebhook(data);
+  try {
+    switch (normalized.eventType) {
+      case "inbound_fax":
+        await inboundFaxService.processInboundFax(normalized);
+        break;
 
-      const {
-        faxId,
-        providerStatus,
-        provider,
-        region,
-        providerFaxId,
-        raw
-      } = normalized;
+      case "outbound_delivered":
+      case "outbound_failed":
+        await webhookService.updateOutboundStatus(normalized);
+        await billingService.trackWebhookEvent({
+          faxId: normalized.faxId,
+          tenantId: normalized.tenantId,
+          provider: normalized.provider,
+          providerStatus: normalized.providerStatus
+        });
+        break;
 
-      // If inbound fax was created inside webhookService,
-      // normalized.faxId will be the new inbound faxId.
-      const fax = await Fax.findById(faxId);
+      case "provider_error":
+        await webhookService.recordProviderError(normalized);
+        break;
 
-      if (!fax) {
-        throw new Error(`Webhook worker cannot find fax ${faxId}`);
-      }
+      case "delivery_receipt":
+        await webhookService.recordDeliveryReceipt(normalized);
+        break;
 
-      // ----------------------------------------
-      // 2. Update unified Fax record
-      // ----------------------------------------
-      fax.webhookRaw = raw;
-      fax.webhookStatus = providerStatus;
-
-      const statusMap = {
-        delivered: "delivered",
-        failed: "failed",
-        queued: "queued",
-        processing: "processing",
-        received: "received"
-      };
-
-      fax.status = statusMap[providerStatus] || fax.status;
-
-      await fax.save();
-
-      // ----------------------------------------
-      // 3. Billing hook
-      // ----------------------------------------
-      await billingService.trackWebhookEvent({
-        faxId,
-        tenantId: fax.tenantId,
-        provider,
-        providerStatus
-      });
-
-      // ----------------------------------------
-      // 4. Audit log
-      // ----------------------------------------
-      await auditService.logEvent({
-        type: "PROVIDER_WEBHOOK_WORKER_PROCESSED",
-        faxId,
-        provider,
-        providerStatus,
-        region,
-        tenantId: fax.tenantId,
-        details: {
-          providerFaxId,
-          raw
-        }
-      });
-
-      // ----------------------------------------
-      // 5. Failover trigger (outbound only)
-      // ----------------------------------------
-      if (
-        fax.direction === "outbound" &&
-        providerStatus === "failed" &&
-        fax.failoverProvider
-      ) {
+      case "failover_trigger":
         await retryFaxService.enqueueFailoverSend({
-          faxId,
-          failoverProvider: fax.failoverProvider,
-          region: fax.region
+          faxId: normalized.faxId,
+          failoverProvider: normalized.failoverProvider,
+          region: normalized.region
         });
+        break;
 
+      default:
         await auditService.logEvent({
-          type: "OUTBOUND_FAX_FAILOVER_TRIGGERED_BY_WORKER",
-          faxId,
-          provider,
-          failoverProvider: fax.failoverProvider,
-          region: fax.region,
-          tenantId: fax.tenantId
+          type: "WEBHOOK_WORKER_UNHANDLED_EVENT",
+          details: normalized
         });
-      }
-
-      return { success: true, faxId, providerStatus };
-    } catch (err) {
-      console.error("Webhook worker error:", err.message);
-
-      await auditService.logEvent({
-        type: "WEBHOOK_WORKER_ERROR",
-        faxId: data.faxId || null,
-        provider: data.provider || null,
-        tenantId: data.tenantId || null,
-        details: { error: err.message }
-      });
-
-      throw err;
     }
-  },
-  { connection }
-);
+  } catch (err) {
+    await auditService.logEvent({
+      type: "WEBHOOK_WORKER_ERROR",
+      details: { error: err.message, normalized }
+    });
+    throw err;
+  }
+});
