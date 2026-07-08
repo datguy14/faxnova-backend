@@ -3,24 +3,15 @@
 const Fax = require("../models/Fax");
 const auditService = require("./auditService");
 
-/**
- * Detect provider based on webhook payload shape.
- */
 function detectProvider(raw) {
   if (!raw) return null;
 
-  // Telnyx webhook structure
   if (raw.data && raw.data.event_type) return "telnyx";
-
-  // Sinch webhook structure
   if (raw.event && raw.message) return "sinch";
 
   return null;
 }
 
-/**
- * Update outbound fax status (delivered, failed, queued, etc.)
- */
 async function updateOutboundStatus(normalized) {
   const { faxId, providerStatus, provider, raw } = normalized;
 
@@ -49,9 +40,6 @@ async function updateOutboundStatus(normalized) {
   });
 }
 
-/**
- * Record provider error (Sinch or Telnyx)
- */
 async function recordProviderError(normalized) {
   const { faxId, provider, providerStatus, raw } = normalized;
 
@@ -64,9 +52,6 @@ async function recordProviderError(normalized) {
   });
 }
 
-/**
- * Record delivery receipt (provider-agnostic)
- */
 async function recordDeliveryReceipt(normalized) {
   const { faxId, provider, providerStatus, raw } = normalized;
 
