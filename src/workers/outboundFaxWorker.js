@@ -1,30 +1,58 @@
 // src/workers/outboundFaxWorker.js
-// Outbound Fax Worker — Strict‑Mode
+// Strict‑Mode Outbound Fax Worker
 
-const { routeFax } = require("../routing/engine");
-const outboundFaxQueue = require("../queues/outboundFaxQueue");
+const { telnyx, sinch } = require("../providers");
+const { markFailure, markRecovery } = require("../services/providerOutageService");
+const { outboundFaxQueue } = require("../queues/outboundFaxQueue");
 
-outboundFaxQueue.process(async (job) => {
-  const payload = job.data;
+async function processJob(job) {
+  const data = job.data;
 
-  console.log(`📨 OutboundFaxWorker: Processing fax job ${job.id}`);
+  const {
+    to,
+    from,
+    fileUrl,
+    metadata = {},
+    userId,
+    provider
+  } = data;
+
+  const providerClient = provider === "telnyx" ? telnyx : sinch;
 
   try {
-    const result = await routeFax(payload);
+    const result = await providerClient.sendFax({
+      to,
+      from,
+      fileUrl,
+      metadata,
+      userId
+    });
 
-    console.log(
-      `✅ Fax sent via ${result.provider} (job=${job.id})`,
-      result.result
-    );
+    // Mark provider healthy
+    await markRecovery(provider);
 
-    return result;
+    return {
+      ok: true,
+      provider,
+      faxId: result.faxId,
+      diagnostics: result.diagnostics || null
+    };
   } catch (err) {
-    console.error(`❌ Fax send failed (job=${job.id}):`, err);
+    console.error(`❌ Outbound fax failed [${provider}]:`, err);
 
-    // Move to retry queue
-    const retryQueue = require("../queues/retryFaxQueue");
-    await retryQueue.add("retryFax", payload);
+    // Mark provider failure
+    await markFailure(provider);
 
     throw err;
   }
+}
+
+outboundFaxQueue.process(async (job) => {
+  return processJob(job);
 });
+
+console.log("📡 OutboundFaxWorker listening for jobs");
+
+module.exports = {
+  processJob
+};
