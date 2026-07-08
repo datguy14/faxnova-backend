@@ -1,36 +1,18 @@
-// src/services/auditService.js — Unified Fax Architecture (CommonJS Only)
-
-const FaxEvent = require("../models/FaxEvent");
+const AuditEvent = require("../models/AuditEvent");
 
 module.exports = {
-  /**
-   * Unified audit logger.
-   * Every service in FaxNova logs through this.
-   */
-  async logEvent({
-    tenantId,
-    faxId = null,
-    type,
-    action = null,
-    provider = null,
-    providerStatus = null,
-    region = null,
-    details = {}
-  }) {
+  async logEvent({ type, faxId = null, tenantId = null, provider = null, region = null, details = {} }) {
     try {
-      await FaxEvent.create({
-        tenantId,
-        faxId,
+      return AuditEvent.create({
         type,
-        action,
+        faxId,
+        tenantId,
         provider,
-        providerStatus,
         region,
-        details,
-        timestamp: new Date()
+        details
       });
     } catch (err) {
-      console.error("AuditService error:", err.message);
+      console.error("Audit logging failed:", err.message);
     }
   }
 };
