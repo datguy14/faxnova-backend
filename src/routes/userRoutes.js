@@ -1,27 +1,25 @@
-// src/routes/userRoutes.js
+// src/routes/userRoutes.js — Unified Fax Architecture
 
 const express = require("express");
 const router = express.Router();
 
 const userController = require("../controllers/userController");
-const authMiddleware = require("../middleware/authMiddleware");
 
-// All user routes require authentication
-router.use(authMiddleware);
+// All user routes already protected by apiKeyGuard in app.js
 
-// List users for a tenant
-router.get("/:tenantId", userController.listUsers);
+// List users for the authenticated tenant
+router.get("/", userController.listUsers);
 
 // Create a new user
-router.post("/:tenantId", userController.createUser);
+router.post("/", userController.createUser);
 
 // Update a user
-router.put("/:tenantId/:userId", userController.updateUser);
+router.put("/:userId", userController.updateUser);
 
 // Disable or enable a user
-router.put("/:tenantId/:userId/status", userController.updateUserStatus);
+router.put("/:userId/status", userController.updateUserStatus);
 
 // Delete a user
-router.delete("/:tenantId/:userId", userController.deleteUser);
+router.delete("/:userId", userController.deleteUser);
 
 module.exports = router;
