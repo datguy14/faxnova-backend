@@ -1,22 +1,25 @@
 const jwt = require("jsonwebtoken");
-const JWT_SECRET = process.env.JWT_SECRET || "dev-secret";
+const AdminSession = require("../models/AdminSession");
 
-module.exports = function adminAuthGuard(req, res, next) {
-  const authHeader = req.headers.authorization || "";
-  const token = authHeader.startsWith("Bearer ")
-    ? authHeader.slice(7)
-    : null;
-
-  if (!token) {
-    return res.status(401).json({ error: "Missing admin token" });
-  }
-
+module.exports = async function adminAuthGuard(req, res, next) {
   try {
-    const payload = jwt.verify(token, JWT_SECRET);
-    req.adminId = payload.adminId;
-    req.adminRole = payload.role;
+    const token = req.headers["x-admin-token"];
+    if (!token) {
+      return res.status(401).json({ error: "Missing admin token" });
+    }
+
+    const session = await AdminSession.findOne({ token });
+    if (!session || session.expiresAt < new Date()) {
+      return res.status(401).json({ error: "Invalid or expired admin token" });
+    }
+
+    const decoded = jwt.verify(token, process.env.ADMIN_JWT_SECRET);
+
+    req.adminId = decoded.adminId;
+    req.adminRole = decoded.role;
+
     next();
-  } catch {
-    return res.status(401).json({ error: "Invalid admin token" });
+  } catch (err) {
+    res.status(401).json({ error: "Unauthorized" });
   }
 };
