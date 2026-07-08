@@ -1,9 +1,13 @@
 // src/providers/sinchProvider.js
+// Sinch Provider — Strict‑Mode, Production‑Ready
+
 const axios = require("axios");
-const crypto = require("crypto");
 
 const SINCH_BASE = "https://api.sinch.com/v1/projects";
 
+/**
+ * Build Basic Auth header
+ */
 function getAuthHeader() {
   const apiKey = process.env.SINCH_API_KEY;
   const apiSecret = process.env.SINCH_API_SECRET;
@@ -16,6 +20,9 @@ function getAuthHeader() {
   return `Basic ${token}`;
 }
 
+/**
+ * Build project base URL
+ */
 function getProjectBase() {
   const projectId = process.env.SINCH_PROJECT_ID;
 
@@ -28,22 +35,12 @@ function getProjectBase() {
 
 /**
  * Send a fax via Sinch
- *
- * @param {Object} params
- * @param {string} params.to        - Destination fax number (E.164)
- * @param {string} params.from      - Source fax number (E.164)
- * @param {string} params.mediaUrl  - URL to the fax document (PDF, TIFF, etc.)
- * @param {string} [params.correlationId] - Optional correlation ID for tracing
  */
 async function sendFax({ to, from, mediaUrl, correlationId }) {
   const base = getProjectBase();
   const url = `${base}/faxes`;
 
-  const payload = {
-    to,
-    from,
-    mediaUrl
-  };
+  const payload = { to, from, mediaUrl };
 
   const headers = {
     Authorization: getAuthHeader(),
@@ -75,20 +72,17 @@ async function sendFax({ to, from, mediaUrl, correlationId }) {
   } catch (err) {
     const latencyMs = Date.now() - startedAt;
 
-    const status = err.response ? err.response.status : null;
-    const data = err.response ? err.response.data : null;
-
     return {
       provider: "sinch",
       status: "error",
       error: {
         message: err.message,
-        httpStatus: status,
-        raw: data
+        httpStatus: err.response?.status || null,
+        raw: err.response?.data || null
       },
       diagnostics: {
         latencyMs,
-        httpStatus: status,
+        httpStatus: err.response?.status || null,
         requestId: err.response?.headers?.["x-request-id"] || null
       }
     };
@@ -97,8 +91,6 @@ async function sendFax({ to, from, mediaUrl, correlationId }) {
 
 /**
  * Get fax status from Sinch
- *
- * @param {string} faxId - Sinch fax ID
  */
 async function getFaxStatus(faxId) {
   const base = getProjectBase();
@@ -129,20 +121,17 @@ async function getFaxStatus(faxId) {
   } catch (err) {
     const latencyMs = Date.now() - startedAt;
 
-    const status = err.response ? err.response.status : null;
-    const data = err.response ? err.response.data : null;
-
     return {
       provider: "sinch",
       status: "error",
       error: {
         message: err.message,
-        httpStatus: status,
-        raw: data
+        httpStatus: err.response?.status || null,
+        raw: err.response?.data || null
       },
       diagnostics: {
         latencyMs,
-        httpStatus: status,
+        httpStatus: err.response?.status || null,
         requestId: err.response?.headers?.["x-request-id"] || null
       }
     };
@@ -150,12 +139,12 @@ async function getFaxStatus(faxId) {
 }
 
 /**
- * Health check for Sinch provider
- * Returns a normalized health object for your routing engine.
+ * Provider health check (Sinch has no /health endpoint)
+ * We use a lightweight GET /faxes?limit=1 as a safe ping.
  */
 async function getHealth() {
   const base = getProjectBase();
-  const url = `${base}/health`;
+  const url = `${base}/faxes?limit=1`;
 
   const headers = {
     Authorization: getAuthHeader(),
@@ -179,32 +168,27 @@ async function getHealth() {
   } catch (err) {
     const latencyMs = Date.now() - startedAt;
 
-    const status = err.response ? err.response.status : null;
-    const data = err.response ? err.response.data : null;
-
     return {
       provider: "sinch",
       healthy: false,
       latencyMs,
-      httpStatus: status,
+      httpStatus: err.response?.status || null,
       error: {
         message: err.message,
-        raw: data
+        raw: err.response?.data || null
       }
     };
   }
 }
 
 /**
- * Normalize diagnostics for routing engine
- * Example shape: { provider, latencyMs, healthy, score }
+ * Diagnostics for routing engine
  */
 async function getDiagnostics() {
   const health = await getHealth();
 
-  // Simple scoring: healthy + latency
   const baseScore = health.healthy ? 1 : 0;
-  const latencyPenalty = Math.min(health.latencyMs / 1000, 5); // up to -5
+  const latencyPenalty = Math.min(health.latencyMs / 1000, 5);
 
   const score = baseScore - latencyPenalty;
 
