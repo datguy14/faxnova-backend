@@ -1,8 +1,20 @@
-// src/queues/outboundFaxQueue.js — Unified Fax Architecture (CommonJS Only)
+// src/queues/outboundFaxQueue.js
+// Outbound Fax Queue — Strict‑Mode
 
-const { Queue } = require("bullmq");
+const Queue = require("bullmq").Queue;
 const { connection } = require("../lib/redis");
 
-const outboundFaxQueue = new Queue("outboundFaxQueue", { connection });
+const outboundFaxQueue = new Queue("outboundFaxQueue", {
+  connection,
+  defaultJobOptions: {
+    attempts: 3,
+    backoff: {
+      type: "exponential",
+      delay: 5000
+    },
+    removeOnComplete: true,
+    removeOnFail: false
+  }
+});
 
 module.exports = outboundFaxQueue;
