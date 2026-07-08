@@ -1,102 +1,36 @@
 // src/providers/telnyxInboundAdapter.js — Unified Fax Architecture (CommonJS Only)
 
-const crypto = require("crypto");
+module.exports = {
+  normalize(raw) {
+    try {
+      const data = raw.data || {};
 
-/**
- * Telnyx Inbound Webhook Adapter
- *
- * Responsibilities:
- * - Validate Telnyx webhook signature
- * - Normalize inbound payload into FaxNova unified format
- * - Map Telnyx event types → internal statuses
- * - Extract providerFaxId, region, metadata
- * - Support both outbound delivery receipts & inbound faxes
- */
-exports.normalizeInbound = payload => {
-  // ----------------------------------------
-  // 1. Signature validation (security)
-  // ----------------------------------------
-  validateTelnyxSignature(payload);
+      return {
+        provider: "telnyx",
+        providerFaxId: data.payload?.fax_id || null,
+        faxId: data.payload?.client_reference || null,
+        tenantId: data.payload?.tenant_id || null,
+        region: data.payload?.region || "us",
 
-  const event = payload?.data || {};
-  const eventType = event?.event_type || event?.type;
+        providerStatus: data.payload?.status || null,
 
-  // ----------------------------------------
-  // 2. Extract providerFaxId
-  // ----------------------------------------
-  const providerFaxId =
-    event?.id ||
-    event?.payload?.fax_id ||
-    event?.payload?.id ||
-    null;
+        eventType: (() => {
+          switch (data.event_type) {
+            case "fax.received":
+              return "inbound_fax";
+            case "fax.delivered":
+              return "outbound_delivered";
+            case "fax.failed":
+              return "outbound_failed";
+            default:
+              return "provider_error";
+          }
+        })(),
 
-  // ----------------------------------------
-  // 3. Extract region (Telnyx sends region hints)
-  // ----------------------------------------
-  const region =
-    event?.payload?.region ||
-    event?.region ||
-    "us";
-
-  // ----------------------------------------
-  // 4. Map Telnyx event → internal status
-  // ----------------------------------------
-  const providerStatus = mapTelnyxStatus(eventType);
-
-  // ----------------------------------------
-  // 5. Extract FaxNova faxId (from metadata)
-  // ----------------------------------------
-  const faxId =
-    event?.payload?.metadata?.faxId ||
-    event?.metadata?.faxId ||
-    null;
-
-  // ----------------------------------------
-  // 6. Build normalized webhook object
-  // ----------------------------------------
-  return {
-    provider: "telnyx",
-    providerFaxId,
-    faxId,
-    providerStatus,
-    region,
-    raw: payload
-  };
-};
-
-/**
- * Validate Telnyx webhook signature.
- * Prevents spoofed or malicious webhook calls.
- */
-function validateTelnyxSignature(payload) {
-  const signature = payload?.headers?.["telnyx-signature-ed25519"];
-  const timestamp = payload?.headers?.["telnyx-timestamp"];
-
-  if (!signature || !timestamp) {
-    throw new Error("Missing Telnyx webhook signature headers");
+        raw
+      };
+    } catch (err) {
+      return null;
+    }
   }
-
-  // NOTE:
-  // In production, verify using Telnyx's public key.
-  // Your unified architecture supports plugging in real verification later.
-}
-
-/**
- * Map Telnyx event types → internal statuses.
- */
-function mapTelnyxStatus(eventType) {
-  if (!eventType) return "unknown";
-
-  const map = {
-    "fax.delivered": "delivered",
-    "fax.failed": "failed",
-    "fax.sending": "processing",
-    "fax.queued": "queued",
-
-    // Inbound fax events
-    "fax.received": "received",
-    "fax.inbound": "received"
-  };
-
-  return map[eventType] || "unknown";
-}
+};
