@@ -1,4 +1,4 @@
-// src/routes/webhookRoutes.js — Unified Fax Architecture
+// src/routes/webhookRoutes.js — Unified Fax Architecture (CommonJS Only)
 
 const express = require("express");
 const router = express.Router();
