@@ -1,58 +1,49 @@
-// src/app.js — Fully Updated, Production‑Ready (CommonJS Only)
+// src/app.js — Unified Fax Architecture (CommonJS Only)
 
 const express = require("express");
-const cors = require("cors");
-
-// Controllers
-const faxController = require("./controllers/faxController");
-const inboundFaxController = require("./controllers/inboundFaxController");
-const webhookController = require("./controllers/webhookController");
-const authController = require("./controllers/authController");
-
-// Middleware
-const residencyGuard = require("./middleware/residencyGuard");
-const apiKeyGuard = require("./middleware/apiKeyGuard");        // NEW (required)
-const rateLimitGuard = require("./middleware/rateLimitGuard");  // NEW (required)
-const webhookSignatureGuard = require("./middleware/webhookSignatureGuard"); // NEW
-
 const app = express();
 
-// Core middleware
-app.use(cors());
+// ---------------------------------------------
+// Global Middleware
+// ---------------------------------------------
 app.use(express.json());
 
-// Residency enforcement (your existing logic + production requirement)
-app.use(residencyGuard);
+// Guards
+const apiKeyGuard = require("./middleware/apiKeyGuard");
+const webhookSignatureGuard = require("./middleware/webhookSignatureGuard");
 
-// API key validation (required for multi‑tenant SaaS)
-app.use(apiKeyGuard);
+// ---------------------------------------------
+// Routes (Unified Architecture)
+// ---------------------------------------------
 
-// Rate limiting (required for abuse protection)
-app.use(rateLimitGuard);
+// Outbound Fax Pipeline
+const outboundFaxRoutes = require("./routes/outboundFaxRoutes");
+app.use("/fax/outbound", apiKeyGuard, outboundFaxRoutes);
 
-// -------------------------------
-// AUTH
-// -------------------------------
-app.post("/admin/login", authController.adminLogin);
+// Inbound Fax Pipeline (if you want later)
+const inboundFaxRoutes = require("./routes/inboundFaxRoutes");
+app.use("/fax/inbound", apiKeyGuard, inboundFaxRoutes);
 
-// -------------------------------
-// OUTBOUND FAX
-// -------------------------------
-app.post("/fax/outbound", faxController.createFax);
+// Webhook Pipeline (Provider → You)
+const webhookRoutes = require("./routes/webhookRoutes");
+app.use("/webhook", webhookRoutes);
 
-// -------------------------------
-// INBOUND FAX
-// -------------------------------
-app.post("/fax/inbound", inboundFaxController.receiveInboundFax);
+// Admin Auth
+const authRoutes = require("./routes/authRoutes");
+app.use("/auth", authRoutes);
 
-// -------------------------------
-// PROVIDER WEBHOOKS
-// -------------------------------
-// Webhooks MUST be signature‑verified before hitting controller logic
-app.post(
-  "/webhook/provider",
-  webhookSignatureGuard,
-  webhookController.handleWebhook
-);
+// Tenants (optional)
+const tenantRoutes = require("./routes/tenantRoutes");
+app.use("/tenants", apiKeyGuard, tenantRoutes);
 
+// ---------------------------------------------
+// Health Check
+// ---------------------------------------------
+app.get("/health", (req, res) => {
+  res.json({ ok: true, timestamp: Date.now() });
+});
+
+// ---------------------------------------------
+// Export App
+// ---------------------------------------------
 module.exports = app;
