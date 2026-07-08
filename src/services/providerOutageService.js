@@ -1,99 +1,87 @@
-// src/services/providerOutageService.js — Fully Updated, Production‑Ready (CommonJS Only)
+// src/services/providerOutageService.js
+// Strict‑Mode Provider Outage Tracking (Redis-Persistent)
+
+const { connection: redis } = require("../lib/redis");
 
 /**
- * Provider outage map:
- * Tracks health per provider *per region*.
+ * Redis keys:
+ *   outage:telnyx
+ *   outage:sinch
  *
- * Structure:
+ * Stored shape:
  * {
- *   telnyx: {
- *     us: { status: "UP", lastUpdated: Date },
- *     eu: { status: "DEGRADED", lastUpdated: Date }
- *   },
- *   sinch: {
- *     us: { status: "UP", lastUpdated: Date },
- *     eu: { status: "UP", lastUpdated: Date }
- *   }
+ *   active: boolean,
+ *   lastFailure: number,
+ *   lastRecovery: number,
+ *   failures: number,
+ *   recoveries: number
  * }
- *
- * This supports:
- * - multi‑region routing
- * - failover logic
- * - SLA scoring
- * - outage scoring
  */
 
-const providerHealth = {
-  telnyx: {
-    us: { status: "UP", lastUpdated: new Date() },
-    eu: { status: "UP", lastUpdated: new Date() }
-  },
-  sinch: {
-    us: { status: "UP", lastUpdated: new Date() },
-    eu: { status: "UP", lastUpdated: new Date() }
-  }
-};
+async function getOutage(provider) {
+  const key = `outage:${provider}`;
+  const raw = await redis.get(key);
 
-/**
- * Get provider health for a specific region.
- * Falls back to "UNKNOWN" if provider or region is missing.
- */
-exports.getProviderHealth = async (provider, region = "us") => {
-  const providerEntry = providerHealth[provider];
-
-  if (!providerEntry) {
-    return { status: "UNKNOWN", region, lastUpdated: null };
+  if (!raw) {
+    return {
+      provider,
+      active: false,
+      lastFailure: null,
+      lastRecovery: null,
+      failures: 0,
+      recoveries: 0
+    };
   }
 
-  const regionEntry = providerEntry[region];
+  return JSON.parse(raw);
+}
 
-  if (!regionEntry) {
-    return { status: "UNKNOWN", region, lastUpdated: null };
-  }
+async function markFailure(provider) {
+  const key = `outage:${provider}`;
+  const now = Date.now();
 
-  return {
-    status: regionEntry.status,
-    region,
-    lastUpdated: regionEntry.lastUpdated
-  };
-};
+  const current = await getOutage(provider);
 
-/**
- * Set provider health for ops tools or automated monitors.
- * Example:
- *   setProviderHealth("telnyx", "eu", "DOWN")
- */
-exports.setProviderHealth = async (provider, region = "us", status) => {
-  if (!providerHealth[provider]) {
-    providerHealth[provider] = {};
-  }
-
-  providerHealth[provider][region] = {
-    status,
-    lastUpdated: new Date()
+  const updated = {
+    provider,
+    active: true,
+    lastFailure: now,
+    lastRecovery: current.lastRecovery,
+    failures: current.failures + 1,
+    recoveries: current.recoveries
   };
 
-  return providerHealth[provider][region];
-};
+  await redis.set(key, JSON.stringify(updated));
+  return updated;
+}
 
-/**
- * Get outage scores for all providers in a region.
- * Used by routingService.v2 to bias routing away from degraded/down providers.
- */
-exports.getProviderScores = async (region = "us") => {
-  const scores = {};
+async function markRecovery(provider) {
+  const key = `outage:${provider}`;
+  const now = Date.now();
 
-  for (const provider of Object.keys(providerHealth)) {
-    const health = await exports.getProviderHealth(provider, region);
+  const current = await getOutage(provider);
 
-    let score = 0;
+  const updated = {
+    provider,
+    active: false,
+    lastFailure: current.lastFailure,
+    lastRecovery: now,
+    failures: current.failures,
+    recoveries: current.recoveries + 1
+  };
 
-    if (health.status === "DOWN") score = 5;
-    if (health.status === "DEGRADED") score = 2;
-    if (health.status === "UP") score = 0;
+  await redis.set(key, JSON.stringify(updated));
+  return updated;
+}
 
-    scores[provider] = score;
-  }
+async function isOutage(provider) {
+  const current = await getOutage(provider);
+  return current.active === true;
+}
 
-  return scores;
+module.exports = {
+  getOutage,
+  markFailure,
+  markRecovery,
+  isOutage
 };
