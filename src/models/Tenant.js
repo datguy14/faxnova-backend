@@ -1,58 +1,16 @@
-// src/models/Tenant.js
+// src/models/Tenant.js — Unified Fax Architecture (CommonJS Only)
 
 const mongoose = require("mongoose");
 
-const TenantSchema = new mongoose.Schema(
-  {
-    name: {
-      type: String,
-      required: true,
-      index: true
-    },
-
-    // Region residency rules reference
-    residencyRuleId: {
-      type: mongoose.Schema.Types.ObjectId,
-      ref: "ResidencyRule",
-      required: true
-    },
-
-    // Billing tier (affects rate limits, features, etc.)
-    apiTier: {
-      type: String,
-      enum: ["free", "pro", "enterprise"],
-      default: "free"
-    },
-
-    // Webhook URL for inbound fax notifications
-    webhookUrl: {
-      type: String
-    },
-
-    // Whether inbound webhooks are enabled
-    webhookEnabled: {
-      type: Boolean,
-      default: true
-    },
-
-    // Optional metadata for tenant-specific settings
-    metadata: {
-      type: mongoose.Schema.Types.Mixed
-    },
-
-    createdAt: {
-      type: Date,
-      default: Date.now
-    },
-
-    updatedAt: {
-      type: Date,
-      default: Date.now
-    }
-  },
-  {
-    versionKey: false
+const TenantSchema = new mongoose.Schema({
+  name: { type: String, required: true },
+  apiKey: { type: String, required: true, unique: true },
+  residencyZone: { type: String, default: "us" },
+  tier: { type: String, default: "standard" },
+  providers: {
+    primary: { type: String, default: "telnyx" },
+    failover: { type: String, default: "sinch" }
   }
-);
+}, { timestamps: true });
 
 module.exports = mongoose.model("Tenant", TenantSchema);
