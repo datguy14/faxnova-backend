@@ -13,28 +13,32 @@ const apiKeyGuard = require("./middleware/apiKeyGuard");
 const webhookSignatureGuard = require("./middleware/webhookSignatureGuard");
 
 // ---------------------------------------------
-// Routes (Unified Architecture)
+// Route Imports
+// ---------------------------------------------
+const outboundFaxRoutes = require("./routes/outboundFaxRoutes");
+const inboundFaxRoutes = require("./routes/inboundFaxRoutes"); // optional
+const webhookRoutes = require("./routes/webhookRoutes");
+const tenantRoutes = require("./routes/tenantRoutes");
+const authRoutes = require("./routes/authRoutes");
+
+// ---------------------------------------------
+// Route Mounting (Unified Architecture)
 // ---------------------------------------------
 
 // Outbound Fax Pipeline
-const outboundFaxRoutes = require("./routes/outboundFaxRoutes");
 app.use("/fax/outbound", apiKeyGuard, outboundFaxRoutes);
 
-// Inbound Fax Pipeline (if you want later)
-const inboundFaxRoutes = require("./routes/inboundFaxRoutes");
+// Inbound Fax Pipeline (optional, if you expose inbound status)
 app.use("/fax/inbound", apiKeyGuard, inboundFaxRoutes);
 
-// Webhook Pipeline (Provider → You)
-const webhookRoutes = require("./routes/webhookRoutes");
+// Provider Webhooks (inbound + outbound events)
 app.use("/webhook", webhookRoutes);
 
-// Admin Auth
-const authRoutes = require("./routes/authRoutes");
-app.use("/auth", authRoutes);
-
-// Tenants (optional)
-const tenantRoutes = require("./routes/tenantRoutes");
+// Tenant Management
 app.use("/tenants", apiKeyGuard, tenantRoutes);
+
+// Admin Authentication
+app.use("/auth", authRoutes);
 
 // ---------------------------------------------
 // Health Check
