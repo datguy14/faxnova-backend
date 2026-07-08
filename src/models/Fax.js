@@ -1,69 +1,34 @@
 const mongoose = require("mongoose");
 
-const FaxSchema = new mongoose.Schema(
-  {
-    // Multi-tenant SaaS
-    tenantId: { type: String, required: true, index: true },
+const FaxSchema = new mongoose.Schema({
+  tenantId: { type: String, required: true },
 
-    // Direction: inbound or outbound
-    direction: {
-      type: String,
-      enum: ["inbound", "outbound"],
-      required: true,
-      index: true
-    },
+  // Outbound fields
+  to: { type: String, default: null },
+  from: { type: String, default: null },
 
-    // Destination or source number
-    to: { type: String, index: true },
-    from: { type: String, index: true },
+  // Provider fields
+  provider: { type: String, default: null }, // telnyx | sinch
+  providerFaxId: { type: String, default: null },
+  providerStatus: { type: String, default: "pending" }, // pending | sent | delivered | failed | error
 
-    // Provider (telnyx | sinch)
-    provider: { type: String, index: true },
+  // Storage
+  storageKey: { type: String, default: null },
 
-    // Provider fax ID (always present for outbound + webhook events)
-    providerFaxId: { type: String, index: true },
+  // Region
+  region: { type: String, default: "us" },
 
-    // Failover provider (outbound only)
-    failoverProvider: { type: String, default: null },
+  // Failover
+  failoverUsed: { type: Boolean, default: false },
 
-    // Storage key for inbound/outbound PDF
-    storageKey: { type: String, required: true },
-
-    // Region (us, eu, etc.)
-    region: { type: String, required: true, index: true },
-
-    // Status lifecycle (shared for inbound + outbound)
-    status: {
-      type: String,
-      enum: [
-        "queued",
-        "processing",
-        "sent",
-        "failed",
-        "received",
-        "delivered",
-        "unknown"
-      ],
-      default: "queued",
-      index: true
-    },
-
-    // Raw webhook payload (optional)
-    webhookRaw: { type: mongoose.Schema.Types.Mixed, default: null },
-
-    // Provider webhook status (delivered, failed, etc.)
-    webhookStatus: { type: String, default: null },
-
-    // Arbitrary metadata (inbound or outbound)
-    metadata: { type: mongoose.Schema.Types.Mixed, default: {} }
+  // Inbound fields
+  inbound: {
+    isInbound: { type: Boolean, default: false },
+    pdfUrl: { type: String, default: null }
   },
-  { timestamps: true }
-);
 
-// High-performance indexes for workers, analytics, SLA dashboards
-FaxSchema.index({ provider: 1, status: 1 });
-FaxSchema.index({ region: 1, status: 1 });
-FaxSchema.index({ tenantId: 1, status: 1 });
-FaxSchema.index({ direction: 1, status: 1 });
+  // Metadata
+  metadata: { type: Object, default: {} }
+}, { timestamps: true });
 
 module.exports = mongoose.model("Fax", FaxSchema);
