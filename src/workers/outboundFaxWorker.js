@@ -1,135 +1,127 @@
-// src/workers/outboundFaxWorker.js — Fully Updated, Production‑Ready (CommonJS Only)
+// src/workers/outboundFaxWorker.js — Unified Fax Architecture (CommonJS Only)
 
 const { Worker } = require("bullmq");
 const { connection } = require("../lib/redis");
 
-const OutboundFax = require("../models/OutboundFax");
 const sendFaxService = require("../services/sendFaxService");
-const retryFaxService = require("../services/retryFaxService");
-const idempotencyService = require("../services/idempotencyService");
+const Fax = require("../models/Fax");
 const auditService = require("../services/auditService");
+const billingService = require("../services/billingService");
+const retryFaxService = require("../services/retryFaxService");
 
 module.exports = new Worker(
   "outboundFaxQueue",
   async job => {
-    const { faxId, provider, region, failoverProvider } = job.data;
+    const data = job.data;
 
     try {
-      // ----------------------------------------
-      // 1. Load fax record
-      // ----------------------------------------
-      const fax = await OutboundFax.findById(faxId);
-      if (!fax) {
-        throw new Error(`Fax ${faxId} not found`);
-      }
+      const {
+        tenantId,
+        idempotencyKey,
+        to,
+        from,
+        region,
+        provider,
+        failoverProvider,
+        pdfBuffer,
+        metadata
+      } = data;
 
       // ----------------------------------------
-      // 2. Update status → processing
-      // ----------------------------------------
-      fax.status = "processing";
-      await fax.save();
-
-      // ----------------------------------------
-      // 3. Attempt provider send
+      // 1. Send fax via unified outbound pipeline
       // ----------------------------------------
       const result = await sendFaxService.sendFax({
-        faxId,
-        provider,
+        tenantId,
+        idempotencyKey,
+        to,
+        from,
         region,
-        storageKey: fax.storageKey,
-        to: fax.to
+        provider,
+        failoverProvider,
+        pdfBuffer,
+        metadata
       });
 
-      // ----------------------------------------
-      // 4. Provider returned success
-      // ----------------------------------------
-      fax.status = "sent";
-      fax.providerFaxId = result.providerFaxId || null;
-      await fax.save();
+      const faxId = result.faxId;
 
       // ----------------------------------------
-      // 5. Update idempotency record
+      // 2. Load unified Fax record
       // ----------------------------------------
-      await idempotencyService.updateStatus(faxId, "sent");
-
-      // ----------------------------------------
-      // 6. Audit log
-      // ----------------------------------------
-      await auditService.logEvent({
-        type: "OUTBOUND_FAX_SENT",
-        faxId,
-        provider,
-        region,
-        tenantId: fax.tenantId
-      });
-
-      return;
-
-    } catch (err) {
-      console.error(`❌ Fax ${faxId} failed on provider ${provider}:`, err.message);
-
-      // ----------------------------------------
-      // 7. If job still has retries left → let BullMQ retry
-      // ----------------------------------------
-      if (job.attemptsMade < job.opts.attempts - 1) {
-        throw err; // BullMQ will retry automatically
+      const fax = await Fax.findById(faxId);
+      if (!fax) {
+        throw new Error(`Outbound worker cannot find fax ${faxId}`);
       }
 
       // ----------------------------------------
-      // 8. Retries exhausted → attempt failover
+      // 3. Billing hook (outbound queued)
       // ----------------------------------------
-      if (failoverProvider) {
-        console.warn(
-          `⚠️ Fax ${faxId} switching to failover provider ${failoverProvider}`
-        );
+      await billingService.trackOutboundQueued({
+        faxId,
+        tenantId
+      });
 
+      // ----------------------------------------
+      // 4. Audit log
+      // ----------------------------------------
+      await auditService.logEvent({
+        tenantId,
+        faxId,
+        type: "OUTBOUND_FAX_WORKER_QUEUED",
+        action: "worker_queued",
+        provider,
+        providerStatus: "processing",
+        region,
+        details: {
+          to,
+          from,
+          providerFaxId: fax.providerFaxId
+        }
+      });
+
+      return {
+        success: true,
+        faxId,
+        provider,
+        providerFaxId: fax.providerFaxId,
+        status: fax.status
+      };
+    } catch (err) {
+      console.error("Outbound fax worker error:", err.message);
+
+      // ----------------------------------------
+      // 5. Audit error
+      // ----------------------------------------
+      await auditService.logEvent({
+        type: "OUTBOUND_FAX_WORKER_ERROR",
+        faxId: data.faxId || null,
+        provider: data.provider || null,
+        tenantId: data.tenantId || null,
+        region: data.region || null,
+        details: { error: err.message }
+      });
+
+      // ----------------------------------------
+      // 6. Failover trigger (if outbound failed early)
+      // ----------------------------------------
+      if (data.failoverProvider) {
         await retryFaxService.enqueueFailoverSend({
-          faxId,
-          failoverProvider,
-          region
+          faxId: data.faxId,
+          failoverProvider: data.failoverProvider,
+          region: data.region
         });
 
         await auditService.logEvent({
-          type: "OUTBOUND_FAX_FAILOVER_TRIGGERED",
-          faxId,
-          provider,
-          failoverProvider,
-          region,
-          tenantId: fax?.tenantId
+          type: "OUTBOUND_FAX_FAILOVER_TRIGGERED_BY_WORKER_ERROR",
+          faxId: data.faxId,
+          provider: data.provider,
+          failoverProvider: data.failoverProvider,
+          region: data.region,
+          tenantId: data.tenantId
         });
-
-        return;
       }
 
-      // ----------------------------------------
-      // 9. No failover provider → send to DLQ
-      // ----------------------------------------
-      await retryFaxService.sendToDLQ({
-        faxId,
-        provider,
-        region,
-        reason: err.message
-      });
-
-      // Update fax status
-      await OutboundFax.findByIdAndUpdate(faxId, { status: "failed" });
-
-      // Update idempotency record
-      await idempotencyService.updateStatus(faxId, "failed");
-
-      // Audit log
-      await auditService.logEvent({
-        type: "OUTBOUND_FAX_FAILED",
-        faxId,
-        provider,
-        region,
-        tenantId: fax?.tenantId,
-        error: err.message
-      });
+      throw err;
     }
   },
-  {
-    connection,
-    concurrency: parseInt(process.env.WORKER_CONCURRENCY || "5", 10)
-  }
+  { connection }
 );
