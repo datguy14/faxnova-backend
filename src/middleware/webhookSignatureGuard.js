@@ -3,6 +3,7 @@
 
 const crypto = require("crypto");
 
+// Custom HMAC signature (your internal webhook format)
 function verifyCustom(req) {
   const signature = req.headers["x-webhook-signature"];
   const secret = process.env.WEBHOOK_SECRET;
@@ -20,6 +21,7 @@ function verifyCustom(req) {
   );
 }
 
+// Sinch HMAC signature
 function verifySinch(req) {
   const signature = req.headers["x-sinch-signature"];
   const secret = process.env.WEBHOOK_SECRET;
@@ -37,6 +39,7 @@ function verifySinch(req) {
   );
 }
 
+// Telnyx Ed25519 signature (fail‑closed until SDK wired)
 function verifyTelnyx(req) {
   const signature = req.headers["telnyx-signature-ed25519"];
   const timestamp = req.headers["telnyx-timestamp"];
@@ -45,14 +48,13 @@ function verifyTelnyx(req) {
   if (!signature || !timestamp || !secret || !req.rawBody) return false;
 
   // Telnyx requires Ed25519 verification using their SDK.
-  // Until wired, fail closed.
+  // Until wired, fail closed for safety.
   return false;
 }
 
 module.exports = (req, res, next) => {
   try {
     const path = req.path || "";
-
     let valid = false;
 
     if (path.includes("telnyx")) valid = verifyTelnyx(req);
