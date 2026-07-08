@@ -1,9 +1,10 @@
-// src/server.js — Fully Updated, Production‑Ready (CommonJS Only)
+// src/server.js — Strict‑Mode, Multi‑Provider Entrypoint (CommonJS)
 
 require("dotenv").config();
 
-// Core app + DB
 const app = require("./app");
+
+// Core infrastructure
 const { connectMongo } = require("./lib/mongo");
 const { connection: redis } = require("./lib/redis");
 
@@ -17,7 +18,7 @@ const bootWorkers = () => {
     console.log("📡 Workers booted successfully");
   } catch (err) {
     console.error("❌ Worker boot failure:", err);
-    process.exit(1); // Hard fail — prevents partial startup
+    process.exit(1);
   }
 };
 
@@ -25,14 +26,16 @@ const bootWorkers = () => {
 function validateEnv() {
   const required = [
     "MONGO_URI",
-    "REDIS_URL",
+    "REDIS_HOST",
+    "REDIS_PORT",
     "JWT_SECRET",
     "JWT_ADMIN_SECRET",
     "TELNYX_API_KEY",
+    "TELNYX_WEBHOOK_SECRET",
     "SINCH_API_KEY",
     "SINCH_API_SECRET",
     "SINCH_PROJECT_ID",
-    "WEBHOOK_SIGNATURE_SECRET"
+    "WEBHOOK_SECRET"
   ];
 
   const missing = required.filter((key) => !process.env[key]);
@@ -44,7 +47,6 @@ function validateEnv() {
   }
 }
 
-// Start server
 const PORT = process.env.PORT || 3000;
 
 (async () => {
