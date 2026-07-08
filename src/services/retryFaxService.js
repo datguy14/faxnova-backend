@@ -7,23 +7,32 @@ const Fax = require("../models/Fax");
 module.exports = {
   /**
    * Enqueue failover send for outbound fax.
+   * Called when provider webhook triggers a failover event.
    */
   async enqueueFailoverSend({ faxId, failoverProvider, region }) {
     const fax = await Fax.findById(faxId);
     if (!fax) {
-      console.error("RetryFaxService: Fax not found:", faxId);
+      await auditService.logEvent({
+        type: "FAILOVER_FAX_NOT_FOUND",
+        faxId,
+        failoverProvider,
+        region
+      });
       return;
     }
 
+    // Prevent infinite failover loops
+    const idempotencyKey = `failover:${faxId}:${Date.now()}`;
+
     await outboundFaxQueue.add("sendFax", {
       tenantId: fax.tenantId,
-      idempotencyKey: `failover:${faxId}:${Date.now()}`,
+      idempotencyKey,
       to: fax.to,
       from: fax.from,
       region,
       provider: failoverProvider,
-      failoverProvider: null, // prevent infinite failover loops
-      pdfBuffer: null, // worker will load from storageKey
+      failoverProvider: null, // stop chain
+      pdfBuffer: null,        // worker loads from storageKey
       metadata: fax.metadata,
       storageKey: fax.storageKey
     });
@@ -37,7 +46,8 @@ module.exports = {
       region,
       details: {
         originalProvider: fax.provider,
-        storageKey: fax.storageKey
+        storageKey: fax.storageKey,
+        idempotencyKey
       }
     });
   }
