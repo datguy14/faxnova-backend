@@ -1,26 +1,65 @@
 // src/middleware/webhookSignatureGuard.js
-// Strict‑Mode Webhook Signature Verification
+// Strict‑Mode Webhook Signature Verification (Telnyx + Sinch + Custom)
 
 const crypto = require("crypto");
 
+function verifyCustom(req) {
+  const signature = req.headers["x-webhook-signature"];
+  const secret = process.env.WEBHOOK_SECRET;
+
+  if (!signature || !secret || !req.rawBody) return false;
+
+  const computed = crypto
+    .createHmac("sha256", secret)
+    .update(req.rawBody)
+    .digest("hex");
+
+  return crypto.timingSafeEqual(
+    Buffer.from(signature, "utf8"),
+    Buffer.from(computed, "utf8")
+  );
+}
+
+function verifySinch(req) {
+  const signature = req.headers["x-sinch-signature"];
+  const secret = process.env.WEBHOOK_SECRET;
+
+  if (!signature || !secret || !req.rawBody) return false;
+
+  const computed = crypto
+    .createHmac("sha256", secret)
+    .update(req.rawBody)
+    .digest("hex");
+
+  return crypto.timingSafeEqual(
+    Buffer.from(signature, "utf8"),
+    Buffer.from(computed, "utf8")
+  );
+}
+
+function verifyTelnyx(req) {
+  const signature = req.headers["telnyx-signature-ed25519"];
+  const timestamp = req.headers["telnyx-timestamp"];
+  const secret = process.env.TELNYX_WEBHOOK_SECRET;
+
+  if (!signature || !timestamp || !secret || !req.rawBody) return false;
+
+  // Telnyx requires Ed25519 verification using their SDK.
+  // Until wired, fail closed.
+  return false;
+}
+
 module.exports = (req, res, next) => {
   try {
-    const signature = req.headers["x-webhook-signature"];
-    const secret = process.env.WEBHOOK_SECRET;
+    const path = req.path || "";
 
-    if (!signature || !secret) {
-      return res.status(401).json({
-        ok: false,
-        error: "Missing webhook signature"
-      });
-    }
+    let valid = false;
 
-    const computed = crypto
-      .createHmac("sha256", secret)
-      .update(req.rawBody)
-      .digest("hex");
+    if (path.includes("telnyx")) valid = verifyTelnyx(req);
+    else if (path.includes("sinch")) valid = verifySinch(req);
+    else valid = verifyCustom(req);
 
-    if (computed !== signature) {
+    if (!valid) {
       return res.status(401).json({
         ok: false,
         error: "Invalid webhook signature"
@@ -36,4 +75,4 @@ module.exports = (req, res, next) => {
       error: "Webhook signature verification failed"
     });
   }
-}
+};
