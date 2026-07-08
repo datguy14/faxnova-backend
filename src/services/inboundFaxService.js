@@ -1,107 +1,48 @@
-// src/services/inboundFaxService.js — Unified Fax Model (CommonJS Only)
+// src/services/inboundFaxService.js — Unified Fax Architecture (CommonJS Only)
 
-const faxStorageService = require("../storage/faxStorageService");
-const residencyGuard = require("../guards/residencyGuard");
-const idempotencyGuard = require("../guards/idempotencyGuard");
-const auditService = require("./auditService");
 const Fax = require("../models/Fax");
+const auditService = require("./auditService");
+const billingService = require("./billingService");
 
 module.exports = {
-  /**
-   * Main inbound fax pipeline.
-   * Called by webhookController when a provider notifies us of an inbound fax.
-   */
-  async processInboundFax({
-    tenantId,
-    idempotencyKey,
-    sourceRegion,
-    from,
-    pdfBuffer,
-    metadata = {},
-    provider,
-    providerFaxId,
-    correlationId,
-    ip,
-    path,
-    method,
-    apiTier
-  }) {
-    // ----------------------------------------
-    // 1. Residency guard
-    // ----------------------------------------
-    await residencyGuard.ensureInboundRegion({
+  async processInboundFax(normalized) {
+    const {
       tenantId,
-      region: sourceRegion
-    });
-
-    // ----------------------------------------
-    // 2. Idempotency guard
-    // ----------------------------------------
-    await idempotencyGuard.ensureUnique({
-      tenantId,
-      faxId: null, // faxId not known yet
-      idempotencyKey
-    });
-
-    // ----------------------------------------
-    // 3. Store inbound PDF
-    // ----------------------------------------
-    const storageResult = await faxStorageService.storeFax({
-      tenantId,
-      faxId: null,
-      buffer: pdfBuffer,
-      filename: `inbound_${Date.now()}.pdf`,
-      region: sourceRegion
-    });
-
-    // ----------------------------------------
-    // 4. Create unified Fax record (direction: inbound)
-    // ----------------------------------------
-    const faxRecord = await Fax.create({
-      tenantId,
-      from,
       provider,
       providerFaxId,
-      region: sourceRegion,
+      region,
+      raw
+    } = normalized;
+
+    const fax = new Fax({
+      tenantId,
+      provider,
+      providerFaxId,
       direction: "inbound",
-      storageKey: storageResult.storageKey,
-      status: "received",
-      metadata,
-      createdAt: new Date()
-    });
-
-    // ----------------------------------------
-    // 5. Audit event
-    // ----------------------------------------
-    await auditService.logEvent({
-      tenantId,
-      faxId: faxRecord._id,
-      type: "INBOUND_FAX_RECEIVED",
-      action: "fax_received",
-      provider,
+      region,
       providerStatus: "received",
-      region: sourceRegion,
-      details: {
-        from,
-        providerFaxId,
-        correlationId,
-        ip,
-        path,
-        method,
-        apiTier
-      }
+      rawInbound: raw,
+      timestamp: new Date()
     });
 
-    // ----------------------------------------
-    // 6. Return unified response
-    // ----------------------------------------
-    return {
-      success: true,
-      faxId: faxRecord._id,
-      status: "received",
+    await fax.save();
+
+    await auditService.logEvent({
+      type: "INBOUND_FAX_RECEIVED",
+      faxId: fax._id,
+      tenantId,
       provider,
-      providerFaxId,
-      correlationId
-    };
+      region,
+      details: normalized
+    });
+
+    await billingService.trackInboundFax({
+      faxId: fax._id,
+      tenantId,
+      provider,
+      region
+    });
+
+    return fax;
   }
 };
