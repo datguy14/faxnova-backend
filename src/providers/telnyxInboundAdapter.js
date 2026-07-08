@@ -1,20 +1,22 @@
-// src/providers/telnyxInboundAdapter.js
+// src/providers/telnyxInboundAdapter.js — Unified Fax Architecture (CommonJS Only)
 
 module.exports = {
   normalize(raw) {
     try {
-      const payload = raw.data?.payload || {};
+      const data = raw.data;
 
       return {
         eventType: "inbound_fax",
         provider: "telnyx",
-        providerFaxId: payload.fax_id,
-        tenantId: payload.tenant_id,
-        region: payload.region || "us",
-        pdfBuffer: Buffer.from(payload.media || "", "base64"),
+        tenantId: data.payload.customer_reference || null,
+        providerFaxId: data.payload.fax_id,
+        from: data.payload.from,
+        to: data.payload.to,
+        region: "us",
+        pdfUrl: data.payload.media_url,
         raw
       };
-    } catch {
+    } catch (err) {
       return null;
     }
   }
