@@ -1,113 +1,103 @@
-// src/controllers/faxController.js — Fully Updated, Production‑Ready (CommonJS Only)
+// src/controllers/faxController.js
+// Strict‑Mode FaxNova Fax Controller
 
-const outboundFaxService = require("../services/outboundFaxService");
-const idempotencyService = require("../services/idempotencyService");
-const auditService = require("../services/auditService");
-const billingService = require("../services/billingService");
-const routingService = require("../services/routingService");
+const { routeFax } = require("../routing/routeFax");
+const { getFaxStatus } = require("../services/faxStatusService");
+const { isOutage } = require("../services/providerOutageService");
+const { enqueueOutboundFax } = require("../queues/outboundFaxQueue");
 
-exports.createFax = async (req, res) => {
+/**
+ * Send Fax (Strict‑Mode)
+ * Body:
+ * {
+ *   to: string,
+ *   from: string,
+ *   fileUrl: string,
+ *   metadata?: object
+ * }
+ */
+exports.sendFax = async (req, res) => {
   try {
-    const {
-      to,
-      storageKey,
-      residencyZone,
-      tier,
-      region,
-      idempotencyKey
-    } = req.body;
+    const { to, from, fileUrl, metadata = {} } = req.body;
+    const user = req.user;
 
-    const tenantId = req.tenantId; // added by apiKeyGuard middleware
-
-    // ----------------------------------------
-    // 1. Idempotency (prevents duplicate faxes)
-    // ----------------------------------------
-    if (idempotencyKey) {
-      const existing = await idempotencyService.check(idempotencyKey);
-      if (existing) {
-        return res.status(200).json({
-          id: existing.faxId,
-          status: existing.status,
-          idempotent: true
-        });
-      }
+    if (!to || !from || !fileUrl) {
+      return res.status(400).json({
+        ok: false,
+        error: "Missing required fields: to, from, fileUrl"
+      });
     }
 
-    // ----------------------------------------
-    // 2. Residency enforcement (real logic)
-    // ----------------------------------------
-    const enforcedRegion = routingService.enforceResidency({
-      tenantId,
-      residencyZone,
-      region
-    });
+    // Routing engine selects provider
+    const provider = await routeFax({ to, from, user });
 
-    // ----------------------------------------
-    // 3. Provider routing (multi-provider logic)
-    // ----------------------------------------
-    const provider = routingService.chooseProvider({
-      tenantId,
-      to,
-      region: enforcedRegion,
-      tier
-    });
-
-    // ----------------------------------------
-    // 4. Process outbound fax (your existing logic)
-    // ----------------------------------------
-    const fax = await outboundFaxService.processOutboundFax({
-      to,
-      storageKey,
-      residencyZone: enforcedRegion,
-      tier,
-      region: enforcedRegion,
-      provider,
-      tenantId
-    });
-
-    // ----------------------------------------
-    // 5. Save idempotency record
-    // ----------------------------------------
-    if (idempotencyKey) {
-      await idempotencyService.record(idempotencyKey, fax._id, fax.status);
+    if (!provider) {
+      return res.status(503).json({
+        ok: false,
+        error: "No available provider"
+      });
     }
 
-    // ----------------------------------------
-    // 6. Audit logging (required for compliance)
-    // ----------------------------------------
-    await auditService.logEvent({
-      type: "OUTBOUND_FAX_CREATED",
-      faxId: fax._id,
-      tenantId,
-      provider,
-      region: enforcedRegion,
-      to
+    // Outage check
+    if (await isOutage(provider.name)) {
+      return res.status(503).json({
+        ok: false,
+        error: `Provider ${provider.name} is currently in outage`
+      });
+    }
+
+    // Enqueue outbound fax
+    const job = await enqueueOutboundFax({
+      to,
+      from,
+      fileUrl,
+      metadata,
+      userId: user.id,
+      provider: provider.name
     });
 
-    // ----------------------------------------
-    // 7. Billing hook (usage tracking)
-    // ----------------------------------------
-    await billingService.trackOutboundFax({
-      tenantId,
-      faxId: fax._id,
-      provider,
-      region: enforcedRegion,
-      tier
-    });
-
-    // ----------------------------------------
-    // 8. Respond
-    // ----------------------------------------
-    res.status(202).json({
-      id: fax._id,
-      provider,
-      region: enforcedRegion,
-      status: fax.status,
+    return res.json({
+      ok: true,
+      faxId: job.faxId,
+      provider: provider.name,
       queued: true
     });
-
   } catch (err) {
-    console.error("❌ Outbound fax error:", err);
-    res.status(500).json({ error: err.message });
+    console.error("❌ sendFax error:", err);
+
+    return res.status(500).json({
+      ok: false,
+      error: "Internal fax send error"
+    });
+  }
+};
+
+/**
+ * Get Fax Status (Strict‑Mode)
+ */
+exports.getStatus = async (req, res) => {
+  try {
+    const { faxId } = req.params;
+
+    if (!faxId) {
+      return res.status(400).json({
+        ok: false,
+        error: "Missing faxId"
+      });
+    }
+
+    const status = await getFaxStatus(faxId);
+
+    return res.json({
+      ok: true,
+      ...status
+    });
+  } catch (err) {
+    console.error("❌ getStatus error:", err);
+
+    return res.status(500).json({
+      ok: false,
+      error: "Internal fax status error"
+    });
   }
 };
