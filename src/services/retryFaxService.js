@@ -1,94 +1,44 @@
-// src/services/retryFaxService.js — Unified Fax Model Compatible (CommonJS Only)
+// src/services/retryFaxService.js — Unified Fax Architecture (CommonJS Only)
 
-const { Queue } = require("bullmq");
-const { connection } = require("../lib/redis");
+const outboundFaxQueue = require("../queues/outboundFaxQueue");
+const auditService = require("./auditService");
+const Fax = require("../models/Fax");
 
-// Primary outbound queue
-const outboundFaxQueue = new Queue("outboundFaxQueue", {
-  connection,
-  defaultJobOptions: {
-    attempts: 5, // retry up to 5 times
-    backoff: { type: "exponential", delay: 5000 }, // 5s → 10s → 20s → 40s → 80s
-    removeOnComplete: true,
-    removeOnFail: false // keep failures for DLQ inspection
-  }
-});
-
-// Dead‑letter queue (DLQ)
-const dlqFaxQueue = new Queue("dlqFaxQueue", {
-  connection,
-  defaultJobOptions: {
-    removeOnComplete: true,
-    removeOnFail: false
-  }
-});
-
-/**
- * Enqueue initial send job.
- * Unified Fax Model:
- * - faxId references Fax.js
- * - provider is the primary provider
- * - region is stored on Fax.js
- * - failoverProvider is optional
- */
-exports.enqueueInitialSend = async ({ faxId, provider, region, failoverProvider }) => {
-  await outboundFaxQueue.add(
-    "sendFax",
-    {
-      faxId,
-      provider,
-      region,
-      failoverProvider
-    },
-    {
-      attempts: 5,
-      backoff: { type: "exponential", delay: 5000 }
+module.exports = {
+  /**
+   * Enqueue failover send for outbound fax.
+   */
+  async enqueueFailoverSend({ faxId, failoverProvider, region }) {
+    const fax = await Fax.findById(faxId);
+    if (!fax) {
+      console.error("RetryFaxService: Fax not found:", faxId);
+      return;
     }
-  );
-};
 
-/**
- * Enqueue failover send job.
- * Triggered when primary provider fails after max retries.
- * Unified Fax Model:
- * - faxId references Fax.js
- * - failoverProvider becomes the new provider
- */
-exports.enqueueFailoverSend = async ({ faxId, failoverProvider, region }) => {
-  if (!failoverProvider) {
-    // No failover provider → send to DLQ
-    await dlqFaxQueue.add("faxFailed", { faxId, region });
-    return;
-  }
-
-  await outboundFaxQueue.add(
-    "sendFax",
-    {
-      faxId,
+    await outboundFaxQueue.add("sendFax", {
+      tenantId: fax.tenantId,
+      idempotencyKey: `failover:${faxId}:${Date.now()}`,
+      to: fax.to,
+      from: fax.from,
+      region,
       provider: failoverProvider,
-      region,
-      failoverProvider: null // prevent infinite failover loops
-    },
-    {
-      attempts: 3,
-      backoff: { type: "exponential", delay: 7000 }
-    }
-  );
-};
+      failoverProvider: null, // prevent infinite failover loops
+      pdfBuffer: null, // worker will load from storageKey
+      metadata: fax.metadata,
+      storageKey: fax.storageKey
+    });
 
-/**
- * Send to DLQ explicitly.
- * Unified Fax Model:
- * - faxId references Fax.js
- * - provider is optional
- * - region is optional
- * - reason is required
- */
-exports.sendToDLQ = async ({ faxId, provider, region, reason }) => {
-  await dlqFaxQueue.add("faxFailed", {
-    faxId,
-    provider,
-    region,
-    reason
-  });
+    await auditService.logEvent({
+      type: "FAILOVER_ENQUEUED",
+      faxId,
+      tenantId: fax.tenantId,
+      provider: fax.provider,
+      failoverProvider,
+      region,
+      details: {
+        originalProvider: fax.provider,
+        storageKey: fax.storageKey
+      }
+    });
+  }
 };
