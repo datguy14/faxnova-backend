@@ -1,25 +1,39 @@
-// src/services/billingService.js — Unified Fax Architecture (CommonJS Only)
-
-const auditService = require("./auditService");
+const BillingEvent = require("../models/BillingEvent");
 
 module.exports = {
-  async trackInboundFax({ faxId, tenantId, provider, region }) {
-    await auditService.logEvent({
-      type: "BILLING_INBOUND_FAX",
-      faxId,
+  async trackOutboundFax({ faxId, tenantId, provider, region }) {
+    return BillingEvent.create({
       tenantId,
+      faxId,
       provider,
-      region
+      region,
+      direction: "outbound",
+      eventType: "outbound_send",
+      metadata: {}
+    });
+  },
+
+  async trackInboundFax({ faxId, tenantId, provider, region }) {
+    return BillingEvent.create({
+      tenantId,
+      faxId,
+      provider,
+      region,
+      direction: "inbound",
+      eventType: "inbound_received",
+      metadata: {}
     });
   },
 
   async trackWebhookEvent({ faxId, tenantId, provider, providerStatus }) {
-    await auditService.logEvent({
-      type: "BILLING_WEBHOOK_EVENT",
-      faxId,
+    return BillingEvent.create({
       tenantId,
+      faxId,
       provider,
-      providerStatus
+      region: "us",
+      direction: "webhook",
+      eventType: providerStatus,
+      metadata: { providerStatus }
     });
   }
 };
