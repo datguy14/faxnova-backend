@@ -1,5 +1,3 @@
-// src/middleware/apiKeyGuard.js — Unified Fax Architecture (CommonJS Only)
-
 const Tenant = require("../models/Tenant");
 
 module.exports = async function apiKeyGuard(req, res, next) {
@@ -11,12 +9,10 @@ module.exports = async function apiKeyGuard(req, res, next) {
     }
 
     const tenant = await Tenant.findOne({ apiKey });
-
     if (!tenant) {
-      return res.status(403).json({ error: "Invalid API key" });
+      return res.status(401).json({ error: "Invalid API key" });
     }
 
-    // Inject tenantId into request
     req.tenantId = tenant._id.toString();
     req.tenant = tenant;
 
