@@ -1,24 +1,39 @@
-// src/providers/sinchProvider.js — Unified Fax Architecture (CommonJS Only)
+const axios = require("axios");
+
+const SINCH_BASE = "https://api.sinch.com/v1/projects";
 
 module.exports = {
-  async sendFax({ to, buffer, storageKey, faxId, region }) {
-    try {
-      // TODO: Replace with real Sinch API call
-      const providerFaxId = `sinch_${Date.now()}`;
+  async sendFax({ to, from, mediaUrl }) {
+    const url = `${SINCH_BASE}/${process.env.SINCH_PROJECT_ID}/faxes`;
 
-      return {
-        providerFaxId,
-        raw: {
-          to,
-          storageKey,
-          faxId,
-          region,
-          simulated: true
-        }
-      };
-    } catch (err) {
-      err.raw = { to, storageKey, faxId, region };
-      throw err;
-    }
+    const payload = {
+      to,
+      from,
+      mediaUrl
+    };
+
+    const headers = {
+      Authorization: `Basic ${Buffer.from(
+        `${process.env.SINCH_API_KEY}:${process.env.SINCH_API_SECRET}`
+      ).toString("base64")}`,
+      "Content-Type": "application/json"
+    };
+
+    const res = await axios.post(url, payload, { headers });
+    return res.data;
+  },
+
+  async getFaxStatus(faxId) {
+    const url = `${SINCH_BASE}/${process.env.SINCH_PROJECT_ID}/faxes/${faxId}`;
+
+    const headers = {
+      Authorization: `Basic ${Buffer.from(
+        `${process.env.SINCH_API_KEY}:${process.env.SINCH_API_SECRET}`
+      ).toString("base64")}`,
+      "Content-Type": "application/json"
+    };
+
+    const res = await axios.get(url, { headers });
+    return res.data;
   }
 };
