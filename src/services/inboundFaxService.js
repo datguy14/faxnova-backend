@@ -1,9 +1,9 @@
-// src/services/inboundFaxService.js — Updated for Unified Fax Model (CommonJS Only)
+// src/services/inboundFaxService.js — Unified Fax Model (CommonJS Only)
 
-const faxStorageService = require("./faxStorageService");
-const dataResidencyGuard = require("./dataResidencyGuard");
-const idempotencyGuard = require("./idempotencyGuard");
-const audit = require("../audit/auditService");
+const faxStorageService = require("../storage/faxStorageService");
+const residencyGuard = require("../guards/residencyGuard");
+const idempotencyGuard = require("../guards/idempotencyGuard");
+const auditService = require("./auditService");
 const Fax = require("../models/Fax");
 
 module.exports = {
@@ -17,7 +17,9 @@ module.exports = {
     sourceRegion,
     from,
     pdfBuffer,
-    metadata,
+    metadata = {},
+    provider,
+    providerFaxId,
     correlationId,
     ip,
     path,
@@ -27,25 +29,29 @@ module.exports = {
     // ----------------------------------------
     // 1. Residency guard
     // ----------------------------------------
-    await dataResidencyGuard.enforceInboundResidency({
+    await residencyGuard.ensureInboundRegion({
       tenantId,
-      sourceRegion
+      region: sourceRegion
     });
 
     // ----------------------------------------
     // 2. Idempotency guard
     // ----------------------------------------
-    await idempotencyGuard.check({
+    await idempotencyGuard.ensureUnique({
       tenantId,
+      faxId: null, // faxId not known yet
       idempotencyKey
     });
 
     // ----------------------------------------
     // 3. Store inbound PDF
     // ----------------------------------------
-    const storageResult = await faxStorageService.storeInboundFax({
+    const storageResult = await faxStorageService.storeFax({
       tenantId,
-      pdfBuffer
+      faxId: null,
+      buffer: pdfBuffer,
+      filename: `inbound_${Date.now()}.pdf`,
+      region: sourceRegion
     });
 
     // ----------------------------------------
@@ -54,6 +60,8 @@ module.exports = {
     const faxRecord = await Fax.create({
       tenantId,
       from,
+      provider,
+      providerFaxId,
       region: sourceRegion,
       direction: "inbound",
       storageKey: storageResult.storageKey,
@@ -65,19 +73,22 @@ module.exports = {
     // ----------------------------------------
     // 5. Audit event
     // ----------------------------------------
-    audit.logEvent({
+    await auditService.logEvent({
       tenantId,
-      type: "fax_inbound",
+      faxId: faxRecord._id,
+      type: "INBOUND_FAX_RECEIVED",
       action: "fax_received",
-      correlationId,
-      ip,
-      path,
-      method,
-      tier: apiTier,
+      provider,
+      providerStatus: "received",
+      region: sourceRegion,
       details: {
-        faxId: faxRecord._id,
-        region: sourceRegion,
-        from
+        from,
+        providerFaxId,
+        correlationId,
+        ip,
+        path,
+        method,
+        apiTier
       }
     });
 
@@ -88,6 +99,8 @@ module.exports = {
       success: true,
       faxId: faxRecord._id,
       status: "received",
+      provider,
+      providerFaxId,
       correlationId
     };
   }
