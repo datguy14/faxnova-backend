@@ -4,7 +4,7 @@ const { Worker } = require("bullmq");
 const { connection } = require("../lib/redis");
 
 const sendFaxService = require("../services/sendFaxService");
-const Fax = require("../models/Fax");
+const OutboundFax = require("../models/OutboundFax");
 const auditService = require("../services/auditService");
 const billingService = require("../services/billingService");
 const retryFaxService = require("../services/retryFaxService");
@@ -16,65 +16,58 @@ module.exports = new Worker(
 
     try {
       const {
+        faxId,
         tenantId,
-        idempotencyKey,
-        to,
-        from,
-        region,
         provider,
         failoverProvider,
-        pdfBuffer,
-        metadata
+        region,
+        storageKey,
+        idempotencyKey,
+        to
       } = data;
 
-      // ----------------------------------------
-      // 1. Send fax via unified outbound pipeline
-      // ----------------------------------------
-      const result = await sendFaxService.sendFax({
-        tenantId,
-        idempotencyKey,
-        to,
-        from,
-        region,
-        provider,
-        failoverProvider,
-        pdfBuffer,
-        metadata
-      });
-
-      const faxId = result.faxId;
-
-      // ----------------------------------------
-      // 2. Load unified Fax record
-      // ----------------------------------------
-      const fax = await Fax.findById(faxId);
+      // ---------------------------------------------------------
+      // 1. Load outbound fax record
+      // ---------------------------------------------------------
+      const fax = await OutboundFax.findById(faxId);
       if (!fax) {
-        throw new Error(`Outbound worker cannot find fax ${faxId}`);
+        throw new Error(`OutboundFaxWorker: Fax not found: ${faxId}`);
       }
 
-      // ----------------------------------------
-      // 3. Billing hook (outbound queued)
-      // ----------------------------------------
+      // ---------------------------------------------------------
+      // 2. Send fax via unified outbound pipeline
+      // ---------------------------------------------------------
+      const result = await sendFaxService.sendFax({
+        faxId,
+        tenantId,
+        provider,
+        region,
+        storageKey,
+        idempotencyKey,
+        to
+      });
+
+      // ---------------------------------------------------------
+      // 3. Billing hook (outbound processing)
+      // ---------------------------------------------------------
       await billingService.trackOutboundQueued({
         faxId,
         tenantId
       });
 
-      // ----------------------------------------
+      // ---------------------------------------------------------
       // 4. Audit log
-      // ----------------------------------------
+      // ---------------------------------------------------------
       await auditService.logEvent({
-        tenantId,
+        type: "OUTBOUND_FAX_WORKER_SENT",
         faxId,
-        type: "OUTBOUND_FAX_WORKER_QUEUED",
-        action: "worker_queued",
+        tenantId,
         provider,
-        providerStatus: "processing",
         region,
+        providerFaxId: result.providerFaxId || null,
         details: {
           to,
-          from,
-          providerFaxId: fax.providerFaxId
+          storageKey
         }
       });
 
@@ -82,15 +75,15 @@ module.exports = new Worker(
         success: true,
         faxId,
         provider,
-        providerFaxId: fax.providerFaxId,
+        providerFaxId: result.providerFaxId || null,
         status: fax.status
       };
     } catch (err) {
-      console.error("Outbound fax worker error:", err.message);
+      console.error("OutboundFaxWorker Error:", err.message);
 
-      // ----------------------------------------
+      // ---------------------------------------------------------
       // 5. Audit error
-      // ----------------------------------------
+      // ---------------------------------------------------------
       await auditService.logEvent({
         type: "OUTBOUND_FAX_WORKER_ERROR",
         faxId: data.faxId || null,
@@ -100,9 +93,9 @@ module.exports = new Worker(
         details: { error: err.message }
       });
 
-      // ----------------------------------------
+      // ---------------------------------------------------------
       // 6. Failover trigger (if outbound failed early)
-      // ----------------------------------------
+      // ---------------------------------------------------------
       if (data.failoverProvider) {
         await retryFaxService.enqueueFailoverSend({
           faxId: data.faxId,
