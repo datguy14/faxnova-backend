@@ -1,47 +1,109 @@
 // src/services/faxStatusService.js
-// Unified Fax Status Service — Strict‑Mode
+// Strict‑Mode Multi‑Provider Fax Status Service
 
-const telnyx = require("../providers/telnyxProvider");
-const sinch = require("../providers/sinchProvider");
-const normalizeStatus = require("../utils/normalizeStatus");
+const { telnyx, sinch } = require("../providers");
 
 /**
- * Detect provider based on faxId format
- * telnyx-123 → telnyx
- * sinch-123  → sinch
+ * Normalize provider-specific status into FaxNova strict-mode shape.
+ *
+ * Output shape:
+ * {
+ *   provider: 'telnyx' | 'sinch',
+ *   faxId: string,
+ *   status: 'queued' | 'processing' | 'delivered' | 'failed' | 'unknown',
+ *   raw: any,
+ *   diagnostics: {
+ *     healthy: boolean,
+ *     latencyMs: number,
+ *     httpStatus: number | null,
+ *     score: number
+ *   }
+ * }
+ */
+function normalizeStatus(providerName, rawStatus) {
+  if (!rawStatus) {
+    return {
+      provider: providerName,
+      faxId: null,
+      status: "unknown",
+      raw: null,
+      diagnostics: {
+        healthy: false,
+        latencyMs: Infinity,
+        httpStatus: null,
+        score: -10
+      }
+    };
+  }
+
+  return {
+    provider: providerName,
+    faxId: rawStatus.faxId || null,
+    status: rawStatus.status || "unknown",
+    raw: rawStatus.raw || rawStatus,
+    diagnostics: rawStatus.diagnostics || {
+      healthy: false,
+      latencyMs: Infinity,
+      httpStatus: null,
+      score: -10
+    }
+  };
+}
+
+/**
+ * Detect provider from faxId prefix.
+ * Telnyx: "tx_..."
+ * Sinch: "sn_..."
  */
 function detectProvider(faxId) {
-  if (faxId.startsWith("telnyx-")) return "telnyx";
-  if (faxId.startsWith("sinch-")) return "sinch";
+  if (!faxId) return null;
+
+  if (faxId.startsWith("tx_")) return "telnyx";
+  if (faxId.startsWith("sn_")) return "sinch";
+
   return null;
 }
 
 /**
- * Fetch fax status from the correct provider
+ * Fetch fax status from the correct provider.
  */
 async function getFaxStatus(faxId) {
-  const provider = detectProvider(faxId);
+  const providerName = detectProvider(faxId);
 
-  if (!provider) {
-    throw new Error(`Unable to detect provider for faxId: ${faxId}`);
+  if (!providerName) {
+    return {
+      provider: "unknown",
+      faxId,
+      status: "unknown",
+      raw: null,
+      diagnostics: {
+        healthy: false,
+        latencyMs: Infinity,
+        httpStatus: null,
+        score: -10
+      }
+    };
   }
 
-  let rawStatus;
+  const providerClient = providerName === "telnyx" ? telnyx : sinch;
 
-  if (provider === "telnyx") {
-    rawStatus = await telnyx.getFaxStatus(faxId);
+  try {
+    const rawStatus = await providerClient.getFaxStatus(faxId);
+    return normalizeStatus(providerName, rawStatus);
+  } catch (err) {
+    return {
+      provider: providerName,
+      faxId,
+      status: "failed",
+      raw: { error: err.message },
+      diagnostics: {
+        healthy: false,
+        latencyMs: Infinity,
+        httpStatus: null,
+        score: -10
+      }
+    };
   }
-
-  if (provider === "sinch") {
-    rawStatus = await sinch.getFaxStatus(faxId);
-  }
-
-  return {
-    provider,
-    faxId,
-    status: normalizeStatus(rawStatus),
-    raw: rawStatus
-  };
 }
 
 module.exports = {
