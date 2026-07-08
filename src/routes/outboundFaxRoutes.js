@@ -1,21 +1,16 @@
-// src/routes/outboundFaxRoutes.js
+// src/routes/outboundFaxRoutes.js — Unified Fax Architecture (CommonJS Only)
 
 const express = require("express");
 const router = express.Router();
 
 const outboundFaxController = require("../controllers/outboundFaxController");
-const authMiddleware = require("../middleware/authMiddleware");
 
-// All outbound fax routes require authentication
-router.use(authMiddleware);
+// Protected by apiKeyGuard in app.js
 
-// Submit outbound fax
-router.post("/:tenantId/send", outboundFaxController.sendFax);
+router.post("/send", outboundFaxController.sendFax);
 
-// Get outbound fax status
-router.get("/:tenantId/:faxId/status", outboundFaxController.getFaxStatus);
+router.get("/:faxId/status", outboundFaxController.getFaxStatus);
 
-// Retry outbound fax
-router.post("/:tenantId/:faxId/retry", outboundFaxController.retryFax);
+router.post("/:faxId/retry", outboundFaxController.retryFax);
 
 module.exports = router;
