@@ -1,93 +1,54 @@
-// src/storage/faxStorageService.js — Unified Fax Architecture
+// src/storage/faxStorageService.js — Unified Fax Architecture (CommonJS Only)
 
-const axios = require("axios");
-const auditService = require("../services/auditService");
+const path = require("path");
+const fs = require("fs");
 
-/**
- * Upload a fax file (PDF/TIFF) to the storage API.
- * Returns a storageKey used by providers (Telnyx/Sinch).
- *
- * Unified Fax Architecture:
- * - tenant-aware
- * - region-aware
- * - audit logged
- */
-exports.storeFax = async ({ tenantId, faxId, buffer, filename, region }) => {
-  try {
-    const endpoint = process.env.STORAGE_API_URL;
+module.exports = {
+  async storeFax({ tenantId, faxId, buffer, filename, region }) {
+    try {
+      const storageKey = `${tenantId}/${region}/${faxId}/${filename}`;
+      const fullPath = path.join(__dirname, "../../storage", storageKey);
 
-    const response = await axios.post(`${endpoint}/upload`, buffer, {
-      headers: {
-        "Content-Type": "application/octet-stream",
-        "X-Filename": filename,
-        "X-Region": region || "us",
-        "X-Tenant": tenantId
-      },
-      maxContentLength: Infinity,
-      maxBodyLength: Infinity
-    });
+      // Ensure directory exists
+      fs.mkdirSync(path.dirname(fullPath), { recursive: true });
 
-    const storageKey = response.data.storageKey;
+      // Write file
+      fs.writeFileSync(fullPath, buffer);
 
-    await auditService.logEvent({
-      tenantId,
-      faxId,
-      type: "FAX_STORAGE_WRITE",
-      action: "file_uploaded",
-      region,
-      details: { filename, storageKey }
-    });
+      return {
+        ok: true,
+        storageKey,
+        fullPath
+      };
+    } catch (err) {
+      return {
+        ok: false,
+        error: err.message
+      };
+    }
+  },
 
-    return { storageKey };
-  } catch (err) {
-    await auditService.logEvent({
-      tenantId,
-      faxId,
-      type: "FAX_STORAGE_ERROR",
-      action: "file_upload_failed",
-      region,
-      details: { filename, error: err.message }
-    });
+  async getFax(storageKey) {
+    try {
+      const fullPath = path.join(__dirname, "../../storage", storageKey);
 
-    throw new Error(`Storage API error: ${err.message}`);
-  }
-};
-
-/**
- * Retrieve a fax file from storage by storageKey.
- */
-exports.getFaxFile = async ({ tenantId, faxId, storageKey, region }) => {
-  try {
-    const endpoint = process.env.STORAGE_API_URL;
-
-    const response = await axios.get(`${endpoint}/file/${storageKey}`, {
-      responseType: "arraybuffer",
-      headers: {
-        "X-Tenant": tenantId,
-        "X-Region": region || "us"
+      if (!fs.existsSync(fullPath)) {
+        return { ok: false, error: "File not found" };
       }
-    });
 
-    await auditService.logEvent({
-      tenantId,
-      faxId,
-      type: "FAX_STORAGE_READ",
-      action: "file_retrieved",
-      region,
-      details: { storageKey }
-    });
+      const buffer = fs.readFileSync(fullPath);
 
-    return response.data;
-  } catch (err) {
-    await auditService.logEvent({
-      tenantId,
-      faxId,
-      type: "FAX_STORAGE_ERROR",
-      action: "file_retrieve_failed",
-      region,
-      details: { storageKey, error: err.message }
-    });
-
-    throw new Error(`Storage API error: ${err.message}`);
+      return {
+        ok: true,
+        buffer,
+        storageKey,
+        fullPath
+      };
+    } catch (err) {
+      return {
+        ok: false,
+        error: err.message
+      };
+    }
   }
 };
