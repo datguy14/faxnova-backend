@@ -1,50 +1,23 @@
-// src/providers/sinchWebhookAdapter.js — Unified Fax Architecture (CommonJS Only)
+// src/providers/sinchWebhookAdapter.js
+// Sinch Webhook Adapter — Strict‑Mode
 
-module.exports = {
-  normalize(raw) {
-    try {
-      const event = raw.event;
-      const message = raw.message;
+const webhookQueue = require("../queues/webhookQueue");
+const signatureGuard = require("../middleware/webhookSignatureGuard");
 
-      let eventType = null;
+module.exports = async function sinchWebhook(req, res) {
+  try {
+    signatureGuard(req, res, () => {});
 
-      switch (event) {
-        case "fax.delivered":
-          eventType = "outbound_delivered";
-          break;
+    const event = req.body;
 
-        case "fax.failed":
-          eventType = "outbound_failed";
-          break;
+    await webhookQueue.add("webhook", {
+      provider: "sinch",
+      event
+    });
 
-        case "fax.error":
-          eventType = "provider_error";
-          break;
-
-        case "fax.delivery_receipt":
-          eventType = "delivery_receipt";
-          break;
-
-        case "fax.failover":
-          eventType = "failover_trigger";
-          break;
-
-        default:
-          return null;
-      }
-
-      return {
-        eventType,
-        provider: "sinch",
-        faxId: raw.customerReference || null,
-        tenantId: raw.customerReference || null,
-        providerStatus: event,
-        failoverProvider: raw.failoverProvider || null,
-        region: "us",
-        raw
-      };
-    } catch (err) {
-      return null;
-    }
+    res.json({ ok: true });
+  } catch (err) {
+    console.error("❌ Sinch webhook error:", err);
+    res.status(400).json({ ok: false, error: err.message });
   }
 };
