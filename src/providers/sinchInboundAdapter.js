@@ -1,21 +1,13 @@
-// src/providers/sinchInboundAdapter.js — Unified Fax Architecture (CommonJS Only)
+// src/providers/sinchInboundAdapter.js
+// Sinch Inbound Adapter — Strict‑Mode
 
-module.exports = {
-  normalize(raw) {
-    try {
-      return {
-        eventType: "inbound_fax",
-        provider: "sinch",
-        tenantId: raw.customerReference || null,
-        providerFaxId: raw.message.id,
-        from: raw.message.from,
-        to: raw.message.to,
-        region: "us",
-        pdfUrl: raw.message.media?.[0]?.url || null,
-        raw
-      };
-    } catch (err) {
-      return null;
-    }
-  }
+module.exports = async function sinchInboundAdapter(event) {
+  return {
+    provider: "sinch",
+    type: event.event || event.type,
+    faxId: event.faxId || event.id,
+    status: event.status,
+    direction: event.direction || "inbound",
+    raw: event
+  };
 };
