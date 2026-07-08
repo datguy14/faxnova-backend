@@ -3,24 +3,25 @@
 const express = require("express");
 const app = express();
 
-// Core middleware
-app.use(express.json({ limit: "10mb" }));
-app.use(express.urlencoded({ extended: true }));
-
-// Raw body for webhook signature verification
+// Raw body for webhook signature verification — MUST come first
 app.use(
   express.json({
+    limit: "10mb",
     verify: (req, res, buf) => {
       req.rawBody = buf;
     }
   })
 );
 
+// URL-encoded parser AFTER raw-body JSON
+app.use(express.urlencoded({ extended: true }));
+
 // Global middleware
 const rateLimit = require("./middleware/rateLimit");
 const errorHandler = require("./middleware/errorHandler");
 
-app.use(rateLimit);
+// Apply rate limiting ONLY to user-facing API routes
+app.use("/fax", rateLimit);
 
 // Routes
 const faxRoutes = require("./routes/fax");
@@ -30,7 +31,7 @@ const sinchWebhook = require("./providers/sinchWebhookAdapter");
 // Fax API
 app.use("/fax", faxRoutes);
 
-// Provider webhooks
+// Provider webhooks (no rate limit)
 app.post("/webhook/telnyx", telnyxWebhook);
 app.post("/webhook/sinch", sinchWebhook);
 
